@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local
+
+# Editor and runtime caches
+.idea/
+.vscode/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+node_modules/
+
+# Generated files
+*.log
+dist/
+build/

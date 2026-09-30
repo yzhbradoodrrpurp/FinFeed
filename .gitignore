@@ -21,3 +21,7 @@ node_modules/
 *.log
 dist/
 build/
+
+# Private stock trading records; keep only the shared instructions
+/trading/*
+!/trading/README.md

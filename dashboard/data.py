@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
-from metrics import number, prior_year_period, trailing_pe, volume_metrics, yoy
+from metrics import number, prior_quarter_period, trailing_pe, volume_metrics, qoq
 
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / ".cache"
@@ -19,7 +19,7 @@ LIMIT = threading.Semaphore(2)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 900
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def epoch(value):
@@ -67,13 +67,13 @@ def frame_values(frame, labels, currency, source_url):
 def growth(series, period):
     if not period or period not in series:
         return empty_metric("缺少该财季数据", period=period)
-    old = prior_year_period(period, series)
+    old = prior_quarter_period(period, series)
     a = series[period]
     b = series.get(old, {})
-    value, reason = yoy(a["value"], b.get("value"))
+    value, reason = qoq(a["value"], b.get("value"))
     return {"value": value, "reason": reason, "period": period, "comparison_period": old,
-            "basis": "同比 = 本期 / 上年同期 − 1；前期必须大于零", "source": a["source"],
-            "inputs": {"current": a["value"], "year_ago": b.get("value")}}
+            "basis": "季度环比 = 本期 / 上一财季 − 1；上一财季必须大于零", "source": a["source"],
+            "inputs": {"current": a["value"], "previous_quarter": b.get("value")}}
 
 
 def fetch_security(symbol):
@@ -148,7 +148,7 @@ def fetch_security(symbol):
     equity = quote_type == "EQUITY"
     if not equity:
         reason = "该证券不是公司股票，财务与 EPS 指标不适用" if quote_type != "UNKNOWN" else "证券未识别或数据源暂不可用"
-        for key in ["eps_q0", "eps_q1", "forward_eps_q0", "pe_ltm", "pe_ntm", "revenue_q0", "revenue_yoy_q0", "revenue_yoy_q1", "debt_q0", "debt_yoy_q0", "debt_yoy_q1", "fcf_q0", "fcf_yoy_q0", "fcf_yoy_q1"]:
+        for key in ["eps_q0", "eps_q1", "forward_eps_q0", "pe_ltm", "pe_ntm", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1"]:
             m[key] = empty_metric(reason)
         if quote_type == "ETF":
             m["market_cap"] = empty_metric("ETF 公司市值不适用；未用资产规模替代")
@@ -175,8 +175,8 @@ def fetch_security(symbol):
     for key, series, period in [("eps_q0", eps, q0), ("eps_q1", eps, q1), ("revenue_q0", revenue, q0), ("debt_q0", debt, q0), ("fcf_q0", fcf, q0)]:
         m[key] = series.get(period, empty_metric("数据源未提供该财季值", period=period))
     for label, series in [("revenue", revenue), ("debt", debt), ("fcf", fcf)]:
-        m[f"{label}_yoy_q0"] = growth(series, q0)
-        m[f"{label}_yoy_q1"] = growth(series, q1)
+        m[f"{label}_qoq_q0"] = growth(series, q0)
+        m[f"{label}_qoq_q1"] = growth(series, q1)
     result["series"] = {"eps": eps, "revenue": revenue, "debt": debt, "fcf": fcf}
     # Provider TTM EPS avoids blindly adding EPS across stock-split bases.
     pe, reason = trailing_pe(price, info.get("trailingEps"))

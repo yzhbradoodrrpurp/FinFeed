@@ -1,6 +1,6 @@
 """Pure calculations; unknown values are never silently replaced with zero."""
 import math
-from datetime import date, timedelta
+from datetime import date
 
 
 def number(value):
@@ -11,19 +11,24 @@ def number(value):
         return None
 
 
-def yoy(current, previous):
+def qoq(current, previous):
     current, previous = number(current), number(previous)
     if current is None or previous is None:
-        return None, "缺少本期或上年同期数据"
+        return None, "缺少本期或上一财季数据"
     if previous <= 0:
-        return None, "上年同期为零或负值，百分比增长不具可比性"
+        return None, "上一财季为零或负值，百分比增长不具可比性"
     return current / previous - 1, None
 
 
-def prior_year_period(period, periods):
-    target = date.fromisoformat(period) - timedelta(days=365)
-    candidates = [p for p in periods if abs((date.fromisoformat(p) - target).days) <= 15]
-    return min(candidates, key=lambda p: abs((date.fromisoformat(p) - target).days)) if candidates else None
+def prior_quarter_period(period, periods):
+    current = date.fromisoformat(period)
+    previous = sorted((p for p in periods if p < period), reverse=True)
+    if not previous:
+        return None
+    candidate = previous[0]
+    # Reject gaps: a missing quarter must not turn a six-month change into QoQ.
+    days = (current - date.fromisoformat(candidate)).days
+    return candidate if 65 <= days <= 120 else None
 
 
 def trailing_pe(price, eps):

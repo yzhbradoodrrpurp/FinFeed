@@ -19,6 +19,7 @@ node_modules/
 
 # Local finance platform snapshots and browser verification
 /dashboard/.cache/
+/dashboard/.local/
 /output/playwright/
 /.playwright-cli/
 

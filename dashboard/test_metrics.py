@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from data import epoch
 
-from metrics import prior_year_period, trailing_pe, volume_metrics, yoy
+from metrics import prior_quarter_period, trailing_pe, volume_metrics, qoq
 
 
 class FinancialCases(unittest.TestCase):
@@ -14,15 +14,16 @@ class FinancialCases(unittest.TestCase):
         self.assertEqual(epoch("2026-10-02 16:00:00-04:00"), close.timestamp())
 
     def test_loss_to_profit_is_not_a_positive_base_growth_rate(self):
-        value, reason = yoy(50, -25)
+        value, reason = qoq(50, -25)
         self.assertIsNone(value)
         self.assertIn("负值", reason)
-        self.assertIsNone(yoy(50, 0)[0])
-        self.assertAlmostEqual(yoy(125, 100)[0], 0.25)
+        self.assertIsNone(qoq(50, 0)[0])
+        self.assertAlmostEqual(qoq(125, 100)[0], 0.25)
 
-    def test_53_week_fiscal_calendar_matches_but_missing_year_does_not(self):
-        self.assertEqual(prior_year_period("2026-06-27", ["2025-06-28", "2026-03-28"]), "2025-06-28")
-        self.assertIsNone(prior_year_period("2026-06-27", ["2025-03-29", "2025-09-27"]))
+    def test_fiscal_quarter_matches_but_missing_quarter_does_not(self):
+        self.assertEqual(prior_quarter_period("2026-06-27", ["2025-06-28", "2026-03-28"]), "2026-03-28")
+        self.assertIsNone(prior_quarter_period("2026-06-27", ["2025-12-27", "2025-09-27"]))
+        self.assertEqual(prior_quarter_period("2026-03-31", ["2025-12-31"]), "2025-12-31")
 
     def test_volume_excludes_comparison_day_and_waits_for_close(self):
         rows = [(f"2026-09-{day:02}", 100) for day in range(1, 11)] + [("2026-09-11", 1000)]

@@ -17,6 +17,11 @@ __pycache__/
 .venv/
 node_modules/
 
+# Local finance platform snapshots and browser verification
+/dashboard/.cache/
+/output/playwright/
+/.playwright-cli/
+
 # Generated files
 *.log
 dist/

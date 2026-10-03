@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="FinFeed 本地自选股研究表：行情、EPS、估值、成交量和季度财务。">
+  <title>FinFeed · 自选股</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23152b3d'/%3E%3Cpath d='M8 24V8h17M8 15h13' stroke='%235edab0' stroke-width='4' fill='none'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="masthead"><a class="brand" href="/" aria-label="FinFeed 自选股"><span class="brand-icon">F</span>FinFeed<span class="brand-divider"></span><span class="brand-sub">MARKET RESEARCH</span></a><span class="local-label">本机 · 个人研究</span></header>
+  <main>
+    <div class="title-row"><div><div class="eyebrow">MY WATCHLIST</div><h1>自选股</h1></div><div class="title-actions"><button id="method-button" class="secondary">指标口径</button><button id="refresh" class="primary">刷新数据</button></div></div>
+    <div class="control-row"><form id="add-form"><label class="sr-only" for="ticker-input">添加 ticker</label><input id="ticker-input" autocomplete="off" spellcheck="false" placeholder="添加 Ticker，如 AAPL / VOO" maxlength="150"><button type="submit" class="secondary">添加</button></form><span id="count" class="count"></span><div class="views" aria-label="指标视图"><button data-view="all" aria-pressed="true">全部指标</button><button data-view="market" aria-pressed="false">行情与估值</button><button data-view="financial" aria-pressed="false">季度财务</button></div></div>
+    <div class="data-strip"><span id="load-status" role="status" aria-live="polite">正在读取自选股…</span><span>每 60 秒自动刷新 · 增长率：同比 · 财季：最近已披露 · 金额按原币种</span></div>
+    <div id="feedback" role="alert" hidden></div>
+    <div class="table-shell" tabindex="0" aria-label="自选股指标表，可横向滚动"><table id="watchlist"><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
+    <div class="table-footer"><span>点击行查看数据日期、来源与计算依据。</span><span>成交量比使用此前 10 个完整交易日，盘中待收盘。</span></div>
+    <div class="coverage-note"><strong>免费数据的边界</strong><p>数据通过 Yahoo Finance 读取，用于本机个人研究；行情可能延迟。分析师预期可能采用调整后 EPS。NTM P/E 在未来四季预期不完整时显示缺失。公司财务与 ETF 指标分开处理。</p><a href="https://ranaroussi.github.io/yfinance/" target="_blank" rel="noreferrer">数据来源与使用范围</a></div>
+  </main>
+  <dialog id="detail-dialog"><div class="dialog-top"><div><div class="eyebrow">DATA RECORD</div><h2 id="detail-title"></h2></div><button class="icon-button" data-close aria-label="关闭详情">×</button></div><div id="detail-content"></div></dialog>
+  <dialog id="method-dialog"><div class="dialog-top"><div><div class="eyebrow">METHODOLOGY</div><h2>指标口径</h2></div><button class="icon-button" data-close aria-label="关闭指标说明">×</button></div><div class="method-content">
+    <p>“本季度 / Q0”指最近已披露财季；“上季度 / Q−1”指紧接着的上一财季。各公司的财年可能不同，详情中提供财季结束日期。预测 Q0 是供应商的当前预测财季，与最近披露财季可能不同。</p>
+    <dl><dt>Market Cap / Last Price / 52W High / Low</dt><dd>Yahoo 的公司市值、常规交易时段最近价和 52 周高低点。ETF 不用资产规模替代市值；盘后价格不混入 Last Price。</dd>
+    <dt>Diluted EPS</dt><dd>Yahoo 季度利润表的 DilutedEPS，通常是 GAAP 稀释 EPS。预测 EPS 为分析师平均预期，可能采用调整后口径，不直接与实际值作 beat/miss 比较。</dd>
+    <dt>P/E LTM / NTM</dt><dd>LTM = 最近价格 ÷ Yahoo 的 trailingEps；供应商 EPS 口径可能与表中 GAAP EPS 不同。EPS ≤ 0 时不适用。NTM 要求未来连续四个财季的同口径预期，不用全年 forwardPE 代替。报价币种和 EPS 币种不一致时不直接相除。</dd>
+    <dt>10 日均量与量比</dt><dd>比较日以前的 10 个完整交易日成交股数均值。量比 = 比较日完整成交量 ÷ 此前均量。盘中不把累计成交量与完整日均量比较；非交易日使用最近交易日并注明日期。日线设置 auto_adjust=False，不做股息总回报复权；拆股调整遵循 Yahoo。</dd>
+    <dt>Revenue / Total Debt / Free Cash Flow</dt><dd>营收和 FCF 使用单季数；债务使用财季末存量。Total Debt 使用供应商字段，跨公司的租赁负债口径可能不同。FCF = 单季经营现金流 − 单季资本支出（支出取正数），为计算的非 GAAP 指标。</dd>
+    <dt>增长率 Q0 / Q−1</dt><dd>默认同比：本期 ÷ 上年同期 − 1。基期为零或负值时显示原因。上年同期按财季末日期匹配（允许最多 15 天偏差）；缺少该期数据时不使用邻近季替代。Yahoo 免费历史长度有限，上季度同比可能缺失。</dd></dl>
+    <p>所有缓存保存在本机；页面显示实际检索时间和报价时间。免费源不保证实时或完整，SEC 原始报告入口用于核对。当前网络测试 SEC 接口返回 403，因此第一版财务来源明确显示为 Yahoo 聚合值。</p>
+  </div></dialog>
+</body></html>

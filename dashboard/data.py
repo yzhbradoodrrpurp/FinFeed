@@ -23,8 +23,9 @@ YAHOO_CACHE = tempfile.TemporaryDirectory(prefix="finfeed-yahoo-")
 yf.set_tz_cache_location(YAHOO_CACHE.name)
 yf.config.debug.hide_exceptions = False
 yf.config.network.retries = 1
-# YfData shares one cookie/crumb pair across threads. Serialize provider access.
-LIMIT = threading.Semaphore(1)
+# yfinance protects cookie/crumb setup with its own lock. Bound concurrent
+# network work; keep a Gunicorn thread available for state/auth requests.
+LIMIT = threading.Semaphore(3)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60
@@ -191,7 +192,9 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     else:
         info = load("证券信息", item.get_info, {}) or {}
     security_info = deepcopy(info)
-    history = load("日线", lambda: item.history(period="1y", auto_adjust=False, actions=True,
+    # 52-week bounds come from chart metadata. Volume needs only 11 daily bars;
+    # avoid downloading a whole year on every minute refresh.
+    history = load("日线", lambda: item.history(period="1mo", auto_adjust=False, actions=True,
                                               raise_errors=True, timeout=15), None)
     # quoteSummary can return {} after logging HTTP 401 without raising.
     # Chart metadata uses an independent endpoint and still identifies securities.

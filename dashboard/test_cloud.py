@@ -15,6 +15,20 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_initial_state_returns_only_tracked_current_snapshots_without_provider(self):
+        from data import SCHEMA_VERSION
+        self.store.update_state({"initialize": True, "watchlist": ["AAPL", "OLD"], "positions": [{"ticker": "VOO", "quantity": 1, "averageCost": 10, "currency": "USD"}]})
+        for symbol, version in (("AAPL", SCHEMA_VERSION), ("VOO", SCHEMA_VERSION), ("OLD", 0), ("OTHER", SCHEMA_VERSION)):
+            self.store.set_cache("quote:" + symbol, {"ticker": symbol, "schema_version": version, "metrics": {"price": {"value": 100}}})
+        self.assertEqual(self.client.get("/api/state").status_code, 401)
+        self.enroll()
+        with patch("cloud.security") as provider:
+            response = self.client.get("/api/state")
+            provider.assert_not_called()
+        self.assertEqual(set(response.json["quotes"]), {"AAPL", "VOO"})
+        self.assertTrue(response.json["quotes"]["AAPL"]["cached"])
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

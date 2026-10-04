@@ -157,7 +157,7 @@ async function getRecord(ticker,refresh=false){
   return response.json();
 }
 function pump(){
-  while(running<2&&queue.length){const task=queue.shift();running++;render();getRecord(task.ticker,task.refresh).then(record=>{if(trackedTickers().includes(task.ticker))records.set(task.ticker,record);}).catch(error=>{if(trackedTickers().includes(task.ticker)){const previous=records.get(task.ticker);records.set(task.ticker,previous?{...previous,stale:true,refresh_error:error.message}:{ticker:task.ticker,name:task.ticker,metrics:{},errors:[error.message],sources:{}});}}).finally(()=>{running--;render();pump();});}
+  while(running<3&&queue.length){const task=queue.shift();running++;render();getRecord(task.ticker,task.refresh).then(record=>{if(trackedTickers().includes(task.ticker))records.set(task.ticker,record);}).catch(error=>{if(trackedTickers().includes(task.ticker)){const previous=records.get(task.ticker);records.set(task.ticker,previous?{...previous,stale:true,refresh_error:error.message}:{ticker:task.ticker,name:task.ticker,metrics:{},errors:[error.message],sources:{}});}}).finally(()=>{running--;render();pump();});}
 }
 function load(tickersToLoad,refresh=false){queue.push(...tickersToLoad.map(ticker=>({ticker,refresh})));pump();}
 function refreshWatchlist(){
@@ -249,6 +249,7 @@ async function initializeState(){
     let state=data.state;
     if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
     tickers=state.watchlist;holdings=state.positions;
+    for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
     render();load(trackedTickers());
     document.querySelector("main").inert=false;
     setInterval(refreshWatchlist,60_000);

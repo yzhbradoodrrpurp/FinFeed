@@ -22,7 +22,7 @@ from webauthn.helpers.structs import (
 )
 
 from cloud_store import Store, digest
-from data import security
+from data import security, SCHEMA_VERSION
 from state import SYMBOL
 
 ROOT = Path(__file__).resolve().parent
@@ -273,7 +273,11 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/api/state")
     def state_read():
-        return jsonify(state=database.read_state())
+        state = database.read_state()
+        symbols = list(dict.fromkeys(state["watchlist"] + [p["ticker"] for p in state["positions"]])) if state else []
+        snapshots = database.get_cached_quotes(symbols)
+        return jsonify(state=state, quotes={symbol: record for symbol, record in snapshots.items()
+                                           if record.get("schema_version") == SCHEMA_VERSION})
 
     @app.put("/api/state")
     def state_write():

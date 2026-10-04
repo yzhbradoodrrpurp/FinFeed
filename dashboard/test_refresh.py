@@ -1,11 +1,47 @@
 """Refresh cadence and valuation must not silently refetch daily fundamentals."""
 import unittest
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 import pandas as pd
 import data
 
 
 class RefreshCases(unittest.TestCase):
+    def test_provider_requests_overlap_but_never_exceed_three(self):
+        release = threading.Event()
+        three_entered = threading.Event()
+        guard = threading.Lock()
+        active = 0
+        peak = 0
+        calls = 0
+
+        def fetch(symbol, saved, estimate_store):
+            nonlocal active, peak, calls
+            with guard:
+                active += 1
+                calls += 1
+                peak = max(peak, active)
+                if active == 3:
+                    three_entered.set()
+            release.wait(3)
+            with guard:
+                active -= 1
+            return {"ticker": symbol, "metrics": {"price": {"value": 100}}}
+
+        store = MagicMock()
+        store.get_cache.return_value = None
+        with patch.object(data, 'fetch_security', side_effect=fetch), ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(data.security, symbol, store=store) for symbol in ('QA1', 'QA2', 'QA3', 'QA4')]
+            try:
+                self.assertTrue(three_entered.wait(2), 'Requests must overlap instead of serializing')
+                self.assertEqual(calls, 3, 'Fourth request must wait for the provider limit')
+            finally:
+                release.set()
+            self.assertTrue(all(f.result(timeout=3)['metrics']['price']['value'] == 100 for f in futures))
+        self.assertEqual(peak, 3)
+        self.assertEqual(calls, 4)
+
     def setUp(self):
         alpha_patch = patch.object(data, "estimate_data", return_value=None)
         alpha_patch.start(); self.addCleanup(alpha_patch.stop)
@@ -38,6 +74,7 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(self.item.get_info.call_count, 1)
         self.assertEqual(second['metrics']['pe_quarter']['value'], 15)
         self.assertEqual(second['financial_fetched_at'], first['financial_fetched_at'])
+        self.assertEqual(self.item.history.call_args.kwargs['period'], '1mo')
 
     def test_empty_info_uses_chart_metadata_and_still_fetches_financials(self):
         self.item.get_info.return_value = {}

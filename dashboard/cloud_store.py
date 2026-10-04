@@ -139,6 +139,17 @@ class Store:
             self.execute(connection, "INSERT INTO cache VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated=excluded.updated",
                          (key, json.dumps(payload, ensure_ascii=False, allow_nan=False), time.time()))
 
+    def get_cached_quotes(self, symbols: list[str]) -> dict:
+        """Read tracked snapshots in one database round trip, without a provider call."""
+        if not symbols:
+            return {}
+        keys = ["quote:" + symbol for symbol in symbols]
+        with self.transaction() as connection:
+            rows = self.execute(connection, "SELECT id,payload,updated FROM cache WHERE id IN (" + ",".join("?" for _ in keys) + ")", keys).fetchall()
+        return {row["id"][6:]: {**json.loads(row["payload"]), "cached": True,
+                                "cache_age_seconds": round(max(0, time.time() - row["updated"]))}
+                for row in rows}
+
     def update_state(self, patch: dict, *, require_empty: bool = False) -> dict:
         if not isinstance(patch, dict) or set(patch) - {"watchlist", "positions", "initialize"}:
             raise ValueError("无效保存字段")

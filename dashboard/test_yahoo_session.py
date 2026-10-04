@@ -2,6 +2,7 @@
 import os
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import yahoo_session
 import data
@@ -50,7 +51,7 @@ class SessionCases(unittest.TestCase):
             self.assertTrue(data.financial_due({"yahoo_session": {"mode": "login"}, "financial_checked_at": "2026-10-04T02:00:00+00:00"}, "2026-10-04T02:01:00+00:00"))
 
     def test_proxy_is_yahoo_only_and_credentials_are_not_returned(self):
-        with patch.dict(os.environ, {"YAHOO_PROXY_URL": "socks5h://user:private-password@proxy.example:1080"}), patch.object(yahoo_session.yf.config.network, "proxy", None):
+        with patch.dict(os.environ, {"YAHOO_PROXY_URL": "socks5h://user:private-password@proxy.example:1080"}), patch.object(yahoo_session.yf, "config", SimpleNamespace(network=SimpleNamespace(proxy=None))):
             yahoo_session.configure_transport()
             self.assertEqual(yahoo_session.yf.config.network.proxy, os.environ["YAHOO_PROXY_URL"])
             result = yahoo_session.initialize()

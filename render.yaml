@@ -4,8 +4,8 @@ services:
     runtime: python
     plan: free
     rootDir: dashboard
-    buildCommand: pip install -r requirements-cloud.txt
-    startCommand: gunicorn 'cloud:create_app()' --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180
+    buildCommand: python build_cloud.py
+    startCommand: python start_cloud.py
     healthCheckPath: /api/health
     autoDeployTrigger: commit
     envVars:

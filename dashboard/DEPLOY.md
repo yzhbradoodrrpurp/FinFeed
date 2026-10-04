@@ -16,8 +16,8 @@
 | --- | --- |
 | Runtime | Python |
 | Root Directory | `dashboard` |
-| Build Command | `pip install -r requirements-cloud.txt` |
-| Start Command | `gunicorn 'cloud:create_app()' --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180` |
+| Build Command | `python build_cloud.py` |
+| Start Command | `python start_cloud.py` |
 | Health Check | `/api/health` |
 | Plan | Free |
 | Auto Deploy | On Commit |
@@ -30,6 +30,8 @@
 - `ALPHAVANTAGE_API_KEY`：可选备用数据源。所有指标优先 Yahoo/yfinance，下一财季预测缺失时才尝试备用源。
 - `YAHOO_SESSION_MODE`：默认 `anonymous`，在服务器建立独立匿名 Cookie/Crumb；如需使用已有登录凭据，显式设为 `login` 后重新部署。
 - `YAHOO_PROXY_URL`：可选 HTTP(S) / SOCKS5(H) 出站代理，仅作用于 yfinance。将完整地址和必要认证信息保存到 Render 私密环境变量；不要提交到仓库或放进前端。Render 必须能连接到该地址；本机的 `127.0.0.1:7890` 不能直接使用。代理供应商须允许此用途并遵守数据源请求限制。启用代理后会重新检查财务缓存。
+- Clash/Mihomo 订阅：可将一个已选节点整理成 `{"proxies":[节点配置]}`，Base64 编码后存入 `MIHOMO_CONFIG_B64` 私密环境变量。只复制所选节点，不复制整个订阅链接。部署使用 `python build_cloud.py` 和 `python start_cloud.py`，经 SHA-256 校验的官方 Mihomo 仅监听 `127.0.0.1:17890`，不开放控制面板或公网代理；只有 yfinance 流量使用它。Base64 不是加密，变量仍属于秘密。
+- 节点默认必须通过 TLS 证书校验。只有账户本人明确批准风险后才能配置 `MIHOMO_ALLOW_INSECURE_TLS=true` 并使用含 `skip-cert-verify: true` 的节点；Yahoo HTTPS 证书校验始终保留。
 - `YAHOO_COOKIE_T`、`YAHOO_COOKIE_Y`：可选 Yahoo 登录会话，必须同时设置，且只在 `YAHOO_SESSION_MODE=login` 时由服务器通过 yfinance `Auth.set_login_cookies` 使用。每个进程验证一次；验证失败不停止其他可用数据请求。登录不保证恢复预测接口权限。
 
 Yahoo Cookie 相当于账户登录凭据。由账户本人在 Yahoo Finance 登录后取得，在 Render 私密环境变量中配置；不要发送到聊天、提交到 Git 或放在前端。只在明确同意将会话交给 Render 后配置。过期时本人更新并重新部署；移除这两个变量并重新部署即可恢复匿名模式。匿名与登录模式切换会重新检查当日资料和预测，正常运行仍遵守每天一次的刷新频率。

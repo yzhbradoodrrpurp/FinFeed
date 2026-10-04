@@ -287,8 +287,8 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         return result
     if m["market_cap"].get("value") is None:
         # Shares endpoint is independent of quoteSummary; refresh at most daily.
-        shares = (saved or {}).get("shares_outstanding")
-        shares_period = (saved or {}).get("shares_period")
+        shares = (saved or {}).get("shares_outstanding") if not financial_due(saved, started) else None
+        shares_period = (saved or {}).get("shares_period") if shares is not None else None
         if financial_due(saved, started):
             share_frame = load("流通股数", lambda: item.get_shares_full(start=(datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()), None)
             if share_frame is not None and not share_frame.empty:

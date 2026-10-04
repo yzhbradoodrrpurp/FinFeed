@@ -20,7 +20,7 @@ LIMIT = threading.Semaphore(2)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def epoch(value):
@@ -95,7 +95,7 @@ def reuse_financial(result, saved):
     for key in FINANCIAL_KEYS:
         if key in saved.get("metrics", {}):
             result["metrics"][key] = deepcopy(saved["metrics"][key])
-    for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at"):
+    for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at", "reported_shares"):
         if key in saved:
             result[key] = deepcopy(saved[key])
     result.setdefault("financial_fetched_at", saved.get("fetched_at"))
@@ -146,6 +146,12 @@ def quarterly_pe(result, eps, forecast=False):
 
 def revalue(result, estimate_store=None):
     m = result["metrics"]
+    shares = result.get("reported_shares", {})
+    if m.get("market_cap", {}).get("value") is None and shares.get("value") and m.get("price", {}).get("value"):
+        m["market_cap"] = field(m["price"]["value"] * shares["value"], result.get("quote_date"),
+                                "估算市值 = 最近价格 × 最近财报期末普通股在外股数；股数并非实时",
+                                shares.get("source"), currency=result.get("currency"),
+                                inputs={"price": m["price"]["value"], "shares": shares["value"], "shares_period": shares.get("period")})
     m["forward_eps_next"] = next_forecast(result, estimate_store)
     m["pe_quarter"] = quarterly_pe(result, m.get("eps_q0", {}))
     m["pe_forward_quarter"] = quarterly_pe(result, m["forward_eps_next"], forecast=True)
@@ -271,6 +277,12 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     for label, frame in (("利润表", income), ("资产负债表", balance), ("现金流量表", cashflow)):
         if frame is None or frame.empty:
             errors.append(f"{label}未返回数据")
+    # Use disclosed ordinary shares only for US quote/financial currency pairs;
+    # never substitute diluted weighted-average EPS shares for outstanding shares.
+    if currency == "USD" and fin_currency == "USD" and info.get("exchangeName") in ("NMS", "NYQ", "NGM", "NCM", "ASE", "PCX"):
+        reported_shares = frame_values(balance, ["OrdinarySharesNumber"], None, balance_url)
+        if reported_shares:
+            result["reported_shares"] = reported_shares[max(reported_shares)]
     eps = frame_values(income, ["DilutedEPS"], fin_currency, financial_url)
     revenue = frame_values(income, ["TotalRevenue"], fin_currency, financial_url)
     debt = frame_values(balance, ["TotalDebt"], fin_currency, balance_url)

@@ -42,9 +42,12 @@ class RefreshCases(unittest.TestCase):
         self.item.get_info.return_value = {}
         self.item.get_history_metadata.return_value = {
             'instrumentType': 'EQUITY', 'currency': 'USD', 'longName': 'Test Company',
-            'regularMarketPrice': 100, 'regularMarketTime': pd.Timestamp('2026-10-02T20:00:00Z'),
+            'exchangeName': 'NMS', 'regularMarketPrice': 100, 'regularMarketTime': pd.Timestamp('2026-10-02T20:00:00Z'),
             'fiftyTwoWeekHigh': 110, 'fiftyTwoWeekLow': 60}
+        self.item.get_balance_sheet.return_value.loc['OrdinarySharesNumber'] = 50
         record = self.fetch('2026-10-04T02:00:00+00:00')
+        self.assertEqual(record['metrics']['market_cap']['value'], 5000)
+        self.assertEqual(record['metrics']['market_cap']['inputs']['shares_period'], '2026-06-30')
         self.assertEqual(record['quote_type'], 'EQUITY')
         self.assertEqual(record['name'], 'Test Company')
         self.assertEqual(record['metrics']['high_52w']['value'], 110)

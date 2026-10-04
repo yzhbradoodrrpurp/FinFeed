@@ -38,3 +38,20 @@ main{max-width:none;padding:20px 20px 28px}
   #watchlist .sticky{min-width:var(--frozen)}
   #watchlist .security-name{max-width:105px}
 }
+
+/* Private account and passkey entry. */
+.login-main{display:grid;place-items:center;min-height:calc(100vh - 100px);padding:36px 20px}
+.login-card{width:min(100%,480px);background:#fff;border:1px solid var(--line,#d4e1e9);border-radius:18px;padding:36px;box-shadow:0 12px 40px #152b3d0a}
+.login-card h1{font-size:30px;line-height:1.3;margin:14px 0 20px}
+.login-card p{line-height:1.7}
+.login-card input{width:100%;margin:8px 0}
+.login-card .primary{width:100%;margin-top:20px}
+.login-hint{font-size:12px;color:#647b8d}
+#account-dialog{max-width:540px}
+#account-dialog p{line-height:1.6}
+#account-dialog hr{border:0;border-top:1px solid #d4e1e9;margin:24px 0}
+#account-dialog button{margin:5px 4px 5px 0}
+#account-dialog .dialog-heading{display:flex;align-items:center;justify-content:space-between}
+#account-button{margin-left:auto;font-size:12px;padding:7px 12px}
+.login-card form{display:block;width:100%}
+.login-card .primary{display:block;padding:14px 18px}

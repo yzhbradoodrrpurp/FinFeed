@@ -36,6 +36,8 @@ class Handler(SimpleHTTPRequestHandler):
         if host not in ("127.0.0.1", "localhost"):
             return self.send_json({"error": "仅支持本机访问"}, 403)
         url = urlsplit(self.path)
+        if url.path == "/api/auth/status":
+            return self.send_json({"cloud": False, "authenticated": True})
         if url.path == "/api/state":
             try:
                 return self.send_json({"state": read_state()})

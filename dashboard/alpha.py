@@ -1,6 +1,7 @@
 """Daily consensus estimate cache. Credentials never enter returned provenance."""
 import json
 import math
+import os
 import threading
 import urllib.parse
 import urllib.request
@@ -15,19 +16,24 @@ LOCK = threading.Lock()
 SOURCE = 'https://www.alphavantage.co/documentation/#earnings-estimates'
 
 
-def estimate_data(symbol, timestamp):
-    if not CONFIG.exists():
+def estimate_data(symbol, timestamp, store=None):
+    key = os.environ.get('ALPHAVANTAGE_API_KEY')
+    if not key and CONFIG.exists():
+        key = json.loads(CONFIG.read_text()).get('api_key')
+    if not key:
         return None
     with LOCK:
         CACHE.mkdir(parents=True, exist_ok=True)
         path = CACHE / f'{symbol}.json'
-        saved = json.loads(path.read_text()) if path.exists() else {}
+        stored = store.get_cache('alpha:' + symbol) if store else None
+        saved = stored[0] if stored else (json.loads(path.read_text()) if not store and path.exists() else {})
         day = datetime.fromisoformat(timestamp).astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()
         budget_day = timestamp[:10]  # Provider quota guard uses UTC; response limits are also handled.
         if saved.get('checked_day') == day:
             return saved
         budget_path = CACHE / 'usage.json'
-        budget = json.loads(budget_path.read_text()) if budget_path.exists() else {}
+        budget_saved = store.get_cache('alpha:usage') if store else None
+        budget = budget_saved[0] if budget_saved else (json.loads(budget_path.read_text()) if not store and budget_path.exists() else {})
         if budget.get('day') != budget_day:
             budget = {'day': budget_day, 'calls': 0}
         error = None
@@ -35,11 +41,11 @@ def estimate_data(symbol, timestamp):
         if budget['calls'] >= 25:
             error = 'Alpha Vantage 本机每日 25 次额度已用完'
         else:
-            key = json.loads(CONFIG.read_text()).get('api_key')
-            if not key:
-                return None
             budget['calls'] += 1
-            budget_path.write_text(json.dumps(budget))
+            if store:
+                store.set_cache('alpha:usage', budget)
+            else:
+                budget_path.write_text(json.dumps(budget))
             url = 'https://www.alphavantage.co/query?' + urllib.parse.urlencode({'function': 'EARNINGS_ESTIMATES', 'symbol': symbol, 'apikey': key})
             try:
                 with urllib.request.urlopen(url, timeout=25) as response:
@@ -53,9 +59,12 @@ def estimate_data(symbol, timestamp):
                 error = f'Alpha Vantage 读取失败：{type(exc).__name__}'
         result = {'checked_day': day, 'fetched_at': timestamp if payload is not None else saved.get('fetched_at'),
                   'data': payload if payload is not None else saved.get('data'), 'error': error}
-        temporary = path.with_suffix('.tmp')
-        temporary.write_text(json.dumps(result, allow_nan=False))
-        temporary.replace(path)
+        if store:
+            store.set_cache('alpha:' + symbol, result)
+        else:
+            temporary = path.with_suffix('.tmp')
+            temporary.write_text(json.dumps(result, allow_nan=False))
+            temporary.replace(path)
         return result
 
 

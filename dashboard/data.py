@@ -104,7 +104,7 @@ def reuse_financial(result, saved):
         result["trailing_eps"] = saved.get("metrics", {}).get("pe_ltm", {}).get("inputs", {}).get("trailing_eps")
 
 
-def next_forecast(result):
+def next_forecast(result, estimate_store=None):
     """Match the next quarter after the latest disclosed quarter, never skip gaps."""
     q0 = result.get("quarter_0")
     if not q0:
@@ -120,7 +120,7 @@ def next_forecast(result):
         forecast["basis"] = "Yahoo：紧接最近已披露财季的分析师 EPS 均值；可能为调整后口径"
         return forecast
     if result.get("currency") == "USD" and result.get("financial_currency") == "USD":
-        alpha = estimate_data(result["ticker"], result["fetched_at"])
+        alpha = estimate_data(result["ticker"], result["fetched_at"], store=estimate_store)
         if alpha:
             result["estimates_fetched_at"] = alpha.get("fetched_at")
             result["sources"]["estimates_alpha"] = ALPHA_SOURCE
@@ -145,16 +145,16 @@ def quarterly_pe(result, eps, forecast=False):
                  reason=reason, inputs={"price": price, "quarter_eps": value, "annualization_factor": 4, "annualized_eps": annualized}, quote_date=result.get("quote_date"), estimate_stale=eps.get("estimate_stale", False), estimate_fetched_at=eps.get("estimate_fetched_at"))
 
 
-def revalue(result):
+def revalue(result, estimate_store=None):
     m = result["metrics"]
-    m["forward_eps_next"] = next_forecast(result)
+    m["forward_eps_next"] = next_forecast(result, estimate_store)
     m["pe_quarter"] = quarterly_pe(result, m.get("eps_q0", {}))
     m["pe_forward_quarter"] = quarterly_pe(result, m["forward_eps_next"], forecast=True)
     result["valuation_at"] = result["fetched_at"]
     return result
 
 
-def fetch_security(symbol, saved=None):
+def fetch_security(symbol, saved=None, estimate_store=None):
     started = now()
     item = yf.Ticker(symbol)
     errors = []
@@ -234,7 +234,7 @@ def fetch_security(symbol, saved=None):
     if not financial_due(saved, started):
         reuse_financial(result, saved)
         result["financial_checked_at"] = saved.get("financial_checked_at") or saved.get("fetched_at")
-        return revalue(result)
+        return revalue(result, estimate_store)
     financial_error_start = len(errors)
     result["financial_checked_at"] = started
     result["financial_fetched_at"] = started
@@ -288,21 +288,24 @@ def fetch_security(symbol, saved=None):
     else:
         result["financial_stale"] = bool(financial_errors)
         result["financial_errors"] = financial_errors
-    return revalue(result)
+    return revalue(result, estimate_store)
 
 
-def security(symbol, refresh=False):
+def security(symbol, refresh=False, store=None):
     with LOCK_GUARD:
         lock = LOCKS.setdefault(symbol, threading.Lock())
     with lock:
         path = CACHE / f"{symbol}.json"
         saved = None
-        if path.exists():
+        stored = store.get_cache("quote:" + symbol) if store else None
+        if stored:
+            saved = stored[0]
+        elif not store and path.exists():
             try:
                 saved = json.loads(path.read_text())
             except (ValueError, OSError):
                 pass
-        age = time.time() - path.stat().st_mtime if saved else float("inf")
+        age = time.time() - (stored[1] if stored else path.stat().st_mtime) if saved else float("inf")
         if saved and saved.get("schema_version") not in (3, SCHEMA_VERSION):
             saved = None
             age = float("inf")
@@ -311,12 +314,15 @@ def security(symbol, refresh=False):
             return {**saved, "cached": True, "cache_age_seconds": round(age)}
         try:
             with LIMIT:
-                result = fetch_security(symbol, saved)
+                result = fetch_security(symbol, saved, estimate_store=store)
             if result["metrics"]["price"]["value"] is None and saved:
                 return {**saved, "cached": True, "stale": True, "refresh_error": "行情读取失败，保留上次快照", "cache_age_seconds": round(age)}
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(result, ensure_ascii=False, allow_nan=False))
-            tmp.replace(path)
+            if store:
+                store.set_cache("quote:" + symbol, result)
+            else:
+                tmp = path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(result, ensure_ascii=False, allow_nan=False))
+                tmp.replace(path)
             return {**result, "cached": False}
         except Exception as exc:
             if saved:

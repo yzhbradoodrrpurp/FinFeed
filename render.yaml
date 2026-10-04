@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: finfeed-private
+    runtime: python
+    plan: free
+    rootDir: dashboard
+    buildCommand: pip install -r requirements-cloud.txt
+    startCommand: gunicorn 'cloud:create_app()' --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.17
+      - key: DATABASE_URL
+        sync: false
+      - key: FINFEED_BOOTSTRAP_TOKEN
+        sync: false

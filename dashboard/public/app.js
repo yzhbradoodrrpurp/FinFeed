@@ -26,6 +26,7 @@ const legacyState={watchlist:[...tickers],positions:[...holdings]};
 let hasLegacyWatchlist=false;
 try{hasLegacyWatchlist=localStorage.getItem(STORAGE)!==null;}catch{}
 function mirrorState(state){
+  if(FinFeedAuth.cloud)return;
   try{
     if(!localStorage.getItem("finfeed.legacy-backup.v1"))localStorage.setItem("finfeed.legacy-backup.v1",JSON.stringify(legacyState));
     localStorage.setItem(STORAGE,JSON.stringify(state.watchlist));
@@ -102,9 +103,9 @@ let stateWrites=Promise.resolve();
 function persistState(patch){
   const payload=JSON.stringify(patch);
   const write=stateWrites.then(async()=>{
-    const response=await fetch("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:payload});
+    const response=await FinFeedAuth.request("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:payload});
     const data=await response.json();
-    if(!response.ok)throw new Error(data.error||"本机文件保存失败");
+    if(!response.ok)throw new Error(data.error||"记录保存失败");
     mirrorState(data.state);return data.state;
   });
   stateWrites=write.catch(()=>{});return write;
@@ -120,7 +121,7 @@ function switchSurface(next){
   renderHoldings();
 }
 function feedback(s){el("feedback").textContent=s;el("feedback").hidden=!s;}
-function save(){persistState({watchlist:tickers}).catch(error=>feedback(`自选股尚未保存到文件：${error.message}。请重试操作。`));}
+function save(){persistState({watchlist:tickers}).catch(error=>feedback(`自选股尚未保存：${error.message}。请重试操作。`));}
 function renderOrder(){
   el("order-list").innerHTML=tickers.map((ticker,index)=>`<li draggable="true" data-order-ticker="${escapeHTML(ticker)}"><span class="drag-handle" aria-hidden="true">⠿</span><span class="order-security"><strong>${escapeHTML(ticker)}</strong><span>${escapeHTML(records.get(ticker)?.name||ticker)}</span></span><span class="order-actions"><button class="secondary" data-move="up" data-order-symbol="${escapeHTML(ticker)}" aria-label="上移 ${escapeHTML(ticker)}" ${index===0?"disabled":""}>上移</button><button class="secondary" data-move="down" data-order-symbol="${escapeHTML(ticker)}" aria-label="下移 ${escapeHTML(ticker)}" ${index===tickers.length-1?"disabled":""}>下移</button></span></li>`).join("")||'<li class="order-empty">尚未添加标的。</li>';
 }
@@ -172,7 +173,7 @@ function render(){
   renderHoldings();
 }
 async function getRecord(ticker,refresh=false){
-  const response=await fetch(`/api/security/${encodeURIComponent(ticker)}${refresh?"?refresh=1":""}`);
+  const response=await FinFeedAuth.request(`/api/security/${encodeURIComponent(ticker)}${refresh?"?refresh=1":""}`);
   if(!response.ok)throw new Error(`读取失败 (${response.status})`);
   return response.json();
 }
@@ -262,26 +263,81 @@ if(document.modelContext?.registerTool){
 async function initializeState(){
   document.querySelector("main").inert=true;
   try{
-    const response=await fetch("/api/state");const data=await response.json();
-    if(!response.ok)throw new Error(data.error||"本机记录读取失败");
+    const auth=await FinFeedAuth.initialize();
+    el("account-button").hidden=!auth.cloud;
+    const response=await FinFeedAuth.request("/api/state");const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"记录读取失败");
     let state=data.state;
     const defaultFile=state&&JSON.stringify(state.watchlist)===JSON.stringify(DEFAULTS)&&!state.positions.length;
     let migrated=false;try{migrated=localStorage.getItem("finfeed.file-migrated.v1")==="true";}catch{}
     const customizedLegacy=hasLegacyWatchlist&&JSON.stringify(legacyState.watchlist)!==JSON.stringify(DEFAULTS)||legacyState.positions.length>0;
-    if(defaultFile&&!migrated&&customizedLegacy){
+    if(!auth.cloud&&defaultFile&&!migrated&&customizedLegacy){
       state=await persistState(legacyState);
       feedback("已从原浏览器记录恢复自选股、排序和持仓，并保存到本机文件。");
     }
-    if(!state)state=await persistState({initialize:true,...legacyState});
+    if(!state)state=await persistState({initialize:true,...(auth.cloud?{watchlist:[],positions:[]}:legacyState)});
     mirrorState(state);
     tickers=state.watchlist;holdings=state.positions;
     render();load(trackedTickers());
     document.querySelector("main").inert=false;
     setInterval(refreshWatchlist,60_000);
   }catch(error){
-    feedback(`本机记录加载失败：${error.message}。请重启服务后刷新页面。`);
+    feedback(`记录加载失败：${error.message}。请稍后刷新页面。`);
     document.querySelector("main").inert=false;
     document.querySelectorAll("main button, main input").forEach(control=>control.disabled=true);
   }
 }
-render();initializeState();
+initializeState();
+
+// Account actions are exposed only by the cloud service.
+let pendingImport=null;
+function accountFeedback(message){el("account-error").textContent=message;el("account-error").hidden=!message;}
+el("account-button").addEventListener("click",async()=>{
+  el("account-dialog").showModal();accountFeedback("");
+  try{
+    const response=await FinFeedAuth.request("/api/auth/passkeys");const data=await response.json();
+    if(!response.ok)throw new Error(data.error);
+    el("passkey-list").innerHTML=data.passkeys.map(p=>`<li>${escapeHTML(p.label)} · ${escapeHTML(new Date(p.created*1000).toLocaleDateString("zh-CN"))}</li>`).join("");
+  }catch(e){accountFeedback(FinFeedAuth.message(e));}
+});
+el("account-close").addEventListener("click",()=>el("account-dialog").close());
+el("logout").addEventListener("click",async()=>{
+  try{await FinFeedAuth.post("/api/auth/logout");location.replace("/login");}
+  catch(e){accountFeedback(FinFeedAuth.message(e));}
+});
+el("add-passkey").addEventListener("click",async()=>{
+  el("add-passkey").disabled=true;
+  try{await FinFeedAuth.passkey(true,"","备用 Passkey");accountFeedback("备用 Passkey 已绑定。");}
+  catch(e){accountFeedback(FinFeedAuth.message(e));}
+  finally{el("add-passkey").disabled=false;}
+});
+el("export-state").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify({watchlist:tickers,positions:holdings},null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob),link=document.createElement("a");
+  link.href=url;link.download="finfeed-private-records.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+el("choose-import").addEventListener("click",()=>el("import-state").click());
+el("import-state").addEventListener("change",async()=>{
+  pendingImport=null;el("import-preview").hidden=true;
+  try{
+    const file=el("import-state").files[0];if(!file)return;
+    if(file.size>65536)throw new Error("文件不能超过 64 KB");
+    const state=JSON.parse(await file.text());
+    if(!Array.isArray(state.watchlist)||!Array.isArray(state.positions)||state.watchlist.length>40||state.positions.length>40||state.watchlist.some(t=>typeof t!=="string"||!/^[A-Z0-9][A-Z0-9.^=-]{0,19}$/.test(t))||new Set(state.watchlist).size!==state.watchlist.length)throw new Error("文件中的自选股格式不正确");
+    state.positions.forEach(p=>FinFeedPositions.validate(p));
+    pendingImport={watchlist:state.watchlist,positions:state.positions};
+    el("import-summary").textContent=`将导入 ${state.watchlist.length} 个自选标的与 ${state.positions.length} 项持仓。现有云端记录会被替换，并保留历史备份。`;
+    el("import-preview").hidden=false;accountFeedback("");
+  }catch(e){accountFeedback(e.message||"无法读取导入文件");}
+  finally{el("import-state").value="";}
+});
+el("confirm-import").addEventListener("click",async()=>{
+  if(!pendingImport)return;el("confirm-import").disabled=true;
+  try{
+    const state=await persistState(pendingImport);
+    tickers=state.watchlist;holdings=state.positions;pendingImport=null;
+    el("import-preview").hidden=true;sortKey=null;queue=[];records.clear();cellValues.clear();cellFlashes.clear();
+    render();load(trackedTickers());accountFeedback("自选股与持仓已保存到云端。");
+  }catch(e){accountFeedback(e.message);}
+  finally{el("confirm-import").disabled=false;}
+});

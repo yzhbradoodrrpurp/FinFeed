@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><title>登录 · FinFeed</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/auth-client.js" defer></script><script src="/login.js" defer></script>
+</head><body class="login-page">
+  <header class="masthead"><a class="brand" href="/"><span class="brand-icon">F</span>FinFeed</a></header>
+  <main class="login-main"><section class="login-card">
+    <div class="eyebrow">YOUR PRIVATE DASHBOARD</div><h1>你的市场，自选与持仓。</h1>
+    <p id="login-description">使用 Passkey 验证身份，查看你的自选股和持仓。</p>
+    <form id="passkey-form">
+      <div id="setup-fields" hidden>
+        <label for="setup-code">首次绑定码</label>
+        <input id="setup-code" type="password" autocomplete="off" spellcheck="false" placeholder="输入你的私密绑定码">
+        <p class="login-hint">仅在首次绑定时使用。网站不会开放其他账户注册。</p>
+      </div>
+      <button id="passkey-submit" class="primary" type="submit" disabled>正在连接…</button>
+    </form>
+    <p id="login-error" class="feedback" role="alert" hidden></p>
+    <p class="login-hint">通过设备指纹、面容或系统解锁验证。生物信息不会上传到 FinFeed。</p>
+  </section></main>
+</body></html>

@@ -46,8 +46,7 @@
   <dialog id="account-dialog"><div class="dialog-heading"><h2>我的账户</h2><button id="account-close" class="secondary" aria-label="关闭账户窗口">关闭</button></div>
     <p>我的账户名称：<strong id="profile-name"></strong></p>
     <section id="invite-controls" hidden><h3>邀请朋友</h3><button id="create-invite" class="secondary">生成邀请码</button><p id="invite-result" hidden></p><p>邀请码限用一次，7 天后过期。请复制后发送给受邀人。</p></section>
-    <section id="admin-controls" hidden><h3>用户</h3><button id="reload-admin" class="secondary">刷新用户列表</button><div id="admin-accounts"></div></section>
-    <button id="add-passkey" class="secondary">添加备用 Passkey</button>
+    <section id="admin-controls" hidden><hr><h3>用户</h3><button id="reload-admin" class="secondary">刷新用户列表</button><div id="admin-accounts"></div></section>
     <hr><h3>自选股与持仓</h3><p>自选股顺序、数量和平均成本保存在私人数据库，可导出备份或导入记录文件。</p>
     <button id="export-state" class="secondary">导出记录</button><button id="choose-import" class="secondary">选择导入文件</button>
     <input id="import-state" type="file" accept="application/json,.json" hidden>

@@ -292,12 +292,6 @@ el("logout").addEventListener("click",async()=>{
   try{await FinFeedAuth.post("/api/auth/logout");location.replace("/login?manual=1");}
   catch(e){accountFeedback(FinFeedAuth.message(e));}
 });
-el("add-passkey").addEventListener("click",async()=>{
-  el("add-passkey").disabled=true;
-  try{await FinFeedAuth.passkey(true,"","备用 Passkey");accountFeedback("备用 Passkey 已绑定。");}
-  catch(e){accountFeedback(FinFeedAuth.message(e));}
-  finally{el("add-passkey").disabled=false;}
-});
 el("export-state").addEventListener("click",()=>{
   const blob=new Blob([JSON.stringify({watchlist:tickers,positions:holdings},null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob),link=document.createElement("a");
@@ -347,13 +341,13 @@ el("create-invite").addEventListener("click",async()=>{
 async function loadAdminAccounts(){
   const response=await FinFeedAuth.request("/api/admin/accounts"),data=await response.json();
   if(!response.ok)throw new Error(data.error);
-  el("admin-accounts").innerHTML=data.accounts.filter(a=>!a.disabled).map(a=>`<section class="admin-account"><strong>${escapeHTML(a.name)}${a.admin?" · 管理员":" · 普通用户"}</strong>${a.admin?"":`<button class="secondary" data-admin-action="${a.disabled?"restore-account":"delete-account"}" data-admin-id="${escapeHTML(a.id)}">${a.disabled?"恢复账户":"删除账户"}</button>`}<ul>${a.passkeys.map(k=>`<li>${escapeHTML(k.label)}${k.revoked?" · 已撤销":""} <button class="secondary" data-admin-action="${k.revoked?"restore-key":"delete-key"}" data-admin-id="${escapeHTML(k.id)}">${k.revoked?"恢复 Passkey":"删除 Passkey"}</button></li>`).join("")}</ul></section>`).join("");
+  el("admin-accounts").innerHTML=data.accounts.filter(a=>!a.disabled).map(a=>`<section class="admin-account"><strong>${escapeHTML(a.name)}${a.admin?" · 管理员":" · 普通用户"}</strong>${a.admin?"":`<button class="secondary" data-admin-action="delete-account" data-admin-id="${escapeHTML(a.id)}">删除账户</button>`}</section>`).join("");
 }
 el("reload-admin").addEventListener("click",()=>loadAdminAccounts().catch(e=>accountFeedback(e.message)));
 el("admin-accounts").addEventListener("click",async event=>{
   const button=event.target.closest("[data-admin-action]");if(!button)return;
   const action=button.dataset.adminAction,id=encodeURIComponent(button.dataset.adminId),isAccount=action.endsWith("account"),restore=action.startsWith("restore");
-  if(!confirm(restore?"恢复此账户或 Passkey 的访问权限？":"确认删除？账户记录或 Passkey 会停用，可由管理员恢复；该账户的登录会话会退出。"))return;
+  if(!confirm(restore?"恢复此账户或 Passkey 的访问权限？":"确认删除此账户？该账户将无法登录，其所有 Passkey 在本站失效，现有登录会话会退出。"))return;
   button.disabled=true;
   try{
     const url=`/api/admin/${isAccount?"accounts":"passkeys"}/${id}${restore?"/restore":""}`;

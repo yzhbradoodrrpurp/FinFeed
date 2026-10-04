@@ -251,10 +251,12 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def login_options():
         json_body()
         with database.transaction() as connection:
-            if not database.credentials(connection):
+            credentials = database.credentials(connection)
+            if not credentials:
                 abort(400, description="请先绑定第一把 Passkey")
-            # Discoverable credential: no public list of credential identifiers.
+            # Limit the authenticator picker to credentials of active accounts.
             options = generate_authentication_options(rp_id=parsed.hostname,
+                        allow_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(key["id"])) for key in credentials],
                         user_verification=UserVerificationRequirement.REQUIRED)
             token = database.flow(connection, {"kind": "login", "challenge": bytes_to_base64url(options.challenge)})
         response = jsonify(json.loads(options_to_json(options)))

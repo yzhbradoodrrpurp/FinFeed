@@ -273,6 +273,9 @@ class CloudCases(unittest.TestCase):
             verify.assert_not_called()
         self.assertEqual(self.client.post('/api/admin/passkeys/'+key+'/restore',json={},headers=HEADERS).status_code,200)
         self.assertEqual(self.client.delete('/api/admin/accounts/'+other_id,json={},headers=HEADERS).status_code,200)
+        options = other.post('/api/auth/login/options',json={},headers=HEADERS).json
+        self.assertNotIn(key, {k['id'] for k in options['allowCredentials']})
+        self.assertIn(bytes_to_base64url(b'credential'), {k['id'] for k in options['allowCredentials']})
         self.assertEqual(self.client.get('/api/state?user='+other_id).status_code,404)
         self.assertNotIn(other_id,{a['id'] for a in self.client.get('/api/accounts').json['accounts']})
         listed=self.client.get('/api/admin/accounts').json['accounts']

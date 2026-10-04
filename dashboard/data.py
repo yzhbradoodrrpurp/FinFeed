@@ -295,17 +295,11 @@ def security(symbol, refresh=False, store=None):
     with LOCK_GUARD:
         lock = LOCKS.setdefault(symbol, threading.Lock())
     with lock:
-        path = CACHE / f"{symbol}.json"
-        saved = None
-        stored = store.get_cache("quote:" + symbol) if store else None
-        if stored:
-            saved = stored[0]
-        elif not store and path.exists():
-            try:
-                saved = json.loads(path.read_text())
-            except (ValueError, OSError):
-                pass
-        age = time.time() - (stored[1] if stored else path.stat().st_mtime) if saved else float("inf")
+        if store is None:
+            raise ValueError("行情缓存需要私人数据库")
+        stored = store.get_cache("quote:" + symbol)
+        saved = stored[0] if stored else None
+        age = time.time() - stored[1] if stored else float("inf")
         if saved and saved.get("schema_version") not in (3, SCHEMA_VERSION):
             saved = None
             age = float("inf")
@@ -317,12 +311,7 @@ def security(symbol, refresh=False, store=None):
                 result = fetch_security(symbol, saved, estimate_store=store)
             if result["metrics"]["price"]["value"] is None and saved:
                 return {**saved, "cached": True, "stale": True, "refresh_error": "行情读取失败，保留上次快照", "cache_age_seconds": round(age)}
-            if store:
-                store.set_cache("quote:" + symbol, result)
-            else:
-                tmp = path.with_suffix(".tmp")
-                tmp.write_text(json.dumps(result, ensure_ascii=False, allow_nan=False))
-                tmp.replace(path)
+            store.set_cache("quote:" + symbol, result)
             return {**result, "cached": False}
         except Exception as exc:
             if saved:

@@ -1,12 +1,11 @@
 "use strict";
 // Native WebAuthn: private keys and biometrics stay with the authenticator.
 window.FinFeedAuth = (() => {
-  let cloud = false;
   const decode = value => Uint8Array.from(atob(value.replace(/-/g,"+").replace(/_/g,"/") + "=".repeat((4-value.length%4)%4)), c=>c.charCodeAt(0));
   const encode = value => btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
   async function request(url, options={}) {
     const response = await fetch(url, {...options, credentials:"same-origin", headers:{...options.headers,"X-FinFeed-Client":"1"}});
-    if(cloud && response.status===401 && !url.startsWith("/api/auth/")) {
+    if(response.status===401 && !url.startsWith("/api/auth/")) {
       location.replace("/login");throw new Error("登录已过期，请重新验证");
     }
     return response;
@@ -43,8 +42,8 @@ window.FinFeedAuth = (() => {
   async function initialize() {
     const response=await request("/api/auth/status");
     if(!response.ok)throw new Error("无法检查登录状态，请稍后刷新");
-    const status=await response.json();cloud=Boolean(status.cloud);
-    if(cloud && !status.authenticated){location.replace("/login");throw new Error("请先登录");}
+    const status=await response.json();
+    if(!status.authenticated){location.replace("/login");throw new Error("请先登录");}
     return status;
   }
   function message(error) {
@@ -52,5 +51,5 @@ window.FinFeedAuth = (() => {
     if(error.name==="InvalidStateError")return "这把 Passkey 已绑定，请使用它登录或选择另一把。";
     return error.message||"验证失败，请重试。";
   }
-  return {request,post,passkey,initialize,message,get cloud(){return cloud;}};
+  return {request,post,passkey,initialize,message};
 })();

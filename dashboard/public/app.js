@@ -1,12 +1,5 @@
 "use strict";
-const DEFAULTS = ["AAPL", "NVDA", "MU", "AMD", "VRT", "LRCX", "VOO", "QQQM"];
-const STORAGE = "finfeed.watchlist.v1";
-const POSITION_STORAGE="finfeed.positions.v1";
 let holdings=[],surface="watchlist",editingPosition=null;
-try{
-  const stored=JSON.parse(localStorage.getItem(POSITION_STORAGE)||"[]");
-  if(Array.isArray(stored))for(const p of stored){try{FinFeedPositions.validate(p);if(!holdings.some(h=>h.ticker===p.ticker)&&holdings.length<40)holdings.push(p);}catch{}}
-}catch{}
 const groups = [
   {name:"证券",view:"market",columns:[["market_cap","Market Cap","公司市值","money"]]},
   {name:"价格",view:"market",columns:[["price","Last Price","常规时段","price"],["high_52w","52W High","52 周高点","price"],["low_52w","52W Low","52 周低点","price"]]},
@@ -19,21 +12,7 @@ const groups = [
 ];
 const allColumns=groups.flatMap(g=>g.columns);
 const records=new Map();
-let tickers, view="all",sortKey=null,sortAsc=true,running=0, queue=[];
-try{tickers=JSON.parse(localStorage.getItem(STORAGE)) || DEFAULTS; if(!Array.isArray(tickers))tickers=DEFAULTS;}catch{tickers=DEFAULTS;}
-tickers=[...new Set(tickers.filter(t=>typeof t==="string" && /^[A-Z0-9][A-Z0-9.^=-]{0,19}$/.test(t)))].slice(0,40);
-const legacyState={watchlist:[...tickers],positions:[...holdings]};
-let hasLegacyWatchlist=false;
-try{hasLegacyWatchlist=localStorage.getItem(STORAGE)!==null;}catch{}
-function mirrorState(state){
-  if(FinFeedAuth.cloud)return;
-  try{
-    if(!localStorage.getItem("finfeed.legacy-backup.v1"))localStorage.setItem("finfeed.legacy-backup.v1",JSON.stringify(legacyState));
-    localStorage.setItem(STORAGE,JSON.stringify(state.watchlist));
-    localStorage.setItem(POSITION_STORAGE,JSON.stringify(state.positions));
-    localStorage.setItem("finfeed.file-migrated.v1","true");
-  }catch{}
-}
+let tickers=[], view="all",sortKey=null,sortAsc=true,running=0, queue=[];
 const el=id=>document.getElementById(id);
 const escapeHTML=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const timestamp=s=>s?new Date(s).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false})+" 北京时间":"未提供";
@@ -106,7 +85,7 @@ function persistState(patch){
     const response=await FinFeedAuth.request("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:payload});
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||"记录保存失败");
-    mirrorState(data.state);return data.state;
+    return data.state;
   });
   stateWrites=write.catch(()=>{});return write;
 }
@@ -223,7 +202,7 @@ el("position-form").addEventListener("submit",async event=>{
 el("holdings-body").addEventListener("click",async event=>{
   const edit=event.target.closest("[data-edit-position]");if(edit){openPosition(edit.dataset.editPosition);return;}
   const remove=event.target.closest("[data-delete-position]");if(remove){
-    if(confirm(`删除 ${remove.dataset.deletePosition} 的本机持仓记录？`)){try{await storeHoldings(holdings.filter(p=>p.ticker!==remove.dataset.deletePosition));renderHoldings();}catch{alert("未能保存删除操作，记录已保留。");}}
+    if(confirm(`删除 ${remove.dataset.deletePosition} 的持仓记录？`)){try{await storeHoldings(holdings.filter(p=>p.ticker!==remove.dataset.deletePosition));renderHoldings();}catch{alert("未能保存删除操作，记录已保留。");}}
     return;
   }
   const row=event.target.closest("[data-holding-ticker]");if(row)detail(row.dataset.holdingTicker);
@@ -263,20 +242,12 @@ if(document.modelContext?.registerTool){
 async function initializeState(){
   document.querySelector("main").inert=true;
   try{
-    const auth=await FinFeedAuth.initialize();
-    el("account-button").hidden=!auth.cloud;
+    await FinFeedAuth.initialize();
+    el("account-button").hidden=false;
     const response=await FinFeedAuth.request("/api/state");const data=await response.json();
     if(!response.ok)throw new Error(data.error||"记录读取失败");
     let state=data.state;
-    const defaultFile=state&&JSON.stringify(state.watchlist)===JSON.stringify(DEFAULTS)&&!state.positions.length;
-    let migrated=false;try{migrated=localStorage.getItem("finfeed.file-migrated.v1")==="true";}catch{}
-    const customizedLegacy=hasLegacyWatchlist&&JSON.stringify(legacyState.watchlist)!==JSON.stringify(DEFAULTS)||legacyState.positions.length>0;
-    if(!auth.cloud&&defaultFile&&!migrated&&customizedLegacy){
-      state=await persistState(legacyState);
-      feedback("已从原浏览器记录恢复自选股、排序和持仓，并保存到本机文件。");
-    }
-    if(!state)state=await persistState({initialize:true,...(auth.cloud?{watchlist:[],positions:[]}:legacyState)});
-    mirrorState(state);
+    if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
     tickers=state.watchlist;holdings=state.positions;
     render();load(trackedTickers());
     document.querySelector("main").inert=false;

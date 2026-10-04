@@ -45,7 +45,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         raise ValueError("PUBLIC_ORIGIN 必须是网站的 HTTPS origin（不含路径）")
     bootstrap = app.config["BOOTSTRAP_TOKEN"]
     if bootstrap and len(bootstrap) < 32:
-        raise ValueError("首次绑定码至少需要 32 个字符，请用部署准备脚本生成")
+        raise ValueError("首次绑定码至少需要 32 个字符，请在部署平台生成高强度随机值")
     database = store or Store(app.config["DATABASE_URL"])
     app.extensions["finfeed_store"] = database
     secure = not local_test

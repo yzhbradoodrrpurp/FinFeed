@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 import json
 import alpha
+from cloud_store import Store
 
 
 class EstimateCases(unittest.TestCase):
@@ -20,18 +21,17 @@ class EstimateCases(unittest.TestCase):
 
     def test_daily_cache_and_failure_preserve_forecast_without_exposing_key(self):
         with TemporaryDirectory() as directory:
-            config=Path(directory)/'config.json';config.write_text(json.dumps({'api_key':'private-test-key'}))
-            cache=Path(directory)/'cache'
+            store=Store(sqlite_path=str(Path(directory)/'cache.db'))
             response=MagicMock();response.__enter__.return_value.read.return_value=json.dumps({'symbol':'QA','estimates':[]}).encode()
-            with patch.object(alpha,'CONFIG',config),patch.object(alpha,'CACHE',cache),patch.object(alpha.urllib.request,'urlopen',return_value=response) as request:
-                first=alpha.estimate_data('QA','2026-10-04T15:59:00+00:00')
-                alpha.estimate_data('QA','2026-10-04T15:59:30+00:00')
+            with patch.dict(alpha.os.environ,{'ALPHAVANTAGE_API_KEY':'private-test-key'}),patch.object(alpha.urllib.request,'urlopen',return_value=response) as request:
+                first=alpha.estimate_data('QA','2026-10-04T15:59:00+00:00',store=store)
+                alpha.estimate_data('QA','2026-10-04T15:59:30+00:00',store=store)
                 self.assertEqual(request.call_count,1)
                 request.side_effect=RuntimeError('private-test-key')
-                failed=alpha.estimate_data('QA','2026-10-04T16:00:00+00:00')
+                failed=alpha.estimate_data('QA','2026-10-04T16:00:00+00:00',store=store)
                 self.assertEqual(failed['data'],first['data'])
                 self.assertNotIn('private-test-key',json.dumps(failed))
-                alpha.estimate_data('QA','2026-10-04T16:01:00+00:00')
+                alpha.estimate_data('QA','2026-10-04T16:01:00+00:00',store=store)
                 self.assertEqual(request.call_count,2)
 
 if __name__=='__main__':unittest.main()

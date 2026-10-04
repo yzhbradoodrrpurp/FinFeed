@@ -11,3 +11,30 @@
 #watchlist-surface .order-toolbar{margin-bottom:18px}.source-footer{margin-top:20px;text-align:right;font-size:13px}
 
 .order-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.order-toolbar .views{margin-left:auto}
+
+/* Compact research table with more room for visible rows and columns. */
+main{max-width:none;padding:20px 20px 28px}
+.masthead{height:60px;padding:0 20px}
+.title-row{margin-bottom:18px}.surface-tabs{margin-bottom:16px}
+#watchlist-surface .order-toolbar{margin-top:10px;margin-bottom:12px}
+#watchlist-surface .table-shell{--frozen:178px;height:78vh;max-height:none;min-height:380px}
+#watchlist{font-size:13px}
+#watchlist th,#watchlist td{min-width:104px;padding:8px 10px}
+#watchlist .sticky{min-width:var(--frozen);width:var(--frozen);max-width:var(--frozen)}
+#watchlist .symbol{font-size:14px}
+#watchlist .security-name{font-size:11px;max-width:137px;margin-top:2px}
+#watchlist .security-cell{gap:4px}
+#watchlist .remove{font-size:16px;padding:4px}
+#watchlist .group-head th{height:30px;padding:5px 10px;line-height:19px;font-size:11px}
+#watchlist .column-head th{top:30px;padding:7px 10px;font-size:12px;line-height:1.4}
+#watchlist .th-button span{font-size:10px}
+#watchlist .currency,#watchlist .missing-label{font-size:10px}
+#watchlist .status-cell{min-width:110px;font-size:11px}
+@media(max-width:800px){
+  main{padding:16px 12px 24px}
+  .masthead{padding:0 16px}
+  #watchlist-surface .table-shell{--frozen:148px}
+  #watchlist th,#watchlist td{padding-left:8px;padding-right:8px;min-width:96px}
+  #watchlist .sticky{min-width:var(--frozen)}
+  #watchlist .security-name{max-width:105px}
+}

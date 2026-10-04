@@ -336,6 +336,9 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         m[f"{label}_qoq_q0"] = growth(series, q0)
         m[f"{label}_qoq_q1"] = growth(series, q1)
     result["series"] = {"eps": eps, "revenue": revenue, "debt": debt, "fcf": fcf}
+    # Forecast permission failures must not discard successfully fetched actual
+    # statements (including historical quarters needed for growth rates).
+    statement_errors = errors[financial_error_start:]
     estimates = load("分析师预期", item.get_earnings_estimate, None)
     if estimates is not None and not estimates.empty and "0q" in estimates.index:
         row = estimates.loc["0q"]
@@ -353,7 +356,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     m["pe_ntm"] = empty_metric("缺少未来连续 4 个财季的同口径 EPS 预期；未用年度 forwardPE 代替", source=analysis_url,
                                 basis="NTM P/E = 价格 / 未来连续四个财季 EPS 预期之和")
     financial_errors = errors[financial_error_start:]
-    if financial_errors and saved and saved.get("series"):
+    if statement_errors and saved and saved.get("series"):
         reuse_financial(result, saved)
         result["financial_stale"] = True
         result["financial_errors"] = financial_errors

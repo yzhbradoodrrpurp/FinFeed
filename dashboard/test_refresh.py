@@ -100,6 +100,23 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(failed['metrics']['eps_q0']['value'], 2)
         self.assertTrue(failed['financial_stale'])
 
+    def test_forecast_failure_does_not_rollback_new_historical_debt(self):
+        first = self.fetch('2026-10-04T15:59:00+00:00')
+        frame = pd.DataFrame({
+            pd.Timestamp('2026-06-30'): {'DilutedEPS': 2, 'TotalRevenue': 100, 'TotalDebt': 50, 'OperatingCashFlow': 20, 'CapitalExpenditure': -5},
+            pd.Timestamp('2026-03-31'): {'DilutedEPS': 1.5, 'TotalRevenue': 80, 'TotalDebt': 40, 'OperatingCashFlow': 15, 'CapitalExpenditure': -4},
+            pd.Timestamp('2025-12-31'): {'DilutedEPS': 1, 'TotalRevenue': 60, 'TotalDebt': 25, 'OperatingCashFlow': 10, 'CapitalExpenditure': -3},
+        })
+        for method in ('get_income_stmt', 'get_balance_sheet', 'get_cashflow'):
+            getattr(self.item, method).return_value = frame
+        self.item.get_earnings_estimate.side_effect = RuntimeError('Forecast unavailable')
+        updated = self.fetch('2026-10-04T16:00:00+00:00', first)
+        self.assertEqual(len(updated['series']['debt']), 3)
+        self.assertAlmostEqual(updated['metrics']['debt_qoq_q0']['value'], 0.25)
+        self.assertAlmostEqual(updated['metrics']['debt_qoq_q1']['value'], 0.60)
+        self.assertEqual(updated['financial_fetched_at'], '2026-10-04T16:00:00+00:00')
+        self.assertTrue(updated['financial_errors'])
+
     def test_quarterly_annualization_and_next_period_match(self):
         record = self.fetch('2026-10-04T02:00:00+00:00')
         record['metrics']['forward_eps_q0'] = {'value': 3, 'period': '2026-09-30', 'currency': 'USD'}

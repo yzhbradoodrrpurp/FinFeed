@@ -131,7 +131,7 @@ function switchSurface(next){
   el("page-title").textContent=surface==="holdings"?"我的持仓":"自选股";
   el("page-eyebrow").textContent=surface==="holdings"?"MY PORTFOLIO":"MY WATCHLIST";
   document.querySelectorAll("[data-surface]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.surface===surface)));
-  renderHoldings();
+  render();
 }
 function feedback(s){el("feedback").textContent=s;el("feedback").hidden=!s;}
 function save(){persistState({watchlist:tickers}).catch(error=>feedback(`自选股尚未保存：${error.message}。请重试操作。`));}

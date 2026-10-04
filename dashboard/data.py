@@ -1,9 +1,8 @@
 """Yahoo Finance personal-use adapter with dated provenance and conservative gaps."""
-import json
 from copy import deepcopy
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -21,7 +20,7 @@ LIMIT = threading.Semaphore(2)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def epoch(value):
@@ -167,6 +166,14 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     info = load("证券信息", item.get_info, {}) or {}
     history = load("日线", lambda: item.history(period="1y", auto_adjust=False, actions=True,
                                               raise_errors=True, timeout=15), None)
+    # quoteSummary can return {} after logging HTTP 401 without raising.
+    # Chart metadata uses an independent endpoint and still identifies securities.
+    info_available = bool(info.get("quoteType"))
+    if not info_available:
+        errors.append("Yahoo 证券信息接口未返回有效数据；使用日线元数据，部分指标可能缺失")
+    metadata = load("交易时段", item.get_history_metadata, {}) or {}
+    chart_info = {**metadata, "quoteType": metadata.get("instrumentType")}
+    info = {**chart_info, **{key: value for key, value in info.items() if value is not None}}
     quote_type = info.get("quoteType") or (saved or {}).get("quote_type", "UNKNOWN")
     currency = info.get("currency") or (saved or {}).get("currency")
     fin_currency = info.get("financialCurrency") or (saved or {}).get("financial_currency") or currency
@@ -176,7 +183,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     balance_url = quote_url + "balance-sheet/"
     cash_url = quote_url + "cash-flow/"
     analysis_url = quote_url + "analysis/"
-    result = {"ticker": symbol, "name": info.get("longName") or info.get("shortName") or symbol,
+    result = {"ticker": symbol, "name": info.get("longName") or info.get("shortName") or (saved or {}).get("name") or symbol,
               "quote_type": quote_type, "currency": currency, "financial_currency": fin_currency,
               "exchange": info.get("fullExchangeName") or info.get("exchange"),
               "exchange_timezone": exchange_tz, "fetched_at": started, "errors": errors,
@@ -186,7 +193,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
               "metrics": {}, "series": {}, "schema_version": SCHEMA_VERSION}
     m = result["metrics"]
     price = number(info.get("regularMarketPrice"))
-    quote_timestamp = number(info.get("regularMarketTime"))
+    quote_timestamp = epoch(info.get("regularMarketTime"))
     quote_time = datetime.fromtimestamp(quote_timestamp, timezone.utc) if quote_timestamp else None
     quote_date = quote_time.astimezone(ZoneInfo(exchange_tz)).date().isoformat() if quote_time else None
     if price is None and history is not None and not history.empty:
@@ -206,7 +213,6 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         rows = [(idx.date().isoformat(), value) for idx, value in history["Volume"].items()]
     # The daily bar is complete only after the provider's regular-session close.
     complete = False
-    metadata = load("交易时段", item.get_history_metadata, {}) or {}
     session = metadata.get("currentTradingPeriod", {}).get("regular", {})
     session_end = epoch(session.get("end"))
     if quote_date and session_end:
@@ -231,6 +237,26 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         if quote_type == "ETF":
             m["market_cap"] = empty_metric("ETF 公司市值不适用；未用资产规模替代")
         return result
+    if not info_available and saved:
+        for key in ("market_cap", "high_52w", "low_52w"):
+            previous = saved.get("metrics", {}).get(key, {})
+            if m[key].get("value") is None and previous.get("value") is not None:
+                m[key] = deepcopy(previous)
+                m[key]["stale"] = True
+                m[key]["reason"] = "证券信息更新失败，保留上次成功值"
+    if m["market_cap"].get("value") is None:
+        # Shares endpoint is independent of quoteSummary; refresh at most daily.
+        shares = (saved or {}).get("shares_outstanding")
+        shares_period = (saved or {}).get("shares_period")
+        if financial_due(saved, started):
+            share_frame = load("流通股数", lambda: item.get_shares_full(start=(datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()), None)
+            if share_frame is not None and not share_frame.empty:
+                shares = number(share_frame.iloc[-1])
+                shares_period = share_frame.index[-1].date().isoformat()
+        result["shares_outstanding"], result["shares_period"] = shares, shares_period
+        if shares and price:
+            m["market_cap"] = field(price * shares, quote_date, "市值 = 最近价格 × Yahoo 最近披露在外股数；股数可能滞后", quote_url,
+                                    currency=currency, inputs={"price": price, "shares": shares, "shares_period": shares_period})
     if not financial_due(saved, started):
         reuse_financial(result, saved)
         result["financial_checked_at"] = saved.get("financial_checked_at") or saved.get("fetched_at")
@@ -242,6 +268,9 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     income = load("利润表", lambda: item.get_income_stmt(freq="quarterly"), None)
     balance = load("资产负债表", lambda: item.get_balance_sheet(freq="quarterly"), None)
     cashflow = load("现金流量表", lambda: item.get_cashflow(freq="quarterly"), None)
+    for label, frame in (("利润表", income), ("资产负债表", balance), ("现金流量表", cashflow)):
+        if frame is None or frame.empty:
+            errors.append(f"{label}未返回数据")
     eps = frame_values(income, ["DilutedEPS"], fin_currency, financial_url)
     revenue = frame_values(income, ["TotalRevenue"], fin_currency, financial_url)
     debt = frame_values(balance, ["TotalDebt"], fin_currency, balance_url)
@@ -300,7 +329,7 @@ def security(symbol, refresh=False, store=None):
         stored = store.get_cache("quote:" + symbol)
         saved = stored[0] if stored else None
         age = time.time() - stored[1] if stored else float("inf")
-        if saved and saved.get("schema_version") not in (3, SCHEMA_VERSION):
+        if saved and saved.get("schema_version") != SCHEMA_VERSION:
             saved = None
             age = float("inf")
         # Market requests refresh each minute; same-minute tabs share the cache.

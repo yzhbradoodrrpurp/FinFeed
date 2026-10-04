@@ -38,6 +38,27 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(second['metrics']['pe_quarter']['value'], 15)
         self.assertEqual(second['financial_fetched_at'], first['financial_fetched_at'])
 
+    def test_empty_info_uses_chart_metadata_and_still_fetches_financials(self):
+        self.item.get_info.return_value = {}
+        self.item.get_history_metadata.return_value = {
+            'instrumentType': 'EQUITY', 'currency': 'USD', 'longName': 'Test Company',
+            'regularMarketPrice': 100, 'regularMarketTime': pd.Timestamp('2026-10-02T20:00:00Z'),
+            'fiftyTwoWeekHigh': 110, 'fiftyTwoWeekLow': 60}
+        record = self.fetch('2026-10-04T02:00:00+00:00')
+        self.assertEqual(record['quote_type'], 'EQUITY')
+        self.assertEqual(record['name'], 'Test Company')
+        self.assertEqual(record['metrics']['high_52w']['value'], 110)
+        self.assertEqual(record['metrics']['eps_q0']['value'], 2)
+        self.assertEqual(record['metrics']['pe_quarter']['value'], 12.5)
+        self.assertTrue(record['errors'])
+
+    def test_empty_frames_preserve_previous_financial_values(self):
+        first = self.fetch('2026-10-04T15:59:00+00:00')
+        self.item.get_income_stmt.return_value = pd.DataFrame()
+        failed = self.fetch('2026-10-04T16:00:00+00:00', first)
+        self.assertEqual(failed['metrics']['eps_q0']['value'], 2)
+        self.assertTrue(failed['financial_stale'])
+
     def test_quarterly_annualization_and_next_period_match(self):
         record = self.fetch('2026-10-04T02:00:00+00:00')
         record['metrics']['forward_eps_q0'] = {'value': 3, 'period': '2026-09-30', 'currency': 'USD'}

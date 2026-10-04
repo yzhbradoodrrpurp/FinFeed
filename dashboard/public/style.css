@@ -61,3 +61,10 @@ main{max-width:none;padding:20px 20px 28px}
 .read-only #add-form,.read-only #order-button,.read-only .remove,.read-only #add-position,.read-only .holding-actions,.read-only #choose-import,.read-only #import-preview {display:none!important;}
 #profile-form {display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
 #signup-toggle {margin-top:16px;}
+
+.account-browser {font-size:14px;line-height:1.5;}
+.account-browser select {font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;font-weight:500;line-height:1.5;padding:7px 10px;color:#274152;}
+#account-mode {font-size:13px;font-weight:400;}
+#invite-result {overflow-wrap:anywhere;user-select:all;padding:12px;background:#eef5f7;border-radius:8px;font-family:ui-monospace,monospace;}
+
+.account-browser label {font-size:13px;font-weight:500;}

@@ -120,6 +120,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.errorhandler(400)
     @app.errorhandler(401)
     @app.errorhandler(403)
+    @app.errorhandler(405)
     @app.errorhandler(404)
     @app.errorhandler(413)
     @app.errorhandler(415)
@@ -145,7 +146,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         session = logged_in()
         with database.transaction() as connection:
             account = database.account(connection, session["user_id"]) if session else None
-        return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=True, cloud=True, authenticated=bool(session), setupRequired=setup,
+            database_owner_id = database.owner(connection)["user_handle"]
+        return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=False, invitationRequired=True, canInvite=bool(session and session["user_id"] == database_owner_id), cloud=True, authenticated=bool(session), setupRequired=setup,
                        bootstrapAvailable=bool(bootstrap), passkeySupported=True)
 
     @app.post("/api/auth/register/options")
@@ -153,9 +155,17 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         body = json_body()
         with database.transaction() as connection:
             owner = database.owner(connection)
+            invite_id = None
             if body.get("newAccount"):
                 if database.session(connection, request.cookies.get(session_cookie, "")):
                     abort(400, description="请退出当前账户后注册新账户")
+                code = body.get("inviteCode")
+                if not isinstance(code, str) or not 1 <= len(code.strip()) <= 100:
+                    abort(403, description="请填写有效邀请码")
+                invite_id = digest(code.strip())
+                invitation = database.execute(connection, "SELECT * FROM invitations WHERE id=?", (invite_id,)).fetchone()
+                if not invitation or invitation["used_by"] or invitation["expires"] <= time.time():
+                    abort(403, description="邀请码无效、已使用或已过期")
                 name = body.get("name", "")
                 if not isinstance(name, str) or not 1 <= len(name.strip()) <= 40:
                     abort(400, description="账户名称需为 1–40 个字符")
@@ -189,7 +199,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             if not isinstance(label, str) or not 1 <= len(label.strip()) <= 60:
                 abort(400, description="Passkey 名称需为 1–60 个字符")
             token = database.flow(connection, {"kind": "register", "mode": mode, "binding": binding,
-                                               "challenge": bytes_to_base64url(options.challenge), "label": label.strip(), "user_id": user_id, "name": name})
+                                               "challenge": bytes_to_base64url(options.challenge), "label": label.strip(), "user_id": user_id, "name": name, "invite_id": invite_id})
         response = jsonify(json.loads(options_to_json(options)))
         set_cookie(response, flow_cookie, token, 300)
         return response
@@ -215,6 +225,10 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
                 if database.credentials(connection):
                     abort(403, description="首次绑定已完成，请先登录")
             elif flow["mode"] == "new":
+                invitation = database.execute(connection, "SELECT * FROM invitations WHERE id=?", (flow.get("invite_id"),)).fetchone()
+                if not invitation or invitation["used_by"] or invitation["expires"] <= time.time():
+                    abort(403, description="邀请码无效、已使用或已过期")
+                database.execute(connection, "UPDATE invitations SET used_by=? WHERE id=?", (user_id, flow["invite_id"]))
                 database.execute(connection, "INSERT INTO accounts (id,name,state,revision,created) VALUES (?,?,?,0,?)",
                                  (user_id, flow["name"], json.dumps({"watchlist": [], "positions": []}), time.time()))
             else:
@@ -298,15 +312,22 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def accounts_read():
         return jsonify(accounts=database.accounts(), currentUser=logged_in()["user_id"])
 
-    @app.patch("/api/account")
-    def account_update():
+    @app.post("/api/invitations")
+    def invitation_create():
         body = json_body()
-        name = body.get("name")
-        if set(body) != {"name"} or not isinstance(name, str) or not 1 <= len(name.strip()) <= 40:
-            abort(400, description="账户名称需为 1–40 个字符")
+        if body:
+            abort(400, description="无效邀请码请求")
+        session = require_owner()
         with database.transaction() as connection:
-            database.execute(connection, "UPDATE accounts SET name=? WHERE id=?", (name.strip(), logged_in()["user_id"]))
-        return jsonify(ok=True)
+            if session["user_id"] != database.owner(connection)["user_handle"]:
+                abort(403, description="只有网站管理账户可以创建邀请码")
+            issued = database.execute(connection, "SELECT COUNT(*) AS total FROM invitations WHERE used_by IS NULL AND expires>?", (time.time(),)).fetchone()["total"]
+            if issued >= 20:
+                abort(400, description="最多保留 20 个未使用的邀请码，请使用或等待现有码过期")
+            code = secrets.token_urlsafe(24)
+            expires = time.time() + 7 * 86400
+            database.execute(connection, "INSERT INTO invitations (id,created,expires) VALUES (?,?,?)", (digest(code), time.time(), expires))
+        return jsonify(code=code, expires=expires)
 
     @app.get("/api/state")
     def state_read():

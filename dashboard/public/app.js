@@ -249,7 +249,8 @@ async function initializeState(){
   document.querySelector("main").inert=true;
   try{
     const auth=await FinFeedAuth.initialize();currentUser=auth.user;
-    el("profile-name").value=currentUser.name;
+    el("profile-name").textContent=currentUser.name;
+    el("invite-controls").hidden=!auth.canInvite;
     const directoryResponse=await FinFeedAuth.request("/api/accounts");
     if(!directoryResponse.ok)throw new Error("账户列表读取失败");
     const directory=await directoryResponse.json();
@@ -290,7 +291,7 @@ el("account-button").addEventListener("click",async()=>{
 });
 el("account-close").addEventListener("click",()=>el("account-dialog").close());
 el("logout").addEventListener("click",async()=>{
-  try{await FinFeedAuth.post("/api/auth/logout");location.replace("/login");}
+  try{await FinFeedAuth.post("/api/auth/logout");location.replace("/login?manual=1");}
   catch(e){accountFeedback(FinFeedAuth.message(e));}
 });
 el("add-passkey").addEventListener("click",async()=>{
@@ -335,11 +336,12 @@ el("view-account").addEventListener("change",async()=>{
   await stateWrites;
   location.assign(el("view-account").value===currentUser.id?"/":"/?user="+encodeURIComponent(el("view-account").value));
 });
-el("profile-form").addEventListener("submit",async event=>{
-  event.preventDefault();
+el("create-invite").addEventListener("click",async()=>{
+  el("create-invite").disabled=true;
   try{
-    const response=await FinFeedAuth.request("/api/account",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:el("profile-name").value.trim()})});
-    const data=await response.json();if(!response.ok)throw new Error(data.error);
-    location.reload();
+    const response=await FinFeedAuth.post("/api/invitations");
+    el("invite-result").textContent=`${response.code}（有效至 ${new Date(response.expires*1000).toLocaleString("zh-CN")}）`;
+    el("invite-result").hidden=false;
   }catch(error){accountFeedback(error.message);}
+  finally{el("create-invite").disabled=false;}
 });

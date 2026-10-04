@@ -150,7 +150,9 @@ class CloudCases(unittest.TestCase):
         self.assertEqual(reopened.read_state(), state)
 
     def signup(self, client, credential=b"other-key", name="Other"):
-        response = client.post("/api/auth/register/options", json={"newAccount": True, "name": name}, headers=HEADERS)
+        with self.store.transaction() as connection:
+            self.store.execute(connection, "INSERT INTO invitations VALUES (?,?,?,NULL)", (digest("test-invite"), time.time(), time.time()+300))
+        response = client.post("/api/auth/register/options", json={"newAccount": True, "name": name, "inviteCode": "test-invite"}, headers=HEADERS)
         self.assertEqual(response.status_code, 200)
         with patch("cloud.verify_registration_response", return_value=SimpleNamespace(
                 credential_id=credential, credential_public_key=b"key", sign_count=0)):
@@ -214,6 +216,37 @@ class CloudCases(unittest.TestCase):
             self.assertEqual(migrated.execute(connection, "SELECT user_id FROM account_history").fetchone()['user_id'], 'legacy-handle')
         migrated.update_state({'watchlist':['AAPL']})
         self.assertEqual(Store(sqlite_path=path).read_state()['watchlist'], ['AAPL'])
+
+    def test_invitation_required_single_use_and_only_admin_can_issue(self):
+        self.enroll()
+        owner = self.client.get("/api/auth/status").json["user"]["id"]
+        self.assertTrue(self.client.get("/api/auth/status").json["canInvite"])
+        invite = self.post("/api/invitations").json["code"]
+        other = self.app.test_client()
+        for code in (None, "wrong"):
+            response = other.post("/api/auth/register/options", json={"newAccount": True, "name": "Friend", "inviteCode": code}, headers=HEADERS)
+            self.assertEqual(response.status_code, 403)
+        body = {"newAccount": True, "name": "Friend", "inviteCode": invite}
+        self.assertEqual(other.post("/api/auth/register/options", json=body, headers=HEADERS).status_code, 200)
+        competing = self.app.test_client()
+        self.assertEqual(competing.post("/api/auth/register/options", json=body, headers=HEADERS).status_code, 200)
+        with patch("cloud.verify_registration_response", return_value=SimpleNamespace(credential_id=b"friend", credential_public_key=b"public", sign_count=0)):
+            self.assertEqual(other.post("/api/auth/register/verify", json={}, headers=HEADERS).status_code, 200)
+        with patch("cloud.verify_registration_response", return_value=SimpleNamespace(credential_id=b"competing", credential_public_key=b"public", sign_count=0)):
+            self.assertEqual(competing.post("/api/auth/register/verify", json={}, headers=HEADERS).status_code, 403)
+        self.assertEqual(competing.post("/api/auth/register/options", json=body, headers=HEADERS).status_code, 403)
+        self.assertFalse(other.get("/api/auth/status").json["canInvite"])
+        self.assertEqual(other.post("/api/invitations", json={}, headers=HEADERS).status_code, 403)
+        self.assertIn(self.client.patch("/api/account", json={"name":"Changed"}, headers=HEADERS).status_code, (404,405))
+        self.assertEqual(self.client.get("/api/auth/status").json["user"]["name"], "Liam")
+        with self.store.transaction() as connection:
+            row=self.store.execute(connection, "SELECT * FROM invitations WHERE id=?", (digest(invite),)).fetchone()
+            self.assertIsNotNone(row['used_by'])
+            self.assertNotEqual(row['id'], invite)
+        expired = self.post("/api/invitations").json["code"]
+        with self.store.transaction() as connection:
+            self.store.execute(connection, "UPDATE invitations SET expires=0 WHERE id=?", (digest(expired),))
+        self.assertEqual(competing.post("/api/auth/register/options", json={**body,"inviteCode":expired}, headers=HEADERS).status_code,403)
 
     def test_daily_cache_survives_restart(self):
         self.store.set_cache("quote:QA", {"financial_checked_at": "2026-10-04"})

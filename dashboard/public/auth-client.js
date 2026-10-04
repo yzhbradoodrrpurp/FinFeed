@@ -26,7 +26,7 @@ window.FinFeedAuth = (() => {
     if(response.getTransports)result.response.transports=response.getTransports();
     return result;
   }
-  async function passkey(register=false, setupCode="", label="我的 Passkey", extra={}) {
+  async function passkey(register=false, setupCode="", label="我的 Passkey", extra={}, credentialOptions={}) {
     if(!window.isSecureContext || !navigator.credentials || !window.PublicKeyCredential)
       throw new Error("当前浏览器不支持 Passkey，请使用新版 Safari、Chrome 或 Edge，并通过 HTTPS 访问");
     const action=register?"register":"login";
@@ -35,7 +35,7 @@ window.FinFeedAuth = (() => {
     if(options.user)options.user.id=decode(options.user.id);
     for(const key of ["allowCredentials","excludeCredentials"])
       if(options[key])options[key]=options[key].map(item=>({...item,id:decode(item.id)}));
-    const credential=await navigator.credentials[register?"create":"get"]({publicKey:options});
+    const credential=await navigator.credentials[register?"create":"get"]({publicKey:options,...credentialOptions});
     if(!credential)throw new Error("验证已取消");
     await post(`/api/auth/${action}/verify`,credentialJSON(credential));
   }

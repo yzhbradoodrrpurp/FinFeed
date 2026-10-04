@@ -9,7 +9,9 @@ _status = None
 
 
 def mode():
-    return "login" if os.environ.get("YAHOO_COOKIE_T") and os.environ.get("YAHOO_COOKIE_Y") else "anonymous"
+    # Anonymous sessions get their own cookie/crumb on this host. Importing a
+    # browser login is optional and must not silently change provider access.
+    return "login" if os.environ.get("YAHOO_SESSION_MODE", "anonymous").lower() == "login" else "anonymous"
 
 
 def initialize():
@@ -25,7 +27,9 @@ def initialize():
         cookie_t = os.environ.get("YAHOO_COOKIE_T")
         cookie_y = os.environ.get("YAHOO_COOKIE_Y")
         _status = {"mode": mode(), "verified": False, "error": None}
-        if bool(cookie_t) != bool(cookie_y):
+        if mode() == "anonymous":
+            return dict(_status)
+        if not cookie_t or not cookie_y:
             _status["error"] = "Yahoo 登录配置不完整，需要同时设置 T 和 Y Cookie"
         elif cookie_t and cookie_y:
             try:

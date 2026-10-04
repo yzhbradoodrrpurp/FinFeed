@@ -3,6 +3,25 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import yfinance as yf
+from yfinance import _http
+from importlib.metadata import version
+
+
+def provider_error_category(exc):
+    """Return only known public error categories, never arbitrary response text."""
+    try:
+        body = exc.response.json()
+        error = (body.get("finance") or body.get("quoteSummary") or {}).get("error") or {}
+        description = str(error.get("description", "")).lower()
+    except Exception:
+        return None
+    for phrase, category in (("invalid crumb", "invalid_crumb"),
+                             ("invalid cookie", "invalid_cookie"),
+                             ("unable to access", "access_denied"),
+                             ("too many requests", "rate_limited")):
+        if phrase in description:
+            return category
+    return "unauthorized" if error.get("code") == "Unauthorized" else None
 
 
 def debt_rows(payload):
@@ -20,7 +39,9 @@ def balance_with_diagnostics(item, output):
     """
     financials = item._fundamentals.financials
     original = financials._fetch_fundamentals_payload
-    output.update(version=yf.__version__, checked_at=datetime.now(timezone.utc).isoformat(), batches=[])
+    output.update(version=yf.__version__, checked_at=datetime.now(timezone.utc).isoformat(), batches=[],
+                  http_backend="curl_cffi" if _http.HAS_CURL_CFFI else "requests",
+                  http_version=version("curl_cffi" if _http.HAS_CURL_CFFI else "requests"))
 
     def observe(url):
         params = parse_qs(urlsplit(url).query)

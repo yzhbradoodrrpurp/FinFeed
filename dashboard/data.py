@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 import yahoo_session
-from yahoo_diagnostic import balance_with_diagnostics
+from yahoo_diagnostic import balance_with_diagnostics, provider_error_category
 from alpha import estimate_data, next_four_eps, SOURCE as ALPHA_SOURCE
 
 from metrics import number, prior_quarter_period, trailing_pe, volume_metrics, qoq
@@ -185,7 +185,9 @@ def fetch_security(symbol, saved=None, estimate_store=None):
             return action()
         except Exception as exc:
             status = getattr(getattr(exc, "response", None), "status_code", None)
-            errors.append(f"{label}读取失败：{type(exc).__name__}" + (f" HTTP {status}" if status else ""))
+            category = provider_error_category(exc)
+            errors.append(f"{label}读取失败：{type(exc).__name__}" + (f" HTTP {status}" if status else "")
+                          + (f" ({category})" if category else ""))
             return default
     info_day = financial_day(started)
     if saved and not financial_due(saved, started) and saved.get("info_checked_day") == info_day:

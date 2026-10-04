@@ -93,12 +93,12 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(record['metrics']['pe_quarter']['value'], 12.5)
         self.assertTrue(record['errors'])
 
-    def test_empty_frames_preserve_previous_financial_values(self):
+    def test_empty_frames_leave_failed_financial_values_empty(self):
         first = self.fetch('2026-10-04T15:59:00+00:00')
         self.item.get_income_stmt.return_value = pd.DataFrame()
         failed = self.fetch('2026-10-04T16:00:00+00:00', first)
-        self.assertEqual(failed['metrics']['eps_q0']['value'], 2)
-        self.assertTrue(failed['financial_stale'])
+        self.assertIsNone(failed['metrics']['eps_q0']['value'])
+        self.assertFalse(failed['financial_stale'])
 
     def test_forecast_failure_does_not_rollback_new_historical_debt(self):
         self.item._analysis._earnings_trend = [{'period': '0q', 'endDate': '2026-09-30'}]
@@ -118,8 +118,8 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(updated['financial_fetched_at'], '2026-10-04T16:00:00+00:00')
         self.assertTrue(updated['financial_errors'])
         self.assertFalse(updated['financial_stale'])
-        self.assertEqual(updated['metrics']['forward_eps_next']['value'], 3)
-        self.assertTrue(updated['metrics']['forward_eps_next']['estimate_stale'])
+        self.assertIsNone(updated['metrics']['forward_eps_next']['value'])
+        self.assertIsNone(updated['metrics']['pe_forward_quarter']['value'])
 
     def test_quarterly_annualization_and_next_period_match(self):
         record = self.fetch('2026-10-04T02:00:00+00:00')
@@ -133,38 +133,25 @@ class RefreshCases(unittest.TestCase):
         data.revalue(record)
         self.assertIsNone(record['metrics']['pe_forward_quarter']['value'])
 
-    def test_successful_partial_balance_preserves_history_and_new_revisions(self):
-        frame = pd.DataFrame({
+    def test_partial_balance_does_not_fill_missing_quarters_from_cache(self):
+        self.item.get_balance_sheet.return_value = pd.DataFrame({
             pd.Timestamp('2026-06-30'): {'TotalDebt': 50},
             pd.Timestamp('2026-03-31'): {'TotalDebt': 40},
-            pd.Timestamp('2025-12-31'): {'TotalDebt': 25},
         })
-        self.item.get_balance_sheet.return_value = frame
         first = self.fetch('2026-10-04T15:59:00+00:00')
         self.item.get_balance_sheet.return_value = pd.DataFrame({pd.Timestamp('2026-06-30'): {'TotalDebt': 60}})
         second = self.fetch('2026-10-04T16:00:00+00:00', first)
-        self.assertEqual(second['series']['debt']['2026-06-30']['value'], 60)
-        self.assertFalse(second['series']['debt']['2026-06-30'].get('historical_cache', False))
-        self.assertEqual(second['series']['debt']['2026-03-31']['value'], 40)
-        self.assertAlmostEqual(second['metrics']['debt_qoq_q0']['value'], .5)
-        self.assertTrue(second['metrics']['debt_qoq_q0']['historical_cache'])
-        self.assertEqual(second['metrics']['debt_qoq_q0']['cache_fetched_at'], first['financial_fetched_at'])
-        third = self.fetch('2026-10-05T16:00:00+00:00', second)
-        self.assertEqual(third['metrics']['debt_qoq_q0']['cache_fetched_at'], first['financial_fetched_at'])
-        frame.loc['TotalDebt', pd.Timestamp('2026-03-31')] = 45
-        self.item.get_balance_sheet.return_value = frame
-        revised = self.fetch('2026-10-06T16:00:00+00:00', third)
-        self.assertFalse(revised['metrics']['debt_qoq_q0']['historical_cache'])
-        self.assertEqual(revised['series']['debt']['2026-03-31']['value'], 45)
+        self.assertEqual(len(second['series']['debt']), 1)
+        self.assertEqual(second['metrics']['debt_q0']['value'], 60)
+        self.assertIsNone(second['metrics']['debt_qoq_q0']['value'])
 
-    def test_debt_history_requires_matching_source_currency_and_observation_date(self):
-        first = self.fetch('2026-10-04T15:59:00+00:00')
-        source = first['series']['debt']['2026-06-30']['source']
-        self.assertFalse(data.retain_debt_history({}, first, 'EUR', source, '2026-10-05T00:00:00+00:00'))
-        self.assertFalse(data.retain_debt_history({}, first, 'USD', 'different-source', '2026-10-05T00:00:00+00:00'))
-        first['series']['debt']['2026-06-30'].pop('fetched_at')
-        first.pop('financial_fetched_at'); first.pop('fetched_at')
-        self.assertFalse(data.retain_debt_history({}, first, 'USD', source, '2026-10-05T00:00:00+00:00'))
+    def test_request_exception_returns_empty_metrics_instead_of_old_quote(self):
+        store = MagicMock()
+        store.get_cache.return_value = ({'schema_version': data.SCHEMA_VERSION, 'metrics': {'price': {'value': 100}}}, 0)
+        with patch.object(data, 'fetch_security', side_effect=RuntimeError('offline')):
+            result = data.security('QA', refresh=True, store=store)
+        self.assertEqual(result['metrics'], {})
+        self.assertTrue(result['errors'])
 
     def test_yahoo_forecast_preferred_and_alpha_only_fills_gaps(self):
         record = self.fetch('2026-10-04T02:00:00+00:00')
@@ -195,16 +182,16 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(self.item.get_income_stmt.call_count, 2)
         self.assertEqual(second['financial_fetched_at'], '2026-10-04T16:00:00+00:00')
 
-    def test_failed_daily_fetch_preserves_old_values_without_minute_retries(self):
+    def test_failed_daily_fetch_keeps_gaps_without_minute_retries(self):
         first = self.fetch('2026-10-04T15:59:00+00:00')
         self.item.get_income_stmt.side_effect = RuntimeError('source offline')
         failed = self.fetch('2026-10-04T16:00:00+00:00', first)
-        self.assertTrue(failed['financial_stale'])
-        self.assertEqual(failed['metrics']['eps_q0'], first['metrics']['eps_q0'])
-        self.assertEqual(failed['financial_fetched_at'], first['financial_fetched_at'])
+        self.assertFalse(failed['financial_stale'])
+        self.assertIsNone(failed['metrics']['eps_q0']['value'])
+        self.assertEqual(failed['financial_fetched_at'], '2026-10-04T16:00:00+00:00')
         again = self.fetch('2026-10-04T16:01:00+00:00', failed)
         self.assertEqual(self.item.get_income_stmt.call_count, 2)
-        self.assertTrue(again['financial_stale'])
+        self.assertIsNone(again['metrics']['eps_q0']['value'])
 
 
 if __name__ == '__main__':

@@ -32,7 +32,7 @@ LIMIT = threading.Semaphore(3)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def epoch(value):
@@ -92,33 +92,6 @@ def growth(series, period):
             "inputs": {"current": a["value"], "previous_quarter": b.get("value")}}
 
 
-def retain_debt_history(current, saved, currency, source, checked_at):
-    """Fill omitted debt quarters from dated, same-source/currency observations.
-
-    A successful but incomplete provider response is not evidence that a
-    previously reported debt value was zero or withdrawn. Fresh values always
-    win, including revisions and explicit zero; reused values stay labelled.
-    """
-    result = {period: {**deepcopy(entry), "fetched_at": checked_at}
-              for period, entry in current.items()}
-    saved = saved or {}
-    for period, entry in saved.get("series", {}).get("debt", {}).items():
-        if period in result or number(entry.get("value")) is None:
-            continue
-        observed = entry.get("fetched_at") or saved.get("financial_fetched_at") or saved.get("fetched_at")
-        if (not currency or entry.get("currency") != currency or entry.get("source") != source
-                or entry.get("basis") != "TotalDebt" or not observed):
-            continue
-        try:
-            if datetime.fromisoformat(period).date() > datetime.fromisoformat(checked_at).date():
-                continue
-            datetime.fromisoformat(observed)
-        except (ValueError, TypeError):
-            continue
-        result[period] = {**deepcopy(entry), "historical_cache": True, "fetched_at": observed}
-    return result
-
-
 FINANCIAL_KEYS = ("eps_q0", "eps_q1", "forward_eps_q0", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1", "pe_ntm")
 
 
@@ -164,7 +137,7 @@ def next_forecast(result, estimate_store=None):
         return forecast
     if result.get("currency") == "USD" and result.get("financial_currency") == "USD":
         alpha = estimate_data(result["ticker"], result["fetched_at"], store=estimate_store)
-        if alpha:
+        if alpha and not alpha.get("error"):
             result["estimates_fetched_at"] = alpha.get("fetched_at")
             result["sources"]["estimates_alpha"] = ALPHA_SOURCE
             candidates = sorted((row for row in (alpha.get("data") or {}).get("estimates", []) if row.get("horizon") == "fiscal quarter" and adjacent(row.get("date"))), key=lambda row: row["date"])
@@ -225,6 +198,8 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     info_day = financial_day(started)
     if saved and not financial_due(saved, started) and saved.get("info_checked_day") == info_day:
         info = deepcopy(saved.get("security_info") or {})
+        for key in ("regularMarketPrice", "regularMarketTime", "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "marketCap"):
+            info.pop(key, None)
     else:
         info = load("证券信息", item.get_info, {}) or {}
     security_info = deepcopy(info)
@@ -310,13 +285,6 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         if quote_type == "ETF":
             m["market_cap"] = empty_metric("ETF 公司市值不适用；未用资产规模替代")
         return result
-    if not info_available and saved:
-        for key in ("market_cap", "high_52w", "low_52w"):
-            previous = saved.get("metrics", {}).get(key, {})
-            if m[key].get("value") is None and previous.get("value") is not None:
-                m[key] = deepcopy(previous)
-                m[key]["stale"] = True
-                m[key]["reason"] = "证券信息更新失败，保留上次成功值"
     if m["market_cap"].get("value") is None:
         # Shares endpoint is independent of quoteSummary; refresh at most daily.
         shares = (saved or {}).get("shares_outstanding")
@@ -357,7 +325,6 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     eps = frame_values(income, ["DilutedEPS"], fin_currency, financial_url)
     revenue = frame_values(income, ["TotalRevenue"], fin_currency, financial_url)
     debt = frame_values(balance, ["TotalDebt"], fin_currency, balance_url)
-    debt = retain_debt_history(debt, saved, fin_currency, balance_url, started)
     ocf = frame_values(cashflow, ["OperatingCashFlow"], fin_currency, cash_url)
     capex = frame_values(cashflow, ["CapitalExpenditure"], fin_currency, cash_url)
     fcf = {}
@@ -399,23 +366,12 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         m["forward_eps_q0"] = field(row.get("avg"), estimate_period, "Yahoo 0q 分析师平均 EPS 预期；可能为调整后口径，与 GAAP diluted EPS 不直接作 beat/miss 比较", analysis_url,
                                      currency=fin_currency, analysts=number(row.get("numberOfAnalysts")), estimate_label="供应商当前预测财季 0q")
     else:
-        previous_forecast = (saved or {}).get("metrics", {}).get("forward_eps_q0", {})
-        if previous_forecast.get("value") is not None:
-            m["forward_eps_q0"] = deepcopy(previous_forecast)
-            m["forward_eps_q0"]["estimate_stale"] = True
-            m["forward_eps_q0"]["estimate_fetched_at"] = previous_forecast.get("estimate_fetched_at") or (saved or {}).get("financial_fetched_at")
-        else:
-            m["forward_eps_q0"] = empty_metric("免费数据源未返回季度分析师预期", source=analysis_url)
+        m["forward_eps_q0"] = empty_metric("数据源未返回季度分析师预期", source=analysis_url)
     m["pe_ntm"] = empty_metric("缺少未来连续 4 个财季的同口径 EPS 预期；未用年度 forwardPE 代替", source=analysis_url,
                                 basis="NTM P/E = 价格 / 未来连续四个财季 EPS 预期之和")
     financial_errors = errors[financial_error_start:]
-    if statement_errors and saved and saved.get("series"):
-        reuse_financial(result, saved)
-        result["financial_stale"] = True
-        result["financial_errors"] = financial_errors
-    else:
-        result["financial_stale"] = bool(statement_errors)
-        result["financial_errors"] = financial_errors
+    result["financial_stale"] = False
+    result["financial_errors"] = financial_errors
     return revalue(result, estimate_store)
 
 
@@ -437,11 +393,7 @@ def security(symbol, refresh=False, store=None):
         try:
             with LIMIT:
                 result = fetch_security(symbol, saved, estimate_store=store)
-            if result["metrics"]["price"]["value"] is None and saved:
-                return {**saved, "cached": True, "stale": True, "refresh_error": "行情读取失败，保留上次快照", "cache_age_seconds": round(age)}
             store.set_cache("quote:" + symbol, result)
             return {**result, "cached": False}
         except Exception as exc:
-            if saved:
-                return {**saved, "cached": True, "stale": True, "refresh_error": type(exc).__name__, "cache_age_seconds": round(age)}
             return {"ticker": symbol, "name": symbol, "fetched_at": now(), "metrics": {}, "errors": [f"数据暂不可用：{type(exc).__name__}"], "sources": {}}

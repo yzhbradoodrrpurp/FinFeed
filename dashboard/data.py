@@ -9,6 +9,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
+import yahoo_session
 from alpha import estimate_data, next_four_eps, SOURCE as ALPHA_SOURCE
 
 from metrics import number, prior_quarter_period, trailing_pe, volume_metrics, qoq
@@ -95,7 +96,8 @@ def financial_day(timestamp):
 
 
 def financial_due(saved, timestamp):
-    return not saved or financial_day(saved.get("financial_checked_at") or saved.get("fetched_at")) != financial_day(timestamp)
+    return (not saved or saved.get("yahoo_session", {}).get("mode", "anonymous") != yahoo_session.mode()
+            or financial_day(saved.get("financial_checked_at") or saved.get("fetched_at")) != financial_day(timestamp))
 
 
 def reuse_financial(result, saved):
@@ -171,8 +173,11 @@ def revalue(result, estimate_store=None):
 
 def fetch_security(symbol, saved=None, estimate_store=None):
     started = now()
+    session_status = yahoo_session.initialize()
     item = yf.Ticker(symbol)
     errors = []
+    if session_status["error"]:
+        errors.append(session_status["error"])
     def load(label, action, default):
         try:
             return action()
@@ -181,7 +186,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
             errors.append(f"{label}读取失败：{type(exc).__name__}" + (f" HTTP {status}" if status else ""))
             return default
     info_day = financial_day(started)
-    if saved and saved.get("info_checked_day") == info_day:
+    if saved and not financial_due(saved, started) and saved.get("info_checked_day") == info_day:
         info = deepcopy(saved.get("security_info") or {})
     else:
         info = load("证券信息", item.get_info, {}) or {}
@@ -212,7 +217,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     cash_url = quote_url + "cash-flow/"
     analysis_url = quote_url + "analysis/"
     result = {"ticker": symbol, "name": info.get("longName") or info.get("shortName") or (saved or {}).get("name") or symbol,
-              "security_info": security_info, "info_checked_day": info_day,
+              "security_info": security_info, "info_checked_day": info_day, "yahoo_session": session_status,
               "quote_type": quote_type, "currency": currency, "financial_currency": fin_currency,
               "exchange": info.get("fullExchangeName") or info.get("exchange"),
               "exchange_timezone": exchange_tz, "fetched_at": started, "errors": errors,

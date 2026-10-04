@@ -28,6 +28,9 @@
 - `FINFEED_BOOTSTRAP_TOKEN`：至少 32 字符的高强度随机绑定码，可用 Render Generate 生成并保存到密码管理器，仅首次绑定使用。
 - `PYTHON_VERSION`：`3.11.17`。
 - `ALPHAVANTAGE_API_KEY`：可选备用数据源。所有指标优先 Yahoo/yfinance，下一财季预测缺失时才尝试备用源。
+- `YAHOO_COOKIE_T`、`YAHOO_COOKIE_Y`：可选 Yahoo 登录会话，必须同时设置，仅服务器通过 yfinance `Auth.set_login_cookies` 使用。每个进程验证一次；验证失败不停止其他可用数据请求。登录不保证恢复预测接口权限。
+
+Yahoo Cookie 相当于账户登录凭据。由账户本人在 Yahoo Finance 登录后取得，在 Render 私密环境变量中配置；不要发送到聊天、提交到 Git 或放在前端。只在明确同意将会话交给 Render 后配置。过期时本人更新并重新部署；移除这两个变量并重新部署即可恢复匿名模式。匿名与登录模式切换会重新检查当日资料和预测，正常运行仍遵守每天一次的刷新频率。
 
 应用使用 Render 的 `RENDER_EXTERNAL_URL` 固定可信 origin。若用自定义域名，在首次 Passkey 绑定前设置 `PUBLIC_ORIGIN=https://实际域名`，不含路径。不能依据来访 Host 动态选择 RP ID。
 
@@ -52,7 +55,7 @@ WebAuthn 要求 user verification，并验证固定 origin、RP ID、随机挑�
 
 ```sh
 cd dashboard
-python -m unittest test_cloud test_metrics test_refresh test_alpha
+python -m unittest test_cloud test_metrics test_refresh test_alpha test_yahoo_session
 node --check public/app.js
 node --check public/auth-client.js
 node test_positions.cjs

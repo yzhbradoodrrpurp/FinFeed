@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 import yahoo_session
 from yahoo_diagnostic import balance_with_diagnostics, provider_error_category
+from yahoo_probe import isolated_probe, REVISION as PROBE_REVISION
 from alpha import estimate_data, next_four_eps, SOURCE as ALPHA_SOURCE
 
 from metrics import number, prior_quarter_period, trailing_pe, volume_metrics, qoq
@@ -106,7 +107,7 @@ def reuse_financial(result, saved):
     for key in FINANCIAL_KEYS:
         if key in saved.get("metrics", {}):
             result["metrics"][key] = deepcopy(saved["metrics"][key])
-    for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at", "reported_shares", "financial_diagnostics"):
+    for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at", "reported_shares", "financial_diagnostics", "provider_probe"):
         if key in saved:
             result[key] = deepcopy(saved[key])
     result.setdefault("financial_fetched_at", saved.get("fetched_at"))
@@ -347,6 +348,12 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     # statements (including historical quarters needed for growth rates).
     statement_errors = errors[financial_error_start:]
     estimates = load("分析师预期", item.get_earnings_estimate, None)
+    if symbol == "GOOG":
+        previous_probe = (saved or {}).get("provider_probe", {})
+        if previous_probe.get("revision") == PROBE_REVISION:
+            result["provider_probe"] = previous_probe
+        elif any("invalid_crumb" in error for error in errors):
+            result["provider_probe"] = isolated_probe()
     if estimates is not None and not estimates.empty and "0q" in estimates.index:
         row = estimates.loc["0q"]
         # The public estimate DataFrame omits the period end. Version-pinned

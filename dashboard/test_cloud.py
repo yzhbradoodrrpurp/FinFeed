@@ -141,13 +141,79 @@ class CloudCases(unittest.TestCase):
         reopened = Store(sqlite_path=self.path)
         self.assertEqual(reopened.read_state(), state)
         with reopened.transaction() as connection:
-            backup = json.loads(reopened.execute(connection, "SELECT state FROM state_history").fetchone()["state"])
+            backup = json.loads(reopened.execute(connection, "SELECT state FROM account_history").fetchone()["state"])
         self.assertEqual(backup, original)
         with self.assertRaises(ValueError):
             reopened.update_state(original, require_empty=True)
         invalid = self.client.put("/api/state", json={"positions": [{**position, "quantity": -1}]}, headers=HEADERS)
         self.assertEqual(invalid.status_code, 400)
         self.assertEqual(reopened.read_state(), state)
+
+    def signup(self, client, credential=b"other-key", name="Other"):
+        response = client.post("/api/auth/register/options", json={"newAccount": True, "name": name}, headers=HEADERS)
+        self.assertEqual(response.status_code, 200)
+        with patch("cloud.verify_registration_response", return_value=SimpleNamespace(
+                credential_id=credential, credential_public_key=b"key", sign_count=0)):
+            response = client.post("/api/auth/register/verify", json={}, headers=HEADERS)
+        self.assertEqual(response.status_code, 200)
+        return client.get("/api/auth/status").json["user"]["id"]
+
+    def test_accounts_isolate_writes_and_allow_authenticated_cross_reads(self):
+        self.enroll()
+        owner = self.client.get("/api/auth/status").json["user"]["id"]
+        original = {"watchlist": ["AAPL"], "positions": [{"ticker": "AAPL", "quantity": 2, "averageCost": 100, "currency": "USD"}]}
+        self.client.put("/api/state", json=original, headers=HEADERS)
+        other = self.app.test_client()
+        other_id = self.signup(other)
+        self.assertEqual(other.get("/api/state").json["state"], {"watchlist": [], "positions": []})
+        other.put("/api/state", json={"watchlist": ["NVDA"]}, headers=HEADERS)
+        shared = other.get("/api/state?user="+owner)
+        self.assertTrue(shared.json["readOnly"])
+        self.assertEqual(shared.json["state"], original)
+        self.assertEqual(other.put("/api/state?user="+owner, json={"watchlist": ["MU"]}, headers=HEADERS).status_code, 403)
+        self.assertEqual(other.put("/api/state", json={"user_id": owner, "watchlist": ["MU"]}, headers=HEADERS).status_code, 400)
+        self.assertEqual(self.client.get("/api/state").json["state"], original)
+        self.assertEqual(self.client.get("/api/state?user="+other_id).json["state"]["watchlist"], ["NVDA"])
+        self.assertEqual(len(other.get("/api/auth/passkeys").json["passkeys"]), 1)
+        self.assertEqual(len(other.get("/api/accounts").json["accounts"]), 2)
+        self.assertEqual(self.app.test_client().get("/api/accounts").status_code, 401)
+        self.assertEqual(self.app.test_client().get("/api/state?user="+owner).status_code, 401)
+        reopened = Store(sqlite_path=self.path)
+        self.assertEqual(reopened.read_state(owner), original)
+        self.assertEqual(reopened.read_state(other_id)["watchlist"], ["NVDA"])
+
+    def test_new_account_login_resolves_credential_owner_and_checks_handle(self):
+        other = self.app.test_client()
+        user_id = self.signup(other)
+        other.post("/api/auth/logout", json={}, headers=HEADERS)
+        other.post("/api/auth/login/options", json={}, headers=HEADERS)
+        from webauthn.helpers import bytes_to_base64url
+        with patch("cloud.verify_authentication_response", return_value=SimpleNamespace(new_sign_count=1)):
+            response = other.post("/api/auth/login/verify", json={"id": bytes_to_base64url(b"other-key"), "response": {"userHandle": user_id}}, headers=HEADERS)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(other.get("/api/auth/status").json["user"]["id"], user_id)
+        other.post("/api/auth/logout", json={}, headers=HEADERS)
+        other.post("/api/auth/login/options", json={}, headers=HEADERS)
+        self.assertEqual(other.post("/api/auth/login/verify", json={"id": bytes_to_base64url(b"other-key"), "response": {"userHandle": bytes_to_base64url(b"wrong")}}, headers=HEADERS).status_code, 401)
+
+    def test_legacy_migration_preserves_credentials_sessions_state_and_history(self):
+        import sqlite3
+        path = str(Path(self.directory.name) / "legacy.db")
+        with sqlite3.connect(path) as connection:
+            connection.executescript("CREATE TABLE owner (id INTEGER PRIMARY KEY, user_handle TEXT, state TEXT, revision INTEGER); CREATE TABLE credentials (id TEXT PRIMARY KEY, public_key TEXT, sign_count BIGINT, label TEXT, created DOUBLE PRECISION); CREATE TABLE sessions (id TEXT PRIMARY KEY,created DOUBLE PRECISION,expires DOUBLE PRECISION); CREATE TABLE state_history (revision INTEGER PRIMARY KEY,state TEXT,created DOUBLE PRECISION);")
+            state = json.dumps({"watchlist": ["GOOG"], "positions": []})
+            connection.execute("INSERT INTO owner VALUES (1,'legacy-handle',?,2)", (state,))
+            connection.execute("INSERT INTO credentials VALUES ('key','public',0,'Mac',1)")
+            connection.execute("INSERT INTO sessions VALUES (?,1,?)", (digest('token'), time.time()+300))
+            connection.execute("INSERT INTO state_history VALUES (1,?,1)", (state,))
+        migrated = Store(sqlite_path=path)
+        self.assertEqual(migrated.read_state()['watchlist'], ['GOOG'])
+        with migrated.transaction() as connection:
+            self.assertEqual(migrated.session(connection, 'token')['user_id'], 'legacy-handle')
+            self.assertEqual(migrated.credentials(connection)[0]['user_id'], 'legacy-handle')
+            self.assertEqual(migrated.execute(connection, "SELECT user_id FROM account_history").fetchone()['user_id'], 'legacy-handle')
+        migrated.update_state({'watchlist':['AAPL']})
+        self.assertEqual(Store(sqlite_path=path).read_state()['watchlist'], ['AAPL'])
 
     def test_daily_cache_survives_restart(self):
         self.store.set_cache("quote:QA", {"financial_checked_at": "2026-10-04"})

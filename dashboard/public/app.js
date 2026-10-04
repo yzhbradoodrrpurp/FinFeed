@@ -1,4 +1,5 @@
 "use strict";
+let readOnly=false,currentUser=null;
 let holdings=[],surface="watchlist",editingPosition=null;
 const groups = [
   {name:"证券",view:"market",columns:[["market_cap","Market Cap","公司市值","money"]]},
@@ -69,6 +70,7 @@ function renderHoldings(){
   el("holdings-status").textContent=running||queue.length?"正在更新行情…":holdings.length?"使用最近常规时段报价估值，点击持仓行查看报价时间和来源。":"按平均成本记录持仓，支持小数数量。";
 }
 function openPosition(ticker=null){
+  if(readOnly)return;
   editingPosition=ticker;
   const p=holdings.find(p=>p.ticker===ticker);
   el("position-form").reset();el("position-error").hidden=true;
@@ -80,6 +82,7 @@ function openPosition(ticker=null){
 }
 let stateWrites=Promise.resolve();
 function persistState(patch){
+  if(readOnly)return Promise.reject(new Error("当前账户仅供查看，请切换回我的账户后修改"));
   const payload=JSON.stringify(patch);
   const write=stateWrites.then(async()=>{
     const response=await FinFeedAuth.request("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:payload});
@@ -105,6 +108,7 @@ function renderOrder(){
   el("order-list").innerHTML=tickers.map((ticker,index)=>`<li draggable="true" data-order-ticker="${escapeHTML(ticker)}"><span class="drag-handle" aria-hidden="true">⠿</span><span class="order-security"><strong>${escapeHTML(ticker)}</strong><span>${escapeHTML(records.get(ticker)?.name||ticker)}</span></span><span class="order-actions"><button class="secondary" data-move="up" data-order-symbol="${escapeHTML(ticker)}" aria-label="上移 ${escapeHTML(ticker)}" ${index===0?"disabled":""}>上移</button><button class="secondary" data-move="down" data-order-symbol="${escapeHTML(ticker)}" aria-label="下移 ${escapeHTML(ticker)}" ${index===tickers.length-1?"disabled":""}>下移</button></span></li>`).join("")||'<li class="order-empty">尚未添加标的。</li>';
 }
 function moveTicker(ticker,targetIndex){
+  if(readOnly)return false;
   const from=tickers.indexOf(ticker);
   if(from<0||targetIndex<0||targetIndex>=tickers.length||from===targetIndex)return false;
   tickers.splice(from,1);tickers.splice(targetIndex,0,ticker);
@@ -166,6 +170,7 @@ function refreshWatchlist(){
   load(tracked,true);
 }
 function addTickers(text){
+  if(readOnly)throw new Error("其他账户仅供查看");
   const added=[...new Set(text.toUpperCase().split(/[\s,，;；]+/).filter(Boolean))];
   if(!added.length)throw new Error("请输入 Ticker，例如 AAPL。");
   if(added.some(t=>! /^[A-Z0-9][A-Z0-9.^=-]{0,19}$/.test(t)))throw new Error("Ticker 格式不正确，可输入 AAPL、BRK-B 或 000660.KS。");
@@ -202,6 +207,7 @@ el("position-form").addEventListener("submit",async event=>{
 el("holdings-body").addEventListener("click",async event=>{
   const edit=event.target.closest("[data-edit-position]");if(edit){openPosition(edit.dataset.editPosition);return;}
   const remove=event.target.closest("[data-delete-position]");if(remove){
+    if(readOnly)return;
     if(confirm(`删除 ${remove.dataset.deletePosition} 的持仓记录？`)){try{await storeHoldings(holdings.filter(p=>p.ticker!==remove.dataset.deletePosition));renderHoldings();}catch{alert("未能保存删除操作，记录已保留。");}}
     return;
   }
@@ -227,7 +233,7 @@ el("order-list").addEventListener("dragend",()=>{draggingTicker=null;clearDropMa
 document.querySelectorAll("[data-close]").forEach(button=>button.addEventListener("click",()=>button.closest("dialog").close()));
 document.querySelectorAll("[data-view]").forEach(button=>button.addEventListener("click",()=>{view=button.dataset.view;document.querySelectorAll("[data-view]").forEach(b=>b.setAttribute("aria-pressed",String(b===button)));render();}));
 el("watchlist").addEventListener("click",event=>{
-  const remove=event.target.closest("[data-remove]");if(remove){const t=remove.dataset.remove;tickers=tickers.filter(x=>x!==t);queue=queue.filter(task=>task.ticker!==t||holdings.some(p=>p.ticker===t));save();render();return;}
+  const remove=event.target.closest("[data-remove]");if(remove){if(readOnly)return;const t=remove.dataset.remove;tickers=tickers.filter(x=>x!==t);queue=queue.filter(task=>task.ticker!==t||holdings.some(p=>p.ticker===t));save();render();return;}
   const sort=event.target.closest("[data-sort]");if(sort){sortAsc=sortKey===sort.dataset.sort?!sortAsc:true;sortKey=sort.dataset.sort;render();return;}
   const row=event.target.closest("tr[data-ticker]");if(row)detail(row.dataset.ticker);
 });
@@ -242,11 +248,21 @@ if(document.modelContext?.registerTool){
 async function initializeState(){
   document.querySelector("main").inert=true;
   try{
-    await FinFeedAuth.initialize();
+    const auth=await FinFeedAuth.initialize();currentUser=auth.user;
+    el("profile-name").value=currentUser.name;
+    const directoryResponse=await FinFeedAuth.request("/api/accounts");
+    if(!directoryResponse.ok)throw new Error("账户列表读取失败");
+    const directory=await directoryResponse.json();
+    const requestedUser=new URLSearchParams(location.search).get("user")||currentUser.id;
+    el("view-account").innerHTML=directory.accounts.map(a=>`<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}${a.id===currentUser.id?" · 我的账户":" · "+escapeHTML(a.id.slice(0,6))}</option>`).join("");
+    el("view-account").value=requestedUser;
     el("account-button").hidden=false;
-    const response=await FinFeedAuth.request("/api/state");const data=await response.json();
+    const response=await FinFeedAuth.request("/api/state?user="+encodeURIComponent(requestedUser));const data=await response.json();
     if(!response.ok)throw new Error(data.error||"记录读取失败");
+    readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
+    el("account-mode").textContent=readOnly?`${data.account.name} · 只读，无法修改`:"我的账户 · 可编辑";
     let state=data.state;
+    if(!state&&readOnly)state={watchlist:[],positions:[]};
     if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
     tickers=state.watchlist;holdings=state.positions;
     for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
@@ -312,4 +328,18 @@ el("confirm-import").addEventListener("click",async()=>{
     render();load(trackedTickers());accountFeedback("自选股与持仓已保存到云端。");
   }catch(e){accountFeedback(e.message);}
   finally{el("confirm-import").disabled=false;}
+});
+
+el("view-account").addEventListener("change",async()=>{
+  document.querySelector("main").inert=true;
+  await stateWrites;
+  location.assign(el("view-account").value===currentUser.id?"/":"/?user="+encodeURIComponent(el("view-account").value));
+});
+el("profile-form").addEventListener("submit",async event=>{
+  event.preventDefault();
+  try{
+    const response=await FinFeedAuth.request("/api/account",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:el("profile-name").value.trim()})});
+    const data=await response.json();if(!response.ok)throw new Error(data.error);
+    location.reload();
+  }catch(error){accountFeedback(error.message);}
 });

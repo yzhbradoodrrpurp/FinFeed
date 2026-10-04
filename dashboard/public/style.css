@@ -55,3 +55,9 @@ main{max-width:none;padding:20px 20px 28px}
 #account-button{margin-left:auto;font-size:12px;padding:7px 12px}
 .login-card form{display:block;width:100%}
 .login-card .primary{display:block;padding:14px 18px}
+
+.account-browser {display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 16px;color:var(--muted);}
+.account-browser select {padding:8px 12px;border:1px solid #ccd9e2;border-radius:8px;background:white;max-width:100%;font:inherit;}
+.read-only #add-form,.read-only #order-button,.read-only .remove,.read-only #add-position,.read-only .holding-actions,.read-only #choose-import,.read-only #import-preview {display:none!important;}
+#profile-form {display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+#signup-toggle {margin-top:16px;}

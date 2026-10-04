@@ -11,6 +11,7 @@
   <header class="masthead"><a class="brand" href="/" aria-label="FinFeed 自选股"><span class="brand-icon">F</span>FinFeed</a><button id="account-button" class="secondary" hidden>我的账户</button></header>
   <main>
     <div class="title-row"><div><div class="eyebrow" id="page-eyebrow">MY WATCHLIST</div><h1 id="page-title">自选股</h1></div><div class="title-actions"><button id="method-button" class="secondary">指标口径</button><button id="refresh" class="primary">刷新数据</button></div></div>
+    <div class="account-browser"><label for="view-account">查看账户</label><select id="view-account" aria-label="查看账户"></select><span id="account-mode"></span></div>
     <nav class="surface-tabs" aria-label="研究视图"><button data-surface="watchlist" aria-pressed="true">Watchlist · 自选股</button><button data-surface="holdings" aria-pressed="false">Portfolio · 持仓</button></nav>
     <section id="watchlist-surface" aria-label="自选股视图">
     <div class="control-row"><form id="add-form"><label class="sr-only" for="ticker-input">添加 ticker</label><input id="ticker-input" autocomplete="off" spellcheck="false" placeholder="添加 Ticker，如 AAPL / VOO" maxlength="150"><button type="submit" class="secondary">添加</button></form><span id="count" class="count"></span></div>
@@ -43,7 +44,7 @@
     <p>行情每 60 秒刷新；估值用当次价格和每日缓存的 EPS 重新计算。季度财务与盈利预测按北京时间每日 00:00 切换更新日，在页面打开后的下一次刷新时获取；页面关闭期间不主动请求。缓存保存在私人数据库；详情分别显示行情和财务检索时间。免费源不保证实时或完整，SEC 原始报告入口用于核对。当前网络测试 SEC 接口返回 403，因此第一版财务来源明确显示为 Yahoo 聚合值。</p>
   </div></dialog>
   <dialog id="account-dialog"><div class="dialog-heading"><h2>我的账户</h2><button id="account-close" class="secondary" aria-label="关闭账户窗口">关闭</button></div>
-    <p>当前已通过 Passkey 登录。</p><ul id="passkey-list"></ul>
+    <form id="profile-form"><label for="profile-name">我的账户名称</label><input id="profile-name" maxlength="40" required><button class="secondary" type="submit">保存名称</button></form><p>其他登录用户可查看你的自选股、持仓数量、成本和盈亏；只有你可以修改。</p><ul id="passkey-list"></ul>
     <button id="add-passkey" class="secondary">添加备用 Passkey</button>
     <hr><h3>自选股与持仓</h3><p>自选股顺序、数量和平均成本保存在私人数据库，可导出备份或导入记录文件。</p>
     <button id="export-state" class="secondary">导出记录</button><button id="choose-import" class="secondary">选择导入文件</button>

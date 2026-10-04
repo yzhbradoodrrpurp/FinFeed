@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS flows (
 CREATE TABLE IF NOT EXISTS state_history (
     revision INTEGER PRIMARY KEY, state TEXT NOT NULL, created DOUBLE PRECISION NOT NULL
 );
+CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, state TEXT, revision INTEGER NOT NULL DEFAULT 0,
+    created DOUBLE PRECISION NOT NULL
+);
+CREATE TABLE IF NOT EXISTS account_history (
+    user_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, created DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (user_id, revision)
+);
 CREATE TABLE IF NOT EXISTS cache (
     id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated DOUBLE PRECISION NOT NULL
 );
@@ -44,7 +52,7 @@ def digest(token: str) -> str:
 
 
 class Store:
-    """Single-owner records, changed under a database row lock."""
+    """Account records, changed under a database row lock."""
 
     def __init__(self, database_url: str | None = None, *, sqlite_path: str | None = None):
         if not sqlite_path and not (database_url or "").startswith(("postgres://", "postgresql://")):
@@ -62,6 +70,21 @@ class Store:
             if not sqlite_path:
                 connection.execute("REVOKE ALL ON ALL TABLES IN SCHEMA finfeed_private FROM PUBLIC")
             self.execute(connection, "INSERT INTO owner (id,user_handle) VALUES (1,?) ON CONFLICT (id) DO NOTHING", (secrets.token_urlsafe(32),))
+            for table in ("credentials", "sessions"):
+                if sqlite_path:
+                    columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+                else:
+                    columns = {row["column_name"] for row in connection.execute(
+                        "SELECT column_name FROM information_schema.columns WHERE table_schema='finfeed_private' AND table_name=%s", (table,))}
+                if "user_id" not in columns:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT")
+            legacy = self.owner(connection)
+            self.execute(connection, "INSERT INTO accounts (id,name,state,revision,created) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+                         (legacy["user_handle"], "Liam", legacy["state"], legacy["revision"], time.time()))
+            for table in ("credentials", "sessions"):
+                self.execute(connection, f"UPDATE {table} SET user_id=? WHERE user_id IS NULL", (legacy["user_handle"],))
+            self.execute(connection, "INSERT INTO account_history (user_id,revision,state,created) SELECT ?,revision,state,created FROM state_history WHERE 1=1 ON CONFLICT(user_id,revision) DO NOTHING", (legacy["user_handle"],))
+
 
     @contextmanager
     def transaction(self) -> Iterator[Any]:
@@ -95,16 +118,28 @@ class Store:
         suffix = "" if self.sqlite_path else " FOR UPDATE"
         return dict(self.execute(connection, "SELECT * FROM owner WHERE id=1" + suffix).fetchone())
 
-    def credentials(self, connection: Any) -> list[dict]:
-        return [dict(row) for row in self.execute(connection, "SELECT * FROM credentials ORDER BY created").fetchall()]
+    def account(self, connection, user_id=None):
+        user_id = user_id or self.owner(connection)["user_handle"]
+        suffix = "" if self.sqlite_path else " FOR UPDATE"
+        row = self.execute(connection, "SELECT * FROM accounts WHERE id=?" + suffix, (user_id,)).fetchone()
+        if not row:
+            raise ValueError("账户不存在")
+        return dict(row)
+
+    def accounts(self):
+        with self.transaction() as connection:
+            return [dict(row) for row in self.execute(connection, "SELECT a.id,a.name FROM accounts a WHERE EXISTS (SELECT 1 FROM credentials c WHERE c.user_id=a.id) ORDER BY a.created").fetchall()]
+
+    def credentials(self, connection: Any, user_id=None) -> list[dict]:
+        return [dict(row) for row in self.execute(connection, "SELECT * FROM credentials" + (" WHERE user_id=?" if user_id else "") + " ORDER BY created", (user_id,) if user_id else ()).fetchall()]
 
     def session(self, connection: Any, token: str) -> dict | None:
         row = self.execute(connection, "SELECT * FROM sessions WHERE id=? AND expires>?", (digest(token), time.time())).fetchone()
         return dict(row) if row else None
 
-    def new_session(self, connection: Any) -> str:
+    def new_session(self, connection: Any, user_id=None) -> str:
         token = secrets.token_urlsafe(32)
-        self.execute(connection, "INSERT INTO sessions VALUES (?,?,?)", (digest(token), time.time(), time.time() + 43200))
+        self.execute(connection, "INSERT INTO sessions (id,created,expires,user_id) VALUES (?,?,?,?)", (digest(token), time.time(), time.time() + 43200, user_id or self.owner(connection)["user_handle"]))
         return token
 
     def flow(self, connection: Any, payload: dict) -> str:
@@ -123,9 +158,9 @@ class Store:
                 return json.loads(row["payload"])
         return None
 
-    def read_state(self) -> dict | None:
+    def read_state(self, user_id=None) -> dict | None:
         with self.transaction() as connection:
-            row = self.owner(connection)
+            row = self.account(connection, user_id)
             return validate(json.loads(row["state"])) if row["state"] else None
 
     def get_cache(self, key: str) -> tuple[dict, float] | None:
@@ -150,11 +185,11 @@ class Store:
                                 "cache_age_seconds": round(max(0, time.time() - row["updated"]))}
                 for row in rows}
 
-    def update_state(self, patch: dict, *, require_empty: bool = False) -> dict:
+    def update_state(self, patch: dict, *, require_empty: bool = False, user_id=None) -> dict:
         if not isinstance(patch, dict) or set(patch) - {"watchlist", "positions", "initialize"}:
             raise ValueError("无效保存字段")
         with self.transaction() as connection:
-            owner = self.owner(connection)
+            owner = self.account(connection, user_id)
             current = json.loads(owner["state"]) if owner["state"] else None
             if require_empty and current is not None:
                 raise ValueError("云端已有记录，拒绝覆盖；请通过登录后的导入功能操作")
@@ -166,7 +201,7 @@ class Store:
                 return state
             revision = owner["revision"] + 1
             if current is not None:
-                self.execute(connection, "INSERT INTO state_history VALUES (?,?,?)", (owner["revision"], json.dumps(current), time.time()))
-                self.execute(connection, "DELETE FROM state_history WHERE revision<?", (revision - 50,))
-            self.execute(connection, "UPDATE owner SET state=?,revision=? WHERE id=1", (json.dumps(state, ensure_ascii=False, allow_nan=False), revision))
+                self.execute(connection, "INSERT INTO account_history VALUES (?,?,?,?)", (owner["id"], owner["revision"], json.dumps(current), time.time()))
+                self.execute(connection, "DELETE FROM account_history WHERE user_id=? AND revision<?", (owner["id"], revision - 50))
+            self.execute(connection, "UPDATE accounts SET state=?,revision=? WHERE id=?", (json.dumps(state, ensure_ascii=False, allow_nan=False), revision, owner["id"]))
             return state

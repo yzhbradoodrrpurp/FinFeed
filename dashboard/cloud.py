@@ -1,4 +1,4 @@
-"""Cloud entry point: owner-only WebAuthn and persistent private state."""
+"""Cloud entry point: multi-account WebAuthn and persistent private state."""
 import json
 import os
 from pathlib import Path
@@ -78,10 +78,10 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(403, description="添加 Passkey 前请退出并重新验证登录")
         return session
 
-    def finish_login(connection, response) -> None:
+    def finish_login(connection, response, user_id) -> None:
         old = request.cookies.get(session_cookie, "")
         database.execute(connection, "DELETE FROM sessions WHERE id=?", (digest(old),))
-        set_cookie(response, session_cookie, database.new_session(connection), 43200)
+        set_cookie(response, session_cookie, database.new_session(connection, user_id), 43200)
         response.delete_cookie(flow_cookie, secure=secure, httponly=True, samesite="Strict", path="/")
 
     @app.before_request
@@ -142,7 +142,10 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def auth_status():
         with database.transaction() as connection:
             setup = not database.credentials(connection)
-        return jsonify(cloud=True, authenticated=bool(logged_in()), setupRequired=setup,
+        session = logged_in()
+        with database.transaction() as connection:
+            account = database.account(connection, session["user_id"]) if session else None
+        return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=True, cloud=True, authenticated=bool(session), setupRequired=setup,
                        bootstrapAvailable=bool(bootstrap), passkeySupported=True)
 
     @app.post("/api/auth/register/options")
@@ -150,20 +153,33 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         body = json_body()
         with database.transaction() as connection:
             owner = database.owner(connection)
-            credentials = database.credentials(connection)
-            if credentials:
+            if body.get("newAccount"):
+                if database.session(connection, request.cookies.get(session_cookie, "")):
+                    abort(400, description="请退出当前账户后注册新账户")
+                name = body.get("name", "")
+                if not isinstance(name, str) or not 1 <= len(name.strip()) <= 40:
+                    abort(400, description="账户名称需为 1–40 个字符")
+                user_id = secrets.token_urlsafe(32)
+                name = name.strip()
+                mode, binding, credentials = "new", None, []
+            elif database.credentials(connection):
                 session = require_owner(recent=True, connection=connection)
+                user_id = session["user_id"]
+                name = database.account(connection, user_id)["name"]
+                credentials = database.credentials(connection, user_id)
                 mode, binding = "add", session["id"]
             else:
                 token = body.get("setupCode")
                 if not bootstrap or not isinstance(token, str) or not secrets.compare_digest(token.encode(), bootstrap.encode()):
                     abort(403, description="首次绑定码不正确")
+                user_id, name = owner["user_handle"], "Liam"
+                credentials = []
                 mode, binding = "initial", None
             if len(credentials) >= 10:
                 abort(400, description="最多绑定 10 把 Passkey")
             options = generate_registration_options(
-                rp_id=parsed.hostname, rp_name="FinFeed", user_name="FinFeed Owner",
-                user_display_name="FinFeed 私人账户", user_id=base64url_to_bytes(owner["user_handle"]),
+                rp_id=parsed.hostname, rp_name="FinFeed", user_name=name,
+                user_display_name=name, user_id=base64url_to_bytes(user_id),
                 authenticator_selection=AuthenticatorSelectionCriteria(
                     resident_key=ResidentKeyRequirement.REQUIRED,
                     user_verification=UserVerificationRequirement.REQUIRED),
@@ -173,7 +189,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             if not isinstance(label, str) or not 1 <= len(label.strip()) <= 60:
                 abort(400, description="Passkey 名称需为 1–60 个字符")
             token = database.flow(connection, {"kind": "register", "mode": mode, "binding": binding,
-                                               "challenge": bytes_to_base64url(options.challenge), "label": label.strip()})
+                                               "challenge": bytes_to_base64url(options.challenge), "label": label.strip(), "user_id": user_id, "name": name})
         response = jsonify(json.loads(options_to_json(options)))
         set_cookie(response, flow_cookie, token, 300)
         return response
@@ -182,7 +198,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def register_verify():
         body = json_body()
         flow = database.consume_flow(request.cookies.get(flow_cookie, ""))
-        if not flow or flow.get("kind") != "register":
+        if not flow or flow.get("kind") != "register" or not flow.get("user_id"):
             abort(400, description="绑定请求已过期，请重新开始")
         try:
             verification = verify_registration_response(
@@ -193,22 +209,28 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(400, description="Passkey 绑定验证失败，请重新开始")
         with database.transaction() as connection:
             database.owner(connection)
-            credentials = database.credentials(connection)
+            user_id = flow["user_id"]
+            credentials = database.credentials(connection, user_id)
             if flow["mode"] == "initial":
-                if credentials:
+                if database.credentials(connection):
                     abort(403, description="首次绑定已完成，请先登录")
+            elif flow["mode"] == "new":
+                database.execute(connection, "INSERT INTO accounts (id,name,state,revision,created) VALUES (?,?,?,0,?)",
+                                 (user_id, flow["name"], json.dumps({"watchlist": [], "positions": []}), time.time()))
             else:
                 session = require_owner(recent=True, connection=connection)
-                if session["id"] != flow["binding"]:
+                if session["id"] != flow["binding"] or session["user_id"] != user_id:
                     abort(403, description="登录状态已改变，请重新开始")
             if len(credentials) >= 10:
                 abort(400, description="最多绑定 10 把 Passkey")
-            database.execute(connection, "INSERT INTO credentials VALUES (?,?,?,?,?)", (
+            if database.execute(connection, "SELECT id FROM credentials WHERE id=?", (bytes_to_base64url(verification.credential_id),)).fetchone():
+                abort(400, description="这把 Passkey 已绑定，请使用它登录")
+            database.execute(connection, "INSERT INTO credentials (id,public_key,sign_count,label,created,user_id) VALUES (?,?,?,?,?,?)", (
                 bytes_to_base64url(verification.credential_id),
                 bytes_to_base64url(verification.credential_public_key), verification.sign_count,
-                flow["label"], time.time()))
+                flow["label"], time.time(), user_id))
             response = jsonify(ok=True)
-            finish_login(connection, response)
+            finish_login(connection, response, user_id)
         return response
 
     @app.post("/api/auth/login/options")
@@ -232,14 +254,15 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if not flow or flow.get("kind") != "login":
             abort(400, description="登录请求已过期，请重新开始")
         with database.transaction() as connection:
-            owner = database.owner(connection)
+            database.owner(connection)
             credential_id = body.get("id")
             credential = database.execute(connection, "SELECT * FROM credentials WHERE id=?", (credential_id if isinstance(credential_id, str) else "",)).fetchone()
             if not credential:
                 abort(401, description="Passkey 登录验证失败")
+            account = database.account(connection, credential["user_id"])
             try:
                 handle = body.get("response", {}).get("userHandle")
-                if handle is not None and base64url_to_bytes(handle) != base64url_to_bytes(owner["user_handle"]):
+                if handle is not None and base64url_to_bytes(handle) != base64url_to_bytes(account["id"]):
                     abort(401, description="Passkey 登录验证失败")
                 verification = verify_authentication_response(
                     credential=body, expected_challenge=base64url_to_bytes(flow["challenge"]),
@@ -251,7 +274,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
                 abort(401, description="Passkey 登录验证失败")
             database.execute(connection, "UPDATE credentials SET sign_count=? WHERE id=?", (verification.new_sign_count, credential["id"]))
             response = jsonify(ok=True)
-            finish_login(connection, response)
+            finish_login(connection, response, credential["user_id"])
         return response
 
     @app.post("/api/auth/logout")
@@ -268,21 +291,44 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def passkeys():
         require_owner()
         with database.transaction() as connection:
-            rows = database.credentials(connection)
+            rows = database.credentials(connection, logged_in()["user_id"])
         return jsonify(passkeys=[{"label": row["label"], "created": row["created"]} for row in rows])
+
+    @app.get("/api/accounts")
+    def accounts_read():
+        return jsonify(accounts=database.accounts(), currentUser=logged_in()["user_id"])
+
+    @app.patch("/api/account")
+    def account_update():
+        body = json_body()
+        name = body.get("name")
+        if set(body) != {"name"} or not isinstance(name, str) or not 1 <= len(name.strip()) <= 40:
+            abort(400, description="账户名称需为 1–40 个字符")
+        with database.transaction() as connection:
+            database.execute(connection, "UPDATE accounts SET name=? WHERE id=?", (name.strip(), logged_in()["user_id"]))
+        return jsonify(ok=True)
 
     @app.get("/api/state")
     def state_read():
-        state = database.read_state()
+        viewer_id = logged_in()["user_id"]
+        user_id = request.args.get("user") or viewer_id
+        try:
+            state = database.read_state(user_id)
+            with database.transaction() as connection:
+                account = database.account(connection, user_id)
+        except ValueError:
+            abort(404, description="账户不存在")
         symbols = list(dict.fromkeys(state["watchlist"] + [p["ticker"] for p in state["positions"]])) if state else []
         snapshots = database.get_cached_quotes(symbols)
-        return jsonify(state=state, quotes={symbol: record for symbol, record in snapshots.items()
+        return jsonify(account={"id": account["id"], "name": account["name"]}, readOnly=user_id != viewer_id, state=state, quotes={symbol: record for symbol, record in snapshots.items()
                                            if record.get("schema_version") == SCHEMA_VERSION})
 
     @app.put("/api/state")
     def state_write():
+        if request.args.get("user") and request.args["user"] != logged_in()["user_id"]:
+            abort(403, description="不能修改其他账户的记录")
         try:
-            return jsonify(state=database.update_state(json_body()))
+            return jsonify(state=database.update_state(json_body(), user_id=logged_in()["user_id"]))
         except ValueError as error:
             return jsonify(error=str(error)), 400
 

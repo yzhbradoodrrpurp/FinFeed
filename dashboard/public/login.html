@@ -7,16 +7,18 @@
 </head><body class="login-page">
   <header class="masthead"><a class="brand" href="/"><span class="brand-icon">F</span>FinFeed</a></header>
   <main class="login-main"><section class="login-card">
-    <div class="eyebrow">YOUR PRIVATE DASHBOARD</div><h1>你的市场，自选与持仓。</h1>
+    <div class="eyebrow">YOUR MARKET DASHBOARD</div><h1>你的市场，自选与持仓。</h1>
     <p id="login-description">使用 Passkey 验证身份，查看你的自选股和持仓。</p>
     <form id="passkey-form">
       <div id="setup-fields" hidden>
         <label for="setup-code">首次绑定码</label>
         <input id="setup-code" type="password" autocomplete="off" spellcheck="false" placeholder="输入你的私密绑定码">
-        <p class="login-hint">仅在首次绑定时使用。网站不会开放其他账户注册。</p>
+        <p class="login-hint">仅在首次绑定时使用。仅用于原始账户首次绑定。</p>
       </div>
+      <div id="signup-fields" hidden><label for="account-name">账户名称</label><input id="account-name" maxlength="40" autocomplete="nickname" placeholder="如 Liam"><p class="login-hint">登录用户可查看你的自选股、持仓数量、成本和盈亏；只有你可以修改。</p></div>
       <button id="passkey-submit" class="primary" type="submit" disabled>正在连接…</button>
     </form>
+    <button id="signup-toggle" class="secondary" type="button" hidden>创建自己的账户</button>
     <p id="login-error" class="feedback" role="alert" hidden></p>
     <p class="login-hint">通过设备指纹、面容或系统解锁验证。生物信息不会上传到 FinFeed。</p>
   </section></main>

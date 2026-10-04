@@ -29,12 +29,13 @@ class RefreshCases(unittest.TestCase):
     def test_same_day_only_market_updates_and_pe_uses_daily_eps(self):
         first = self.fetch('2026-10-04T02:00:00+00:00')
         self.item.get_info.return_value.update(regularMarketPrice=120, trailingEps=99)
+        self.item.get_history_metadata.return_value = {'regularMarketPrice': 120}
         second = self.fetch('2026-10-04T02:01:00+00:00', first)
         self.assertEqual(self.item.get_income_stmt.call_count, 1)
         self.assertEqual(self.item.get_balance_sheet.call_count, 1)
         self.assertEqual(self.item.get_cashflow.call_count, 1)
         self.assertEqual(self.item.get_earnings_estimate.call_count, 1)
-        self.assertEqual(self.item.get_info.call_count, 2)
+        self.assertEqual(self.item.get_info.call_count, 1)
         self.assertEqual(second['metrics']['pe_quarter']['value'], 15)
         self.assertEqual(second['financial_fetched_at'], first['financial_fetched_at'])
 

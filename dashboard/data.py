@@ -1,6 +1,7 @@
 """Yahoo Finance personal-use adapter with dated provenance and conservative gaps."""
 from copy import deepcopy
 import threading
+import tempfile
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -15,12 +16,18 @@ from metrics import number, prior_quarter_period, trailing_pe, volume_metrics, q
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / ".cache"
 CACHE.mkdir(exist_ok=True)
-yf.set_tz_cache_location(str(CACHE / "yfinance"))
-LIMIT = threading.Semaphore(2)
+# A fresh anonymous cookie store per process avoids reusing a rejected
+# cookie/crumb pair from a previous deployment. Do not log these credentials.
+YAHOO_CACHE = tempfile.TemporaryDirectory(prefix="finfeed-yahoo-")
+yf.set_tz_cache_location(YAHOO_CACHE.name)
+yf.config.debug.hide_exceptions = False
+yf.config.network.retries = 1
+# YfData shares one cookie/crumb pair across threads. Serialize provider access.
+LIMIT = threading.Semaphore(1)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def epoch(value):
@@ -170,9 +177,15 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         try:
             return action()
         except Exception as exc:
-            errors.append(f"{label}读取失败：{type(exc).__name__}")
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            errors.append(f"{label}读取失败：{type(exc).__name__}" + (f" HTTP {status}" if status else ""))
             return default
-    info = load("证券信息", item.get_info, {}) or {}
+    info_day = financial_day(started)
+    if saved and saved.get("info_checked_day") == info_day:
+        info = deepcopy(saved.get("security_info") or {})
+    else:
+        info = load("证券信息", item.get_info, {}) or {}
+    security_info = deepcopy(info)
     history = load("日线", lambda: item.history(period="1y", auto_adjust=False, actions=True,
                                               raise_errors=True, timeout=15), None)
     # quoteSummary can return {} after logging HTTP 401 without raising.
@@ -183,6 +196,12 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     metadata = load("交易时段", item.get_history_metadata, {}) or {}
     chart_info = {**metadata, "quoteType": metadata.get("instrumentType")}
     info = {**chart_info, **{key: value for key, value in info.items() if value is not None}}
+    # The chart quote is refreshed each minute even when profile data is daily.
+    for key in ("regularMarketPrice", "regularMarketTime", "fiftyTwoWeekHigh", "fiftyTwoWeekLow"):
+        if metadata.get(key) is not None:
+            info[key] = metadata[key]
+    if info.get("sharesOutstanding") and info.get("regularMarketPrice"):
+        info["marketCap"] = info["sharesOutstanding"] * info["regularMarketPrice"]
     quote_type = info.get("quoteType") or (saved or {}).get("quote_type", "UNKNOWN")
     currency = info.get("currency") or (saved or {}).get("currency")
     fin_currency = info.get("financialCurrency") or (saved or {}).get("financial_currency") or currency
@@ -193,6 +212,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     cash_url = quote_url + "cash-flow/"
     analysis_url = quote_url + "analysis/"
     result = {"ticker": symbol, "name": info.get("longName") or info.get("shortName") or (saved or {}).get("name") or symbol,
+              "security_info": security_info, "info_checked_day": info_day,
               "quote_type": quote_type, "currency": currency, "financial_currency": fin_currency,
               "exchange": info.get("fullExchangeName") or info.get("exchange"),
               "exchange_timezone": exchange_tz, "fetched_at": started, "errors": errors,

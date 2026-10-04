@@ -1,0 +1,95 @@
+"""Refresh cadence and valuation must not silently refetch daily fundamentals."""
+import unittest
+from unittest.mock import MagicMock, patch
+import pandas as pd
+import data
+
+
+class RefreshCases(unittest.TestCase):
+    def setUp(self):
+        alpha_patch = patch.object(data, "estimate_data", return_value=None)
+        alpha_patch.start(); self.addCleanup(alpha_patch.stop)
+        self.item = MagicMock()
+        self.item.get_info.return_value = {'quoteType': 'EQUITY', 'currency': 'USD', 'financialCurrency': 'USD', 'regularMarketPrice': 100, 'regularMarketTime': 1790956800, 'trailingEps': 10}
+        self.item.history.return_value = None
+        self.item.get_history_metadata.return_value = {}
+        frame = pd.DataFrame({pd.Timestamp('2026-06-30'): {'DilutedEPS': 2, 'TotalRevenue': 100, 'TotalDebt': 50, 'OperatingCashFlow': 20, 'CapitalExpenditure': -5}})
+        for method in ('get_income_stmt', 'get_balance_sheet', 'get_cashflow'):
+            getattr(self.item, method).return_value = frame
+        self.item.get_earnings_estimate.return_value = pd.DataFrame({'avg': [3], 'numberOfAnalysts': [10]}, index=['0q'])
+        self.item._analysis._earnings_trend = []
+        self.ticker = patch.object(data.yf, 'Ticker', return_value=self.item)
+        self.ticker.start()
+        self.addCleanup(self.ticker.stop)
+
+    def fetch(self, timestamp, saved=None):
+        with patch.object(data, 'now', return_value=timestamp):
+            return data.fetch_security('QA', saved)
+
+    def test_same_day_only_market_updates_and_pe_uses_daily_eps(self):
+        first = self.fetch('2026-10-04T02:00:00+00:00')
+        self.item.get_info.return_value.update(regularMarketPrice=120, trailingEps=99)
+        second = self.fetch('2026-10-04T02:01:00+00:00', first)
+        self.assertEqual(self.item.get_income_stmt.call_count, 1)
+        self.assertEqual(self.item.get_balance_sheet.call_count, 1)
+        self.assertEqual(self.item.get_cashflow.call_count, 1)
+        self.assertEqual(self.item.get_earnings_estimate.call_count, 1)
+        self.assertEqual(self.item.get_info.call_count, 2)
+        self.assertEqual(second['metrics']['pe_quarter']['value'], 15)
+        self.assertEqual(second['financial_fetched_at'], first['financial_fetched_at'])
+
+    def test_quarterly_annualization_and_next_period_match(self):
+        record = self.fetch('2026-10-04T02:00:00+00:00')
+        record['metrics']['forward_eps_q0'] = {'value': 3, 'period': '2026-09-30', 'currency': 'USD'}
+        record['metrics']['price']['value'] = 120
+        data.revalue(record)
+        self.assertEqual(record['metrics']['pe_quarter']['value'], 15)
+        self.assertEqual(record['metrics']['pe_forward_quarter']['value'], 10)
+        self.assertEqual(record['metrics']['pe_forward_quarter']['period'], '2026-09-30')
+        record['metrics']['forward_eps_q0']['period'] = '2026-12-31'
+        data.revalue(record)
+        self.assertIsNone(record['metrics']['pe_forward_quarter']['value'])
+
+    def test_yahoo_forecast_preferred_and_alpha_only_fills_gaps(self):
+        record = self.fetch('2026-10-04T02:00:00+00:00')
+        record['metrics']['forward_eps_q0'] = {'value': 3, 'period': '2026-09-30', 'currency': 'USD', 'source': 'Yahoo'}
+        payload = {'fetched_at': record['fetched_at'], 'data': {'estimates': [
+            {'horizon': 'fiscal quarter', 'date': '2026-09-30', 'eps_estimate_average': '4'}]}}
+        with patch.object(data, 'estimate_data', return_value=payload) as provider:
+            self.assertEqual(data.next_forecast(record)['value'], 3)
+            provider.assert_not_called()
+            record['metrics']['forward_eps_q0']['period'] = '2026-12-31'
+            self.assertEqual(data.next_forecast(record)['value'], 4)
+            provider.assert_called_once()
+            record['metrics']['forward_eps_q0'].update(value=None, period='2026-09-30')
+            self.assertEqual(data.next_forecast(record)['value'], 4)
+
+    def test_quarterly_losses_and_currency_mismatch_are_not_valid_pe(self):
+        record = self.fetch('2026-10-04T02:00:00+00:00')
+        record['metrics']['eps_q0']['value'] = -2
+        data.revalue(record)
+        self.assertIsNone(record['metrics']['pe_quarter']['value'])
+        record['metrics']['eps_q0'].update(value=2, currency='EUR')
+        data.revalue(record)
+        self.assertIsNone(record['metrics']['pe_quarter']['value'])
+
+    def test_beijing_midnight_refreshes_financials(self):
+        first = self.fetch('2026-10-04T15:59:00+00:00')
+        second = self.fetch('2026-10-04T16:00:00+00:00', first)
+        self.assertEqual(self.item.get_income_stmt.call_count, 2)
+        self.assertEqual(second['financial_fetched_at'], '2026-10-04T16:00:00+00:00')
+
+    def test_failed_daily_fetch_preserves_old_values_without_minute_retries(self):
+        first = self.fetch('2026-10-04T15:59:00+00:00')
+        self.item.get_income_stmt.side_effect = RuntimeError('source offline')
+        failed = self.fetch('2026-10-04T16:00:00+00:00', first)
+        self.assertTrue(failed['financial_stale'])
+        self.assertEqual(failed['metrics']['eps_q0'], first['metrics']['eps_q0'])
+        self.assertEqual(failed['financial_fetched_at'], first['financial_fetched_at'])
+        again = self.fetch('2026-10-04T16:01:00+00:00', failed)
+        self.assertEqual(self.item.get_income_stmt.call_count, 2)
+        self.assertTrue(again['financial_stale'])
+
+
+if __name__ == '__main__':
+    unittest.main()

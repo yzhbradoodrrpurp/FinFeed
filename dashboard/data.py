@@ -1,5 +1,6 @@
 """Yahoo Finance personal-use adapter with dated provenance and conservative gaps."""
 import json
+from copy import deepcopy
 import threading
 import time
 from datetime import datetime, timezone
@@ -8,6 +9,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
+from alpha import estimate_data, next_four_eps, SOURCE as ALPHA_SOURCE
 
 from metrics import number, prior_quarter_period, trailing_pe, volume_metrics, qoq
 
@@ -18,8 +20,8 @@ yf.set_tz_cache_location(str(CACHE / "yfinance"))
 LIMIT = threading.Semaphore(2)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
-TTL = 900
-SCHEMA_VERSION = 3
+TTL = 60
+SCHEMA_VERSION = 4
 
 
 def epoch(value):
@@ -76,7 +78,83 @@ def growth(series, period):
             "inputs": {"current": a["value"], "previous_quarter": b.get("value")}}
 
 
-def fetch_security(symbol):
+FINANCIAL_KEYS = ("eps_q0", "eps_q1", "forward_eps_q0", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1", "pe_ntm")
+
+
+def financial_day(timestamp):
+    try:
+        return datetime.fromisoformat(timestamp).astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
+def financial_due(saved, timestamp):
+    return not saved or financial_day(saved.get("financial_checked_at") or saved.get("fetched_at")) != financial_day(timestamp)
+
+
+def reuse_financial(result, saved):
+    for key in FINANCIAL_KEYS:
+        if key in saved.get("metrics", {}):
+            result["metrics"][key] = deepcopy(saved["metrics"][key])
+    for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at"):
+        if key in saved:
+            result[key] = deepcopy(saved[key])
+    result.setdefault("financial_fetched_at", saved.get("fetched_at"))
+    if "trailing_eps" not in result:
+        result["trailing_eps"] = saved.get("metrics", {}).get("pe_ltm", {}).get("inputs", {}).get("trailing_eps")
+
+
+def next_forecast(result):
+    """Match the next quarter after the latest disclosed quarter, never skip gaps."""
+    q0 = result.get("quarter_0")
+    if not q0:
+        return empty_metric("最近已披露财季未知，无法确定下一财季")
+    def adjacent(period):
+        try:
+            return 65 <= (datetime.fromisoformat(period) - datetime.fromisoformat(q0)).days <= 120
+        except (ValueError, TypeError):
+            return False
+    yahoo = result["metrics"].get("forward_eps_q0", {})
+    if yahoo.get("value") is not None and adjacent(yahoo.get("period")):
+        forecast = deepcopy(yahoo)
+        forecast["basis"] = "Yahoo：紧接最近已披露财季的分析师 EPS 均值；可能为调整后口径"
+        return forecast
+    if result.get("currency") == "USD" and result.get("financial_currency") == "USD":
+        alpha = estimate_data(result["ticker"], result["fetched_at"])
+        if alpha:
+            result["estimates_fetched_at"] = alpha.get("fetched_at")
+            result["sources"]["estimates_alpha"] = ALPHA_SOURCE
+            candidates = sorted((row for row in (alpha.get("data") or {}).get("estimates", []) if row.get("horizon") == "fiscal quarter" and adjacent(row.get("date"))), key=lambda row: row["date"])
+            for row in candidates:
+                value = number(row.get("eps_estimate_average"))
+                if value is not None:
+                    return field(value, row["date"], "Alpha Vantage：紧接最近已披露财季的分析师 EPS 均值；预期不保证为 GAAP", ALPHA_SOURCE, currency="USD", analysts=number(row.get("eps_estimate_analyst_count")), estimate_fetched_at=alpha.get("fetched_at"), estimate_stale=bool(alpha.get("error")))
+    return empty_metric("缺少紧接最近已披露财季的预测 EPS；不跳过财季计算", source=ALPHA_SOURCE)
+
+
+def quarterly_pe(result, eps, forecast=False):
+    price = result["metrics"].get("price", {}).get("value")
+    value = number(eps.get("value"))
+    annualized = value * 4 if value is not None else None
+    pe, reason = trailing_pe(price, annualized)
+    if eps.get("currency") != result.get("currency"):
+        pe, reason = None, "报价与季度 EPS 币种不同，未自动换汇"
+    if value is None:
+        pe, reason = None, eps.get("reason") or "季度 EPS 缺失"
+    return field(pe, eps.get("period"), "季度年化 " + ("Forward P/E" if forecast else "P/E") + " = 最近价格 /（单季 EPS × 4）；简单年化，不代表全年盈利预测；实际与预测 EPS 口径可能不同", eps.get("source"),
+                 reason=reason, inputs={"price": price, "quarter_eps": value, "annualization_factor": 4, "annualized_eps": annualized}, quote_date=result.get("quote_date"), estimate_stale=eps.get("estimate_stale", False), estimate_fetched_at=eps.get("estimate_fetched_at"))
+
+
+def revalue(result):
+    m = result["metrics"]
+    m["forward_eps_next"] = next_forecast(result)
+    m["pe_quarter"] = quarterly_pe(result, m.get("eps_q0", {}))
+    m["pe_forward_quarter"] = quarterly_pe(result, m["forward_eps_next"], forecast=True)
+    result["valuation_at"] = result["fetched_at"]
+    return result
+
+
+def fetch_security(symbol, saved=None):
     started = now()
     item = yf.Ticker(symbol)
     errors = []
@@ -89,9 +167,9 @@ def fetch_security(symbol):
     info = load("证券信息", item.get_info, {}) or {}
     history = load("日线", lambda: item.history(period="1y", auto_adjust=False, actions=True,
                                               raise_errors=True, timeout=15), None)
-    quote_type = info.get("quoteType", "UNKNOWN")
-    currency = info.get("currency")
-    fin_currency = info.get("financialCurrency") or currency
+    quote_type = info.get("quoteType") or (saved or {}).get("quote_type", "UNKNOWN")
+    currency = info.get("currency") or (saved or {}).get("currency")
+    fin_currency = info.get("financialCurrency") or (saved or {}).get("financial_currency") or currency
     exchange_tz = info.get("exchangeTimezoneName") or "America/New_York"
     quote_url = f"https://finance.yahoo.com/quote/{quote(symbol, safe='')}/"
     financial_url = quote_url + "financials/"
@@ -148,11 +226,19 @@ def fetch_security(symbol):
     equity = quote_type == "EQUITY"
     if not equity:
         reason = "该证券不是公司股票，财务与 EPS 指标不适用" if quote_type != "UNKNOWN" else "证券未识别或数据源暂不可用"
-        for key in ["eps_q0", "eps_q1", "forward_eps_q0", "pe_ltm", "pe_ntm", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1"]:
+        for key in ["eps_q0", "eps_q1", "forward_eps_q0", "pe_ltm", "pe_ntm", "pe_quarter", "pe_forward_quarter", "forward_eps_next", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1"]:
             m[key] = empty_metric(reason)
         if quote_type == "ETF":
             m["market_cap"] = empty_metric("ETF 公司市值不适用；未用资产规模替代")
         return result
+    if not financial_due(saved, started):
+        reuse_financial(result, saved)
+        result["financial_checked_at"] = saved.get("financial_checked_at") or saved.get("fetched_at")
+        return revalue(result)
+    financial_error_start = len(errors)
+    result["financial_checked_at"] = started
+    result["financial_fetched_at"] = started
+    result["trailing_eps"] = number(info.get("trailingEps"))
     income = load("利润表", lambda: item.get_income_stmt(freq="quarterly"), None)
     balance = load("资产负债表", lambda: item.get_balance_sheet(freq="quarterly"), None)
     cashflow = load("现金流量表", lambda: item.get_cashflow(freq="quarterly"), None)
@@ -178,14 +264,6 @@ def fetch_security(symbol):
         m[f"{label}_qoq_q0"] = growth(series, q0)
         m[f"{label}_qoq_q1"] = growth(series, q1)
     result["series"] = {"eps": eps, "revenue": revenue, "debt": debt, "fcf": fcf}
-    # Provider TTM EPS avoids blindly adding EPS across stock-split bases.
-    pe, reason = trailing_pe(price, info.get("trailingEps"))
-    m["pe_ltm"] = field(pe, quote_date, "最近价格 / Yahoo trailingEps；供应商 TTM EPS，不保证等于本表四季 GAAP EPS 之和", quote_url,
-                        inputs={"price": price, "trailing_eps": number(info.get("trailingEps"))})
-    m["pe_ltm"]["reason"] = reason
-    if currency != fin_currency:
-        m["pe_ltm"] = empty_metric("报价与 EPS 币种不同，需要同日期汇率转换后才能计算", source=quote_url,
-                                    inputs={"price_currency": currency, "eps_currency": fin_currency})
     estimates = load("分析师预期", item.get_earnings_estimate, None)
     if estimates is not None and not estimates.empty and "0q" in estimates.index:
         row = estimates.loc["0q"]
@@ -202,7 +280,15 @@ def fetch_security(symbol):
         m["forward_eps_q0"] = empty_metric("免费数据源未返回季度分析师预期", source=analysis_url)
     m["pe_ntm"] = empty_metric("缺少未来连续 4 个财季的同口径 EPS 预期；未用年度 forwardPE 代替", source=analysis_url,
                                 basis="NTM P/E = 价格 / 未来连续四个财季 EPS 预期之和")
-    return result
+    financial_errors = errors[financial_error_start:]
+    if financial_errors and saved and saved.get("series"):
+        reuse_financial(result, saved)
+        result["financial_stale"] = True
+        result["financial_errors"] = financial_errors
+    else:
+        result["financial_stale"] = bool(financial_errors)
+        result["financial_errors"] = financial_errors
+    return revalue(result)
 
 
 def security(symbol, refresh=False):
@@ -217,16 +303,15 @@ def security(symbol, refresh=False):
             except (ValueError, OSError):
                 pass
         age = time.time() - path.stat().st_mtime if saved else float("inf")
-        if saved and saved.get("schema_version") != SCHEMA_VERSION:
+        if saved and saved.get("schema_version") not in (3, SCHEMA_VERSION):
             saved = None
             age = float("inf")
-        # Explicit minute refreshes bypass the 15-minute passive cache. A short
-        # debounce coalesces duplicate requests from tabs or rapid manual clicks.
-        if saved and (age < 5 or (age < TTL and not refresh)):
+        # Market requests refresh each minute; same-minute tabs share the cache.
+        if saved and not financial_due(saved, now()) and (age < 5 or (age < TTL and not refresh)):
             return {**saved, "cached": True, "cache_age_seconds": round(age)}
         try:
             with LIMIT:
-                result = fetch_security(symbol)
+                result = fetch_security(symbol, saved)
             if result["metrics"]["price"]["value"] is None and saved:
                 return {**saved, "cached": True, "stale": True, "refresh_error": "行情读取失败，保留上次快照", "cache_age_seconds": round(age)}
             tmp = path.with_suffix(".tmp")

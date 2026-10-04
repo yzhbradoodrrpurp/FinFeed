@@ -14,9 +14,18 @@
 
 首次运行需要 Python 3.11+ 和联网安装依赖。依赖固定为 yfinance 1.7.0；环境保存在被 Git 忽略的 `.venv/`。默认提供 AAPL、NVDA、MU、AMD、VRT、LRCX、VOO、QQQM，可添加 / 移除股票并按指标排序。Ticker 可以逗号或空格分隔，最多 40 个。
 
-自选股、排序和持仓保存在 `dashboard/.local/state.json`；行情缓存保存在 `.cache/`，两者均不提交 Git。页面打开期间，每 60 秒自动刷新一次；手动刷新同样可用。自动 / 手动刷新绕过 15 分钟的普通读取缓存，5 秒内的重复请求合并，最多同时请求 2 个标的。上一轮仍在运行时跳过该次定时触发，避免请求堆积；网络失败保留已有快照并标记旧数据。关闭页面后停止刷新，浏览器后台节流或电脑休眠可能延迟定时器。刷新频率不改变 Yahoo 行情本身的延迟。
+自选股、排序和持仓保存在 `dashboard/.local/state.json`；行情缓存保存在 `.cache/`，两者均不提交 Git。页面打开期间，每 60 秒自动刷新一次；手动刷新同样可用。行情普通读取缓存为 60 秒，自动 / 手动刷新会更新行情，5 秒内的重复请求合并，最多同时请求 2 个标的。上一轮仍在运行时跳过该次定时触发，避免请求堆积；网络失败保留已有快照并标记旧数据。关闭页面后停止刷新，浏览器后台节流或电脑休眠可能延迟定时器。刷新频率不改变 Yahoo 行情本身的延迟。
 
-## 数据来源与限制（核验于 2026-10-03，Asia/Shanghai）
+## 刷新频率
+
+- 行情每 60 秒请求一次：价格、市值、52 周高低点、成交量及量比。
+- 季度财务、增长率、实际 EPS 与 trailing EPS、Yahoo 盈利预测每天一次，以北京时间 00:00 切换更新日；页面打开后的下一轮行情请求触发，关闭页面期间不主动请求。
+- P/E 使用最近已披露季度实际 EPS，Forward P/E 使用紧接着的下一财季预测 EPS；两列都按 `价格 /（单季 EPS × 4）` 简单年化，每分钟重新计算。单季乘以 4 不代表全年盈利预测，也不等于 LTM / NTM。缺少下一财季、EPS 非正或币种不同均明确留空。Forward EPS 与 Forward P/E 使用同一预测期，优先 Yahoo（通过 yfinance），缺失或财季不匹配时使用 Alpha Vantage。
+- Alpha Vantage Key 放在被 Git 忽略的 `dashboard/.local/alphavantage.json`，格式为 `{"api_key":"你的 Key"}`，权限 600。预测响应每日缓存到 `.cache/alpha/`，本机按 UTC 日设置 25 次请求上限；实际供应商额度/权限限制也会明确处理。密钥不会传入浏览器、来源链接或异常信息。
+- Alpha Vantage 失败时保留上一份预测并标记旧数据，当天不每分钟重试。财务更新失败时保留旧财务，详情分别显示行情、财务和预测检索时间。
+- 2026-10-04 实测 Alpha Vantage AAPL 响应不足以计算未来四季 NTM；后续按用户要求改为最近实际季度 / 紧接下一预测季度的简单年化估值。
+
+## 数据来源与限制（核验于 2026-10-04，Asia/Shanghai）
 
 - 行情、财务和分析师预期：Yahoo Finance，经 [yfinance](https://ranaroussi.github.io/yfinance/) 读取。该项目并非 Yahoo 官方 SDK，适用于个人研究，数据的使用范围仍受供应商条款约束；不承诺实时、持续可用或覆盖所有市场。
 - 原始来源入口：[SEC EDGAR](https://www.sec.gov/edgar/search/)、[SEC API 文档](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)。当前网络对 SEC Company Facts 的实际测试返回 HTTP 403，所以第一版使用 C 级 Yahoo 聚合财务值，不把它们标为直接提取的 SEC 数据。
@@ -46,8 +55,8 @@ Watchlist（含手动排序）和持仓保存在本机 `dashboard/.local/state.j
 | Last Price / 52W High / Low | 常规交易时段最近成交价和供应商 52 周高低点，不混入盘后价 |
 | Diluted EPS Q0 / Q−1 | 最新已披露财季与紧接的上一财季利润表 `DilutedEPS`；通常为 GAAP，实际取供应商口径 |
 | Forward EPS Q0 | Yahoo `earningsTrend` 当前预测财季 `0q` 的分析师平均值；与已披露 Q0 可能不是同一季度，也可能是调整后 EPS；提供财季结束日期和分析师数量 |
-| P/E LTM | Last Price / Yahoo `trailingEps`，不保证与表中四季 GAAP EPS 之和相同；EPS≤0 时不适用；币种不同则缺失 |
-| P/E NTM | 应为 Last Price / 未来连续四个财季的同口径 EPS 预期之和；免费源当前不完整，明确缺失，不使用年度 `forwardPE` 冒充 |
+| P/E · 已披露季度年化 | Last Price /（最近已披露单季 diluted EPS × 4）；EPS≤0 或币种不同时不适用 |
+| Forward P/E · 下一季度年化 | Last Price /（紧接下一财季分析师平均 EPS × 4）；预测可能采用调整后盈利，不保证与实际 GAAP 口径相同 |
 | Avg Volume 10 | 比较日以前 10 个完整交易日成交股数均值，排除比较日本身 |
 | Volume vs. 10 | 比较日完整日成交股数 / 此前 10 日均量；盘中待收盘，非交易日明确显示最近交易日期 |
 | Revenue Q0 | 最新披露单季 TotalRevenue |

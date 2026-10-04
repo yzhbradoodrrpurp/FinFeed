@@ -33,13 +33,13 @@
   <dialog id="order-dialog" aria-labelledby="order-title"><div class="dialog-top"><div><div class="eyebrow">WATCHLIST ORDER</div><h2 id="order-title">排列 Ticker</h2></div><button class="icon-button" data-close aria-label="关闭手动排序">×</button></div><p class="order-help">拖动标的，或用“上移 / 下移”调整顺序。顺序自动保存在本机，刷新数据后保留。</p><ol id="order-list"></ol><p id="order-status" class="sr-only" role="status" aria-live="polite"></p><div class="order-footer"><button class="primary" data-close>完成</button></div></dialog>
   <dialog id="detail-dialog"><div class="dialog-top"><div><div class="eyebrow">DATA RECORD</div><h2 id="detail-title"></h2></div><button class="icon-button" data-close aria-label="关闭详情">×</button></div><div id="detail-content"></div></dialog>
   <dialog id="method-dialog"><div class="dialog-top"><div><div class="eyebrow">METHODOLOGY</div><h2>指标口径</h2></div><button class="icon-button" data-close aria-label="关闭指标说明">×</button></div><div class="method-content">
-    <p>“本季度 / Q0”指最近已披露财季；“上季度 / Q−1”指紧接着的上一财季。各公司的财年可能不同，详情中提供财季结束日期。预测 Q0 是供应商的当前预测财季，与最近披露财季可能不同。</p>
+    <p>“本季度 / Q0”指最近已披露财季；“上季度 / Q−1”指紧接着的上一财季。各公司的财年可能不同，详情中提供财季结束日期。Forward EPS 对应紧接最近披露季度的下一财季，详情提供预测期末日期。</p>
     <dl><dt>Market Cap / Last Price / 52W High / Low</dt><dd>Yahoo 的公司市值、常规交易时段最近价和 52 周高低点。ETF 不用资产规模替代市值；盘后价格不混入 Last Price。</dd>
     <dt>Diluted EPS</dt><dd>Yahoo 季度利润表的 DilutedEPS，通常是 GAAP 稀释 EPS。预测 EPS 为分析师平均预期，可能采用调整后口径，不直接与实际值作 beat/miss 比较。</dd>
-    <dt>P/E LTM / NTM</dt><dd>LTM = 最近价格 ÷ Yahoo 的 trailingEps；供应商 EPS 口径可能与表中 GAAP EPS 不同。EPS ≤ 0 时不适用。NTM 要求未来连续四个财季的同口径预期，不用全年 forwardPE 代替。报价币种和 EPS 币种不一致时不直接相除。</dd>
+    <dt>P/E / Forward P/E · 季度年化</dt><dd>P/E = 最近价格 ÷（最近已披露单季 GAAP 稀释 EPS × 4）；Forward P/E = 最近价格 ÷（紧接着的下一财季分析师 EPS 均值 × 4）。预测优先使用 Yahoo（通过 yfinance），缺失或财季不匹配时使用 Alpha Vantage；不跳过缺失季度，不自动换汇。EPS ≤ 0 时不适用。乘以 4 是简单年化，季节性会影响结果；不能视为全年盈利预测，实际和预测 EPS 也可能采用不同盈利口径。股价每分钟刷新，EPS 每日缓存。</dd>
     <dt>10 日均量与量比</dt><dd>比较日以前的 10 个完整交易日成交股数均值。量比 = 比较日完整成交量 ÷ 此前均量。盘中不把累计成交量与完整日均量比较；非交易日使用最近交易日并注明日期。日线设置 auto_adjust=False，不做股息总回报复权；拆股调整遵循 Yahoo。</dd>
     <dt>Revenue / Total Debt / Free Cash Flow</dt><dd>营收和 FCF 使用单季数；债务使用财季末存量。Total Debt 使用供应商字段，跨公司的租赁负债口径可能不同。FCF = 单季经营现金流 − 单季资本支出（支出取正数），为计算的非 GAAP 指标。</dd>
     <dt>增长率 Q0 / Q−1</dt><dd>全部使用季度环比（QoQ）：Q0 ÷ Q−1 − 1，以及 Q−1 ÷ Q−2 − 1。营收和 FCF 比较单季金额，债务比较财季末存量。上一财季为零、负值或缺失时显示原因；财季间隔必须在 65–120 天之间，避免跳过缺失财季计算。</dd><dt>持仓成本与未实现盈亏</dt><dd>成本总额 = 数量 × 平均成本；市值 = 数量 × 最近价；未实现盈亏 = 市值 − 成本总额；收益率 = 未实现盈亏 ÷ 成本总额。按币种分别汇总，不自动换汇；缺少有效报价的持仓不计入市值和盈亏，收益率仅以已估值持仓的成本为分母。仓位占比使用同币种已估值市值。</dd></dl>
-    <p>所有缓存保存在本机；页面显示实际检索时间和报价时间。免费源不保证实时或完整，SEC 原始报告入口用于核对。当前网络测试 SEC 接口返回 403，因此第一版财务来源明确显示为 Yahoo 聚合值。</p>
+    <p>行情每 60 秒刷新；估值用当次价格和每日缓存的 EPS 重新计算。季度财务与盈利预测按北京时间每日 00:00 切换更新日，在页面打开后的下一次刷新时获取；页面关闭期间不主动请求。所有缓存保存在本机；详情分别显示行情和财务检索时间。免费源不保证实时或完整，SEC 原始报告入口用于核对。当前网络测试 SEC 接口返回 403，因此第一版财务来源明确显示为 Yahoo 聚合值。</p>
   </div></dialog>
 </body></html>

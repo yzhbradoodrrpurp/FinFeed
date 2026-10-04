@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 import yahoo_session
+from yahoo_diagnostic import balance_with_diagnostics
 from alpha import estimate_data, next_four_eps, SOURCE as ALPHA_SOURCE
 
 from metrics import number, prior_quarter_period, trailing_pe, volume_metrics, qoq
@@ -303,7 +304,11 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     result["financial_fetched_at"] = started
     result["trailing_eps"] = number(info.get("trailingEps"))
     income = load("利润表", lambda: item.get_income_stmt(freq="quarterly"), None)
-    balance = load("资产负债表", lambda: item.get_balance_sheet(freq="quarterly"), None)
+    if symbol == "GOOG":
+        result["financial_diagnostics"] = {}
+        balance = load("资产负债表", lambda: balance_with_diagnostics(item, result["financial_diagnostics"]), None)
+    else:
+        balance = load("资产负债表", lambda: item.get_balance_sheet(freq="quarterly"), None)
     cashflow = load("现金流量表", lambda: item.get_cashflow(freq="quarterly"), None)
     for label, frame in (("利润表", income), ("资产负债表", balance), ("现金流量表", cashflow)):
         if frame is None or frame.empty:

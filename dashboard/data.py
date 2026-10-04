@@ -84,9 +84,39 @@ def growth(series, period):
     a = series[period]
     b = series.get(old, {})
     value, reason = qoq(a["value"], b.get("value"))
+    cached = [entry for entry in (a, b) if entry.get("historical_cache")]
     return {"value": value, "reason": reason, "period": period, "comparison_period": old,
             "basis": "季度环比 = 本期 / 上一财季 − 1；上一财季必须大于零", "source": a["source"],
+            "historical_cache": bool(cached),
+            "cache_fetched_at": min((entry["fetched_at"] for entry in cached if entry.get("fetched_at")), default=None),
             "inputs": {"current": a["value"], "previous_quarter": b.get("value")}}
+
+
+def retain_debt_history(current, saved, currency, source, checked_at):
+    """Fill omitted debt quarters from dated, same-source/currency observations.
+
+    A successful but incomplete provider response is not evidence that a
+    previously reported debt value was zero or withdrawn. Fresh values always
+    win, including revisions and explicit zero; reused values stay labelled.
+    """
+    result = {period: {**deepcopy(entry), "fetched_at": checked_at}
+              for period, entry in current.items()}
+    saved = saved or {}
+    for period, entry in saved.get("series", {}).get("debt", {}).items():
+        if period in result or number(entry.get("value")) is None:
+            continue
+        observed = entry.get("fetched_at") or saved.get("financial_fetched_at") or saved.get("fetched_at")
+        if (not currency or entry.get("currency") != currency or entry.get("source") != source
+                or entry.get("basis") != "TotalDebt" or not observed):
+            continue
+        try:
+            if datetime.fromisoformat(period).date() > datetime.fromisoformat(checked_at).date():
+                continue
+            datetime.fromisoformat(observed)
+        except (ValueError, TypeError):
+            continue
+        result[period] = {**deepcopy(entry), "historical_cache": True, "fetched_at": observed}
+    return result
 
 
 FINANCIAL_KEYS = ("eps_q0", "eps_q1", "forward_eps_q0", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1", "pe_ntm")
@@ -327,6 +357,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     eps = frame_values(income, ["DilutedEPS"], fin_currency, financial_url)
     revenue = frame_values(income, ["TotalRevenue"], fin_currency, financial_url)
     debt = frame_values(balance, ["TotalDebt"], fin_currency, balance_url)
+    debt = retain_debt_history(debt, saved, fin_currency, balance_url, started)
     ocf = frame_values(cashflow, ["OperatingCashFlow"], fin_currency, cash_url)
     capex = frame_values(cashflow, ["CapitalExpenditure"], fin_currency, cash_url)
     fcf = {}

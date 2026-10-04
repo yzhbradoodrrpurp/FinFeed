@@ -133,6 +133,39 @@ class RefreshCases(unittest.TestCase):
         data.revalue(record)
         self.assertIsNone(record['metrics']['pe_forward_quarter']['value'])
 
+    def test_successful_partial_balance_preserves_history_and_new_revisions(self):
+        frame = pd.DataFrame({
+            pd.Timestamp('2026-06-30'): {'TotalDebt': 50},
+            pd.Timestamp('2026-03-31'): {'TotalDebt': 40},
+            pd.Timestamp('2025-12-31'): {'TotalDebt': 25},
+        })
+        self.item.get_balance_sheet.return_value = frame
+        first = self.fetch('2026-10-04T15:59:00+00:00')
+        self.item.get_balance_sheet.return_value = pd.DataFrame({pd.Timestamp('2026-06-30'): {'TotalDebt': 60}})
+        second = self.fetch('2026-10-04T16:00:00+00:00', first)
+        self.assertEqual(second['series']['debt']['2026-06-30']['value'], 60)
+        self.assertFalse(second['series']['debt']['2026-06-30'].get('historical_cache', False))
+        self.assertEqual(second['series']['debt']['2026-03-31']['value'], 40)
+        self.assertAlmostEqual(second['metrics']['debt_qoq_q0']['value'], .5)
+        self.assertTrue(second['metrics']['debt_qoq_q0']['historical_cache'])
+        self.assertEqual(second['metrics']['debt_qoq_q0']['cache_fetched_at'], first['financial_fetched_at'])
+        third = self.fetch('2026-10-05T16:00:00+00:00', second)
+        self.assertEqual(third['metrics']['debt_qoq_q0']['cache_fetched_at'], first['financial_fetched_at'])
+        frame.loc['TotalDebt', pd.Timestamp('2026-03-31')] = 45
+        self.item.get_balance_sheet.return_value = frame
+        revised = self.fetch('2026-10-06T16:00:00+00:00', third)
+        self.assertFalse(revised['metrics']['debt_qoq_q0']['historical_cache'])
+        self.assertEqual(revised['series']['debt']['2026-03-31']['value'], 45)
+
+    def test_debt_history_requires_matching_source_currency_and_observation_date(self):
+        first = self.fetch('2026-10-04T15:59:00+00:00')
+        source = first['series']['debt']['2026-06-30']['source']
+        self.assertFalse(data.retain_debt_history({}, first, 'EUR', source, '2026-10-05T00:00:00+00:00'))
+        self.assertFalse(data.retain_debt_history({}, first, 'USD', 'different-source', '2026-10-05T00:00:00+00:00'))
+        first['series']['debt']['2026-06-30'].pop('fetched_at')
+        first.pop('financial_fetched_at'); first.pop('fetched_at')
+        self.assertFalse(data.retain_debt_history({}, first, 'USD', source, '2026-10-05T00:00:00+00:00'))
+
     def test_yahoo_forecast_preferred_and_alpha_only_fills_gaps(self):
         record = self.fetch('2026-10-04T02:00:00+00:00')
         record['metrics']['forward_eps_q0'] = {'value': 3, 'period': '2026-09-30', 'currency': 'USD', 'source': 'Yahoo'}

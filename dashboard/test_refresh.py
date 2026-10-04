@@ -42,6 +42,18 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(peak, 3)
         self.assertEqual(calls, 4)
 
+    def test_forced_refresh_reuses_fresh_snapshot_across_users(self):
+        saved={"schema_version":data.SCHEMA_VERSION,"financial_checked_at":data.now(),"metrics":{"price":{"value":100}}}
+        store=MagicMock();store.get_cache.return_value=(saved,data.time.time()-20)
+        with patch.object(data,"financial_due",return_value=False),patch.object(data,"fetch_security") as fetch:
+            results=[data.security("SHARED",refresh=True,store=store) for _ in range(3)]
+            fetch.assert_not_called()
+        self.assertTrue(all(r["cached"] for r in results))
+        store.get_cache.return_value=(saved,data.time.time()-61)
+        with patch.object(data,"financial_due",return_value=False),patch.object(data,"fetch_security",return_value=saved) as fetch:
+            data.security("SHARED",refresh=True,store=store)
+            fetch.assert_called_once()
+
     def setUp(self):
         alpha_patch = patch.object(data, "estimate_data", return_value=None)
         alpha_patch.start(); self.addCleanup(alpha_patch.stop)

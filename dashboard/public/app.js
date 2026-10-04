@@ -45,17 +45,48 @@ function flashChangedCells(){
   const present=new Set([...document.querySelectorAll("[data-change-key]")].map(c=>c.dataset.changeKey));
   for(const key of cellValues.keys())if(!present.has(key)){cellValues.delete(key);cellFlashes.delete(key);}
 }
+// Keep existing rows/cells, focus and scroll position while quotes arrive.
+function patchRows(body,html,key){
+  const template=document.createElement("template");template.innerHTML=`<table><tbody>${html}</tbody></table>`;
+  const next=[...template.content.querySelector("tbody").children];
+  const existing=new Map([...body.children].filter(row=>row.dataset[key]).map(row=>[row.dataset[key],row]));
+  const keep=new Set();
+  next.forEach((fresh,index)=>{
+    let row=existing.get(fresh.dataset[key]);
+    if(!row||row.cells.length!==fresh.cells.length)row=fresh;
+    else {
+      [...fresh.cells].forEach((cell,i)=>{
+        const current=row.cells[i];
+        if(current.innerHTML!==cell.innerHTML)current.innerHTML=cell.innerHTML;
+        // Flash metadata is recomputed below; don't replay animations on unchanged cells.
+        for(const attr of [...current.attributes])if(!cell.hasAttribute(attr.name)&&!['class','style'].includes(attr.name))current.removeAttribute(attr.name);
+        for(const attr of cell.attributes)if(current.getAttribute(attr.name)!==attr.value)current.setAttribute(attr.name,attr.value);
+      });
+    }
+    keep.add(row);
+    if(body.children[index]!==row)body.insertBefore(row,body.children[index]||null);
+  });
+  for(const row of [...body.children])if(!keep.has(row))row.remove();
+}
+let scheduledRender=false;
+function scheduleRender(){
+  if(scheduledRender)return;
+  scheduledRender=true;
+  requestAnimationFrame(()=>{scheduledRender=false;render();});
+}
 function renderHoldings(){
+  if(surface!=="holdings")return;
   const rows=holdings.map(p=>FinFeedPositions.evaluate(p,records.get(p.ticker)));
   const summaries=FinFeedPositions.summarize(rows);
   el("holdings-count").textContent=`${holdings.length} 项持仓`;
   el("holdings-summary").innerHTML=summaries.map(g=>`<section class="currency-summary"><div class="summary-heading"><strong>${escapeHTML(g.currency)}</strong><span>${g.pricedCount} / ${g.count} 项已估值${g.staleCount?` · ${g.staleCount} 项使用旧报价`:""}${g.pricedCount<g.count?" · 市值和盈亏仅统计已估值部分":""}</span></div><div class="summary-metrics"><div><small>成本总额 · 全部持仓</small><strong>${holdingNumber(g.cost)}</strong></div><div><small>当前市值${g.pricedCount<g.count?" · 已估值部分":""}</small><strong>${holdingNumber(g.marketValue)}</strong></div><div><small>未实现盈亏${g.pricedCount<g.count?" · 已估值部分":""}</small><strong class="${pnlClass(g.pnl)}">${g.pnl>0?"+":""}${holdingNumber(g.pnl)}</strong></div><div><small>持仓收益率${g.pricedCount<g.count?" · 已估值部分":""}</small><strong class="${pnlClass(g.returnRate)}">${holdingPercent(g.returnRate)}</strong></div></div></section>`).join("");
-  el("holdings-body").innerHTML=rows.length?rows.map(r=>{
+  const holdingHTML=rows.length?rows.map(r=>{
     const p=r.position,g=summaries.find(g=>g.currency===p.currency),weight=r.marketValue!==null&&g.marketValue>0?r.marketValue/g.marketValue:null;
     const currency=`<span class="currency">${escapeHTML(p.currency)}</span>`;
     const quoteCurrency=`<span class="currency">${escapeHTML(r.record?.currency||"")}</span>`;
     return `<tr data-holding-ticker="${escapeHTML(p.ticker)}" tabindex="0" aria-label="查看 ${escapeHTML(p.ticker)} 持仓数据来源"><td class="sticky"><span class="symbol">${escapeHTML(p.ticker)}</span><div class="security-name">${escapeHTML(r.record?.name||p.ticker)}</div></td><td>${p.quantity.toLocaleString("en-US",{maximumSignificantDigits:15})}</td><td>${holdingUnitPrice(p.averageCost)} ${currency}</td><td>${holdingNumber(r.cost)} ${currency}</td><td>${holdingUnitPrice(r.price)} ${quoteCurrency}</td><td title="${escapeHTML(r.reason||"")}">${holdingNumber(r.marketValue)} ${currency}${r.reason?`<div class="portfolio-missing">${escapeHTML(r.reason)}</div>`:""}</td><td class="${pnlClass(r.pnl)}">${r.pnl>0?"+":""}${holdingNumber(r.pnl)} ${currency}</td><td class="${pnlClass(r.returnRate)}" title="${r.cost===0?"成本为零，收益率不适用":""}">${holdingPercent(r.returnRate)}</td><td>${weight==null?"—":(weight*100).toFixed(1)+"%"}${g.pricedCount<g.count?'<div class="missing-label">已估值持仓内占比</div>':""}</td><td class="status-cell">${escapeHTML(r.record?.quote_date||"—")}${r.record?.stale?'<div class="missing-label">旧报价 · 刷新失败</div>':""}</td><td><div class="holding-actions"><button class="secondary" data-edit-position="${escapeHTML(p.ticker)}">编辑</button><button class="secondary holding-delete" data-delete-position="${escapeHTML(p.ticker)}">删除记录</button></div></td></tr>`;
   }).join(""):'<tr class="holdings-empty"><td colspan="11">还没有持仓记录。<br>点击“添加持仓”，填写 Ticker、持仓数量、平均成本和币种。</td></tr>';
+  patchRows(el("holdings-body"),holdingHTML,"holdingTicker");
   rows.forEach(r=>{
     const row=[...el("holdings-body").rows].find(row=>row.dataset.holdingTicker===r.position.ticker);
     const g=summaries.find(g=>g.currency===r.position.currency);
@@ -138,9 +169,11 @@ function sortedTickers(){
   });
 }
 function render(){
+  if(surface==="watchlist"){
   const chosen=selectedGroups();const cols=chosen.flatMap(g=>g.columns);
-  el("table-head").innerHTML=`<tr class="group-head"><th class="sticky">公司 / 基金</th>${chosen.map(g=>`<th colspan="${g.columns.length}">${g.name}</th>`).join("")}<th>时间</th></tr><tr class="column-head"><th class="sticky"><button class="th-button" data-sort="ticker">Ticker / Name<span>点击列名排序</span></button></th>${cols.map(([key,name,sub])=>`<th><button class="th-button" data-sort="${key}" ${sortKey===key?'data-sort-active="true"':""}>${name}${sortKey===key?(sortAsc?" ↑":" ↓"):""}<span>${sub}</span></button></th>`).join("")}<th>Quote Date<span style="display:block;font-weight:400">交易所当地日期</span></th></tr>`;
-  el("table-body").innerHTML=tickers.length?sortedTickers().map(t=>{
+  const headerHTML=`<tr class="group-head"><th class="sticky">公司 / 基金</th>${chosen.map(g=>`<th colspan="${g.columns.length}">${g.name}</th>`).join("")}<th>时间</th></tr><tr class="column-head"><th class="sticky"><button class="th-button" data-sort="ticker">Ticker / Name<span>点击列名排序</span></button></th>${cols.map(([key,name,sub])=>`<th><button class="th-button" data-sort="${key}" ${sortKey===key?'data-sort-active="true"':""}>${name}${sortKey===key?(sortAsc?" ↑":" ↓"):""}<span>${sub}</span></button></th>`).join("")}<th>Quote Date<span style="display:block;font-weight:400">交易所当地日期</span></th></tr>`;
+  if(el("table-head").innerHTML!==headerHTML)el("table-head").innerHTML=headerHTML;
+  const watchHTML=tickers.length?sortedTickers().map(t=>{
     const record=records.get(t);const m=record?.metrics||{};
     return `<tr data-ticker="${escapeHTML(t)}" tabindex="0" aria-label="查看 ${escapeHTML(t)} 数据详情"><td class="sticky"><div class="security-cell"><div><span class="symbol">${escapeHTML(t)}</span><div class="security-name" title="${escapeHTML(record?.name||"等待数据")}">${escapeHTML(record?.name||"等待数据")}</div></div><button class="remove" data-remove="${escapeHTML(t)}" aria-label="移除 ${escapeHTML(t)}">×</button></div></td>${cols.map(([key,,,type])=>{
       const metric=m[key];if(!record)return `<td><span class="skeleton"></span></td>`;
@@ -148,12 +181,15 @@ function render(){
       return `<td ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}" title="${escapeHTML(metric?.reason||metric?.basis||"")}">${value}${value==="—"?`<span class="missing-label">${shortMissing(metric)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
     }).join("")}<td class="status-cell">${escapeHTML(record?.quote_date||"—")}<div class="missing-label">${record?.stale?"旧快照 · 刷新失败":record?.errors?.length?"部分数据未取得":record?record.volume_complete?"完整交易日":"部分数据待确认":"读取中"}</div></td></tr>`;
   }).join(""):`<tr class="empty-row"><td colspan="${cols.length+2}">添加股票或 ETF 的 Ticker，开始查看指标。</td></tr>`;
+  patchRows(el("table-body"),watchHTML,"ticker");
+  }
   const fetched=tickers.filter(t=>records.has(t)).length;
   const withPrice=tickers.filter(t=>records.get(t)?.metrics?.price?.value!=null).length;
   el("count").textContent=`${tickers.length} 个标的`;
   el("load-status").textContent=running||queue.length?`正在读取 ${fetched} / ${tickers.length} 个标的…`:`${withPrice} / ${tickers.length} 个标的取得行情 · 点击详情查看检索时间`;
   el("refresh").disabled=Boolean(running||queue.length);
   renderHoldings();
+  if(surface!=="holdings")flashChangedCells();
 }
 async function getRecord(ticker,refresh=false){
   const response=await FinFeedAuth.request(`/api/security/${encodeURIComponent(ticker)}${refresh?"?refresh=1":""}`);
@@ -161,9 +197,9 @@ async function getRecord(ticker,refresh=false){
   return response.json();
 }
 function pump(){
-  while(running<3&&queue.length){const task=queue.shift();running++;render();getRecord(task.ticker,task.refresh).then(record=>{if(trackedTickers().includes(task.ticker))records.set(task.ticker,record);}).catch(error=>{if(trackedTickers().includes(task.ticker)){records.set(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});}}).finally(()=>{running--;render();pump();});}
+  while(running<3&&queue.length){const task=queue.shift();running++;getRecord(task.ticker,task.refresh).then(record=>{if(trackedTickers().includes(task.ticker))records.set(task.ticker,record);}).catch(error=>{if(trackedTickers().includes(task.ticker)){records.set(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});}}).finally(()=>{running--;scheduleRender();pump();});}
 }
-function load(tickersToLoad,refresh=false){queue.push(...tickersToLoad.map(ticker=>({ticker,refresh})));pump();}
+function load(tickersToLoad,refresh=false){queue.push(...tickersToLoad.map(ticker=>({ticker,refresh})));el("refresh").disabled=true;pump();}
 function refreshWatchlist(){
   const tracked=trackedTickers();
   if(running||queue.length||!tracked.length)return;
@@ -248,18 +284,22 @@ if(document.modelContext?.registerTool){
 async function initializeState(){
   document.querySelector("main").inert=true;
   try{
-    const auth=await FinFeedAuth.initialize();currentUser=auth.user;
+    const requestedId=new URLSearchParams(location.search).get("user");
+    const [auth,directoryResponse,response]=await Promise.all([
+      FinFeedAuth.initialize(),FinFeedAuth.request("/api/accounts"),
+      FinFeedAuth.request("/api/state"+(requestedId?"?user="+encodeURIComponent(requestedId):""))
+    ]);
+    currentUser=auth.user;
     el("profile-name").textContent=currentUser.name;
     el("invite-controls").hidden=!auth.canInvite;
     el("admin-controls").hidden=!auth.isAdmin;
-    const directoryResponse=await FinFeedAuth.request("/api/accounts");
     if(!directoryResponse.ok)throw new Error("账户列表读取失败");
     const directory=await directoryResponse.json();
     const requestedUser=new URLSearchParams(location.search).get("user")||currentUser.id;
     el("view-account").innerHTML=directory.accounts.map(a=>`<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}${a.id===currentUser.id?" · 我的账户":" · "+escapeHTML(a.id.slice(0,6))}</option>`).join("");
     el("view-account").value=requestedUser;
     el("account-button").hidden=false;
-    const response=await FinFeedAuth.request("/api/state?user="+encodeURIComponent(requestedUser));const data=await response.json();
+    const data=await response.json();
     if(!response.ok)throw new Error(data.error||"记录读取失败");
     readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
     el("account-mode").textContent=readOnly?`${data.account.name} · 只读，无法修改`:"我的账户 · 可编辑";

@@ -1,5 +1,6 @@
 """Private PostgreSQL storage; SQLite is injected only by local tests."""
 from contextlib import contextmanager
+import atexit
 import hashlib
 import json
 import secrets
@@ -9,6 +10,7 @@ from typing import Any, Iterator
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from state import validate
 
@@ -69,6 +71,11 @@ class Store:
             raise ValueError("DATABASE_URL 必须为 PostgreSQL 连接地址")
         self.database_url = database_url
         self.sqlite_path = sqlite_path
+        self.pool = None if sqlite_path else ConnectionPool(
+            database_url, kwargs={"row_factory":dict_row,"connect_timeout":10,"sslmode":"require","prepare_threshold":None},
+            min_size=1, max_size=4, timeout=10, open=True, check=ConnectionPool.check_connection)
+        if self.pool:
+            atexit.register(self.pool.close)
         with self.transaction() as connection:
             if not sqlite_path:
                 connection.execute("CREATE SCHEMA IF NOT EXISTS finfeed_private")
@@ -98,19 +105,16 @@ class Store:
 
     @contextmanager
     def transaction(self) -> Iterator[Any]:
-        """A connection per request, committed or rolled back as one operation."""
-        if self.sqlite_path:
-            connection = sqlite3.connect(self.sqlite_path, timeout=10)
-            connection.row_factory = sqlite3.Row
-        else:
-            connection = psycopg.connect(self.database_url, row_factory=dict_row,
-                                         connect_timeout=10, sslmode="require", prepare_threshold=None)
+        """Commit or roll back one operation; return PostgreSQL connections to the pool."""
+        if not self.sqlite_path:
+            with self.pool.connection() as connection:
+                connection.execute("SET LOCAL search_path TO finfeed_private")
+                yield connection
+            return
+        connection = sqlite3.connect(self.sqlite_path, timeout=10)
+        connection.row_factory = sqlite3.Row
         try:
-            if self.sqlite_path:
-                connection.execute("BEGIN IMMEDIATE")
-            else:
-                # This schema is not exposed through Supabase's public REST API.
-                connection.execute("SET search_path TO finfeed_private")
+            connection.execute("BEGIN IMMEDIATE")
             yield connection
             connection.commit()
         except Exception:

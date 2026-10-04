@@ -388,7 +388,7 @@ def security(symbol, refresh=False, store=None):
             saved = None
             age = float("inf")
         # Market requests refresh each minute; same-minute tabs share the cache.
-        if saved and not financial_due(saved, now()) and (age < 5 or (age < TTL and not refresh)):
+        if saved and not financial_due(saved, now()) and age < TTL:
             return {**saved, "cached": True, "cache_age_seconds": round(age)}
         try:
             with LIMIT:

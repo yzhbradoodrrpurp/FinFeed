@@ -352,7 +352,13 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         m["forward_eps_q0"] = field(row.get("avg"), estimate_period, "Yahoo 0q 分析师平均 EPS 预期；可能为调整后口径，与 GAAP diluted EPS 不直接作 beat/miss 比较", analysis_url,
                                      currency=fin_currency, analysts=number(row.get("numberOfAnalysts")), estimate_label="供应商当前预测财季 0q")
     else:
-        m["forward_eps_q0"] = empty_metric("免费数据源未返回季度分析师预期", source=analysis_url)
+        previous_forecast = (saved or {}).get("metrics", {}).get("forward_eps_q0", {})
+        if previous_forecast.get("value") is not None:
+            m["forward_eps_q0"] = deepcopy(previous_forecast)
+            m["forward_eps_q0"]["estimate_stale"] = True
+            m["forward_eps_q0"]["estimate_fetched_at"] = previous_forecast.get("estimate_fetched_at") or (saved or {}).get("financial_fetched_at")
+        else:
+            m["forward_eps_q0"] = empty_metric("免费数据源未返回季度分析师预期", source=analysis_url)
     m["pe_ntm"] = empty_metric("缺少未来连续 4 个财季的同口径 EPS 预期；未用年度 forwardPE 代替", source=analysis_url,
                                 basis="NTM P/E = 价格 / 未来连续四个财季 EPS 预期之和")
     financial_errors = errors[financial_error_start:]
@@ -361,7 +367,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         result["financial_stale"] = True
         result["financial_errors"] = financial_errors
     else:
-        result["financial_stale"] = bool(financial_errors)
+        result["financial_stale"] = bool(statement_errors)
         result["financial_errors"] = financial_errors
     return revalue(result, estimate_store)
 

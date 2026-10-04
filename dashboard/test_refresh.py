@@ -101,6 +101,7 @@ class RefreshCases(unittest.TestCase):
         self.assertTrue(failed['financial_stale'])
 
     def test_forecast_failure_does_not_rollback_new_historical_debt(self):
+        self.item._analysis._earnings_trend = [{'period': '0q', 'endDate': '2026-09-30'}]
         first = self.fetch('2026-10-04T15:59:00+00:00')
         frame = pd.DataFrame({
             pd.Timestamp('2026-06-30'): {'DilutedEPS': 2, 'TotalRevenue': 100, 'TotalDebt': 50, 'OperatingCashFlow': 20, 'CapitalExpenditure': -5},
@@ -116,6 +117,9 @@ class RefreshCases(unittest.TestCase):
         self.assertAlmostEqual(updated['metrics']['debt_qoq_q1']['value'], 0.60)
         self.assertEqual(updated['financial_fetched_at'], '2026-10-04T16:00:00+00:00')
         self.assertTrue(updated['financial_errors'])
+        self.assertFalse(updated['financial_stale'])
+        self.assertEqual(updated['metrics']['forward_eps_next']['value'], 3)
+        self.assertTrue(updated['metrics']['forward_eps_next']['estimate_stale'])
 
     def test_quarterly_annualization_and_next_period_match(self):
         record = self.fetch('2026-10-04T02:00:00+00:00')

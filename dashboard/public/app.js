@@ -285,11 +285,7 @@ function accountFeedback(message){el("account-error").textContent=message;el("ac
 el("account-button").addEventListener("click",async()=>{
   el("account-dialog").showModal();accountFeedback("");
   if(!el("admin-controls").hidden)loadAdminAccounts().catch(e=>accountFeedback(e.message));
-  try{
-    const response=await FinFeedAuth.request("/api/auth/passkeys");const data=await response.json();
-    if(!response.ok)throw new Error(data.error);
-    el("passkey-list").innerHTML=data.passkeys.map(p=>`<li>${escapeHTML(p.label)} · ${escapeHTML(new Date(p.created*1000).toLocaleDateString("zh-CN"))}</li>`).join("");
-  }catch(e){accountFeedback(FinFeedAuth.message(e));}
+
 });
 el("account-close").addEventListener("click",()=>el("account-dialog").close());
 el("logout").addEventListener("click",async()=>{
@@ -351,7 +347,7 @@ el("create-invite").addEventListener("click",async()=>{
 async function loadAdminAccounts(){
   const response=await FinFeedAuth.request("/api/admin/accounts"),data=await response.json();
   if(!response.ok)throw new Error(data.error);
-  el("admin-accounts").innerHTML=data.accounts.map(a=>`<section class="admin-account"><strong>${escapeHTML(a.name)}${a.admin?" · 管理员":""}${a.disabled?" · 已删除":""}</strong>${a.admin?"":`<button class="secondary" data-admin-action="${a.disabled?"restore-account":"delete-account"}" data-admin-id="${escapeHTML(a.id)}">${a.disabled?"恢复账户":"删除账户"}</button>`}<ul>${a.passkeys.map(k=>`<li>${escapeHTML(k.label)}${k.revoked?" · 已撤销":""} <button class="secondary" data-admin-action="${k.revoked?"restore-key":"delete-key"}" data-admin-id="${escapeHTML(k.id)}">${k.revoked?"恢复 Passkey":"删除 Passkey"}</button></li>`).join("")}</ul></section>`).join("");
+  el("admin-accounts").innerHTML=data.accounts.filter(a=>!a.disabled).map(a=>`<section class="admin-account"><strong>${escapeHTML(a.name)}${a.admin?" · 管理员":" · 普通用户"}</strong>${a.admin?"":`<button class="secondary" data-admin-action="${a.disabled?"restore-account":"delete-account"}" data-admin-id="${escapeHTML(a.id)}">${a.disabled?"恢复账户":"删除账户"}</button>`}<ul>${a.passkeys.map(k=>`<li>${escapeHTML(k.label)}${k.revoked?" · 已撤销":""} <button class="secondary" data-admin-action="${k.revoked?"restore-key":"delete-key"}" data-admin-id="${escapeHTML(k.id)}">${k.revoked?"恢复 Passkey":"删除 Passkey"}</button></li>`).join("")}</ul></section>`).join("");
 }
 el("reload-admin").addEventListener("click",()=>loadAdminAccounts().catch(e=>accountFeedback(e.message)));
 el("admin-accounts").addEventListener("click",async event=>{

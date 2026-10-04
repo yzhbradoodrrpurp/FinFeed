@@ -44,9 +44,9 @@
     <p>行情每 60 秒刷新；估值用当次价格和每日缓存的 EPS 重新计算。季度财务与盈利预测按北京时间每日 00:00 切换更新日，在页面打开后的下一次刷新时获取；页面关闭期间不主动请求。缓存保存在私人数据库；详情分别显示行情和财务检索时间。免费源不保证实时或完整，SEC 原始报告入口用于核对。当前网络测试 SEC 接口返回 403，因此第一版财务来源明确显示为 Yahoo 聚合值。</p>
   </div></dialog>
   <dialog id="account-dialog"><div class="dialog-heading"><h2>我的账户</h2><button id="account-close" class="secondary" aria-label="关闭账户窗口">关闭</button></div>
-    <p>我的账户名称：<strong id="profile-name"></strong>（创建后不可修改）</p><p>其他登录用户可查看你的自选股、持仓数量、成本和盈亏；只有你可以修改。</p><ul id="passkey-list"></ul>
+    <p>我的账户名称：<strong id="profile-name"></strong></p>
     <section id="invite-controls" hidden><h3>邀请朋友</h3><button id="create-invite" class="secondary">生成邀请码</button><p id="invite-result" hidden></p><p>邀请码限用一次，7 天后过期。请复制后发送给受邀人。</p></section>
-    <section id="admin-controls" hidden><h3>管理员 · 账户与 Passkey</h3><p>账户删除后停止登录与共享查看，可恢复。删除 Passkey 会撤销登录权限，并使该账户的现有会话退出。</p><button id="reload-admin" class="secondary">刷新账户列表</button><div id="admin-accounts"></div></section>
+    <section id="admin-controls" hidden><h3>用户</h3><button id="reload-admin" class="secondary">刷新用户列表</button><div id="admin-accounts"></div></section>
     <button id="add-passkey" class="secondary">添加备用 Passkey</button>
     <hr><h3>自选股与持仓</h3><p>自选股顺序、数量和平均成本保存在私人数据库，可导出备份或导入记录文件。</p>
     <button id="export-state" class="secondary">导出记录</button><button id="choose-import" class="secondary">选择导入文件</button>

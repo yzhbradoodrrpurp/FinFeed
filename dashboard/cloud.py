@@ -360,6 +360,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             if not database.execute(connection, "SELECT id FROM accounts WHERE id=?", (user_id,)).fetchone():
                 abort(404, description="账户不存在")
             database.execute(connection, "INSERT INTO disabled_accounts VALUES (?,?) ON CONFLICT(id) DO NOTHING", (user_id,time.time()))
+            keys = database.execute(connection, "SELECT id FROM credentials WHERE user_id=?", (user_id,)).fetchall()
+            for key in keys:
+                database.execute(connection, "INSERT INTO revoked_passkeys VALUES (?,?) ON CONFLICT(id) DO NOTHING", (key["id"],time.time()))
             database.execute(connection, "DELETE FROM sessions WHERE user_id=?", (user_id,))
         return jsonify(ok=True)
 

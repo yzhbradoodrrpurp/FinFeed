@@ -279,7 +279,9 @@ class CloudCases(unittest.TestCase):
         self.assertEqual(self.client.get('/api/state?user='+other_id).status_code,404)
         self.assertNotIn(other_id,{a['id'] for a in self.client.get('/api/accounts').json['accounts']})
         listed=self.client.get('/api/admin/accounts').json['accounts']
-        self.assertTrue(next(a for a in listed if a['id']==other_id)['disabled'])
+        removed = next(a for a in listed if a['id']==other_id)
+        self.assertTrue(removed['disabled'])
+        self.assertTrue(all(k['revoked'] for k in removed['passkeys']))
         self.assertEqual(self.client.post('/api/admin/accounts/'+other_id+'/restore',json={},headers=HEADERS).status_code,200)
         self.assertEqual(self.client.get('/api/state?user='+other_id).json['state']['watchlist'],['AAPL'])
 

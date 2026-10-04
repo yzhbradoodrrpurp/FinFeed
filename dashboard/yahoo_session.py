@@ -1,11 +1,32 @@
 """Optional yfinance login session; credentials stay in the server environment."""
 import os
 import threading
+from urllib.parse import urlsplit
 
 import yfinance as yf
 
 _lock = threading.Lock()
 _status = None
+
+
+def proxy_enabled():
+    return bool(os.environ.get("YAHOO_PROXY_URL", "").strip())
+
+
+def configure_transport():
+    """Route only yfinance through an administrator-provided proxy."""
+    proxy = os.environ.get("YAHOO_PROXY_URL", "").strip()
+    if not proxy:
+        return
+    try:
+        parsed = urlsplit(proxy)
+        valid = parsed.scheme in {"http", "https", "socks5", "socks5h"} and bool(parsed.hostname) and not parsed.query and not parsed.fragment
+        parsed.port  # Validate malformed/out-of-range ports without logging URL.
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError("YAHOO_PROXY_URL 必须是有效的 HTTP(S) 或 SOCKS5(H) 代理地址")
+    yf.config.network.proxy = proxy
 
 
 def mode():
@@ -26,7 +47,7 @@ def initialize():
             return dict(_status)
         cookie_t = os.environ.get("YAHOO_COOKIE_T")
         cookie_y = os.environ.get("YAHOO_COOKIE_Y")
-        _status = {"mode": mode(), "verified": False, "error": None}
+        _status = {"mode": mode(), "verified": False, "error": None, "proxy_enabled": proxy_enabled()}
         if mode() == "anonymous":
             return dict(_status)
         if not cookie_t or not cookie_y:

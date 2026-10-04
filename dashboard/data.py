@@ -25,6 +25,7 @@ YAHOO_CACHE = tempfile.TemporaryDirectory(prefix="finfeed-yahoo-")
 yf.set_tz_cache_location(YAHOO_CACHE.name)
 yf.config.debug.hide_exceptions = False
 yf.config.network.retries = 1
+yahoo_session.configure_transport()
 # yfinance protects cookie/crumb setup with its own lock. Bound concurrent
 # network work; keep a Gunicorn thread available for state/auth requests.
 LIMIT = threading.Semaphore(3)
@@ -100,6 +101,7 @@ def financial_day(timestamp):
 
 def financial_due(saved, timestamp):
     return (not saved or saved.get("yahoo_session", {}).get("mode", "anonymous") != yahoo_session.mode()
+            or saved.get("yahoo_session", {}).get("proxy_enabled", False) != yahoo_session.proxy_enabled()
             or financial_day(saved.get("financial_checked_at") or saved.get("fetched_at")) != financial_day(timestamp))
 
 

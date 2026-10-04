@@ -29,6 +29,7 @@
 - `PYTHON_VERSION`：`3.11.17`。
 - `ALPHAVANTAGE_API_KEY`：可选备用数据源。所有指标优先 Yahoo/yfinance，下一财季预测缺失时才尝试备用源。
 - `YAHOO_SESSION_MODE`：默认 `anonymous`，在服务器建立独立匿名 Cookie/Crumb；如需使用已有登录凭据，显式设为 `login` 后重新部署。
+- `YAHOO_PROXY_URL`：可选 HTTP(S) / SOCKS5(H) 出站代理，仅作用于 yfinance。将完整地址和必要认证信息保存到 Render 私密环境变量；不要提交到仓库或放进前端。Render 必须能连接到该地址；本机的 `127.0.0.1:7890` 不能直接使用。代理供应商须允许此用途并遵守数据源请求限制。启用代理后会重新检查财务缓存。
 - `YAHOO_COOKIE_T`、`YAHOO_COOKIE_Y`：可选 Yahoo 登录会话，必须同时设置，且只在 `YAHOO_SESSION_MODE=login` 时由服务器通过 yfinance `Auth.set_login_cookies` 使用。每个进程验证一次；验证失败不停止其他可用数据请求。登录不保证恢复预测接口权限。
 
 Yahoo Cookie 相当于账户登录凭据。由账户本人在 Yahoo Finance 登录后取得，在 Render 私密环境变量中配置；不要发送到聊天、提交到 Git 或放在前端。只在明确同意将会话交给 Render 后配置。过期时本人更新并重新部署；移除这两个变量并重新部署即可恢复匿名模式。匿名与登录模式切换会重新检查当日资料和预测，正常运行仍遵守每天一次的刷新频率。

@@ -23,14 +23,17 @@ def main():
     import tempfile
     import yfinance as yf
     from yahoo_diagnostic import provider_error_category
+    from yahoo_session import configure_transport, proxy_enabled
     from datetime import datetime, timezone
     with tempfile.TemporaryDirectory(prefix="finfeed-probe-") as cache:
         yf.set_tz_cache_location(cache)
         yf.config.debug.hide_exceptions = False
         yf.config.network.retries = 0
+        configure_transport()
         item = yf.Ticker("GOOG")
         provider = item._data
         out = {"revision": REVISION, "checked_at": datetime.now(timezone.utc).isoformat(),
+               "proxy_enabled": proxy_enabled(),
                "proxy_env_present": any(os.environ.get(k) for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"))}
         params = {"modules": "earningsTrend", "corsDomain": "finance.yahoo.com", "formatted": "false", "symbol": "GOOG"}
 

@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import re
 import threading
 import urllib.parse
 import urllib.request
@@ -43,8 +44,10 @@ def estimate_data(symbol, timestamp, store=None):
                 if candidate.get('symbol') == symbol and isinstance(candidate.get('estimates'), list):
                     payload = candidate
                 else:
-                    # Never include raw API messages/URLs, which may contain credentials.
-                    error = 'Alpha Vantage 未返回预测数据（可能额度、权限或证券覆盖受限）'
+                    # Remove the credential and every URL before exposing provider errors.
+                    message = str(candidate.get('Information') or candidate.get('Note') or candidate.get('Error Message') or '')
+                    message = re.sub(r'https?://\S+', '[链接省略]', message.replace(key, '[凭据已隐藏]'))[:400]
+                    error = 'Alpha Vantage 未返回预测数据' + ('：' + message if message else '（响应格式不符）')
             except Exception as exc:
                 error = f'Alpha Vantage 读取失败：{type(exc).__name__}'
         result = {'checked_day': day, 'fetched_at': timestamp if payload is not None else saved.get('fetched_at'),

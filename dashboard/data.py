@@ -128,7 +128,10 @@ def next_forecast(result, estimate_store=None):
                 value = number(row.get("eps_estimate_average"))
                 if value is not None:
                     return field(value, row["date"], "Alpha Vantage：紧接最近已披露财季的分析师 EPS 均值；预期不保证为 GAAP", ALPHA_SOURCE, currency="USD", analysts=number(row.get("eps_estimate_analyst_count")), estimate_fetched_at=alpha.get("fetched_at"), estimate_stale=bool(alpha.get("error")))
-    return empty_metric("缺少紧接最近已披露财季的预测 EPS；不跳过财季计算", source=ALPHA_SOURCE)
+    reason = "Yahoo 未返回紧接最近已披露财季的预测 EPS"
+    if result.get("currency") == "USD" and result.get("financial_currency") == "USD":
+        reason += "；" + (alpha.get("error") or "备用来源未覆盖该财季" if alpha else "备用预测来源未配置")
+    return empty_metric(reason, source=ALPHA_SOURCE)
 
 
 def quarterly_pe(result, eps, forecast=False):

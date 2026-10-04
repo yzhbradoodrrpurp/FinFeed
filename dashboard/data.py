@@ -106,7 +106,7 @@ def reuse_financial(result, saved):
     for key in FINANCIAL_KEYS:
         if key in saved.get("metrics", {}):
             result["metrics"][key] = deepcopy(saved["metrics"][key])
-    for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at", "reported_shares"):
+    for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at", "reported_shares", "financial_diagnostics"):
         if key in saved:
             result[key] = deepcopy(saved[key])
     result.setdefault("financial_fetched_at", saved.get("fetched_at"))

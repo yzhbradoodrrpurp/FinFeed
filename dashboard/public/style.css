@@ -68,3 +68,6 @@ main{max-width:none;padding:20px 20px 28px}
 #invite-result {overflow-wrap:anywhere;user-select:all;padding:12px;background:#eef5f7;border-radius:8px;font-family:ui-monospace,monospace;}
 
 .account-browser label {font-size:13px;font-weight:500;}
+
+.admin-account {padding:12px 0;border-top:1px solid #dce5eb;}
+.admin-account button {font-size:12px;padding:5px 9px;margin:5px;}

@@ -147,7 +147,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         with database.transaction() as connection:
             account = database.account(connection, session["user_id"]) if session else None
             database_owner_id = database.owner(connection)["user_handle"]
-        return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=False, invitationRequired=True, canInvite=bool(session and session["user_id"] == database_owner_id), cloud=True, authenticated=bool(session), setupRequired=setup,
+        return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=False, invitationRequired=True, isAdmin=bool(session and session["user_id"] == database_owner_id), canInvite=bool(session and session["user_id"] == database_owner_id), cloud=True, authenticated=bool(session), setupRequired=setup,
                        bootstrapAvailable=bool(bootstrap), passkeySupported=True)
 
     @app.post("/api/auth/register/options")
@@ -271,7 +271,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             database.owner(connection)
             credential_id = body.get("id")
             credential = database.execute(connection, "SELECT * FROM credentials WHERE id=?", (credential_id if isinstance(credential_id, str) else "",)).fetchone()
-            if not credential:
+            if not credential or database.execute(connection, "SELECT id FROM revoked_passkeys WHERE id=?", (credential_id,)).fetchone() or database.execute(connection, "SELECT id FROM disabled_accounts WHERE id=?", (credential["user_id"],)).fetchone():
                 abort(401, description="Passkey 登录验证失败")
             account = database.account(connection, credential["user_id"])
             try:
@@ -328,6 +328,68 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             expires = time.time() + 7 * 86400
             database.execute(connection, "INSERT INTO invitations (id,created,expires) VALUES (?,?,?)", (digest(code), time.time(), expires))
         return jsonify(code=code, expires=expires)
+
+    def require_admin(connection):
+        session = require_owner(connection=connection)
+        if session["user_id"] != database.owner(connection)["user_handle"]:
+            abort(403, description="仅管理员可以执行此操作")
+        return session
+
+    @app.get("/api/admin/accounts")
+    def admin_accounts():
+        with database.transaction() as connection:
+            session = require_admin(connection)
+            rows = database.execute(connection, "SELECT a.id,a.name,EXISTS(SELECT 1 FROM disabled_accounts d WHERE d.id=a.id) AS disabled FROM accounts a ORDER BY a.created").fetchall()
+            users=[]
+            for row in rows:
+                keys=database.execute(connection, "SELECT c.id,c.label,c.created,EXISTS(SELECT 1 FROM revoked_passkeys r WHERE r.id=c.id) AS revoked FROM credentials c WHERE c.user_id=? ORDER BY c.created", (row["id"],)).fetchall()
+                if not keys:
+                    continue
+                users.append({**dict(row), "admin": row["id"] == session["user_id"], "passkeys": [dict(k) for k in keys]})
+        return jsonify(accounts=users)
+
+    @app.delete("/api/admin/accounts/<user_id>")
+    def admin_disable_account(user_id):
+        json_body()
+        with database.transaction() as connection:
+            session = require_admin(connection)
+            if user_id == session["user_id"]:
+                abort(400, description="不能删除管理员账户")
+            if not database.execute(connection, "SELECT id FROM accounts WHERE id=?", (user_id,)).fetchone():
+                abort(404, description="账户不存在")
+            database.execute(connection, "INSERT INTO disabled_accounts VALUES (?,?) ON CONFLICT(id) DO NOTHING", (user_id,time.time()))
+            database.execute(connection, "DELETE FROM sessions WHERE user_id=?", (user_id,))
+        return jsonify(ok=True)
+
+    @app.post("/api/admin/accounts/<user_id>/restore")
+    def admin_restore_account(user_id):
+        json_body()
+        with database.transaction() as connection:
+            require_admin(connection)
+            database.execute(connection, "DELETE FROM disabled_accounts WHERE id=?", (user_id,))
+        return jsonify(ok=True)
+
+    @app.delete("/api/admin/passkeys/<credential_id>")
+    def admin_revoke_passkey(credential_id):
+        json_body()
+        with database.transaction() as connection:
+            session = require_admin(connection)
+            key=database.execute(connection, "SELECT * FROM credentials WHERE id=?", (credential_id,)).fetchone()
+            if not key:
+                abort(404, description="Passkey 不存在")
+            if key["user_id"] == session["user_id"] and len(database.credentials(connection,session["user_id"])) <= 1:
+                abort(400, description="不能删除管理员最后一把 Passkey")
+            database.execute(connection, "INSERT INTO revoked_passkeys VALUES (?,?) ON CONFLICT(id) DO NOTHING", (credential_id,time.time()))
+            database.execute(connection, "DELETE FROM sessions WHERE user_id=?", (key["user_id"],))
+        return jsonify(ok=True)
+
+    @app.post("/api/admin/passkeys/<credential_id>/restore")
+    def admin_restore_passkey(credential_id):
+        json_body()
+        with database.transaction() as connection:
+            require_admin(connection)
+            database.execute(connection, "DELETE FROM revoked_passkeys WHERE id=?", (credential_id,))
+        return jsonify(ok=True)
 
     @app.get("/api/state")
     def state_read():

@@ -248,6 +248,38 @@ class CloudCases(unittest.TestCase):
             self.store.execute(connection, "UPDATE invitations SET expires=0 WHERE id=?", (digest(expired),))
         self.assertEqual(competing.post("/api/auth/register/options", json={**body,"inviteCode":expired}, headers=HEADERS).status_code,403)
 
+    def test_admin_only_account_and_passkey_deletion_revokes_access_and_is_recoverable(self):
+        from webauthn.helpers import bytes_to_base64url
+        self.enroll()
+        self.assertTrue(self.client.get('/api/auth/status').json['isAdmin'])
+        other=self.app.test_client()
+        other_id=self.signup(other)
+        key=bytes_to_base64url(b'other-key')
+        other.put('/api/state',json={'watchlist':['AAPL']},headers=HEADERS)
+        self.assertFalse(other.get('/api/auth/status').json['isAdmin'])
+        self.assertEqual(other.get('/api/admin/accounts').status_code,403)
+        for path in ('/api/admin/accounts/'+other_id, '/api/admin/passkeys/'+key):
+            self.assertEqual(other.delete(path,json={},headers=HEADERS).status_code,403)
+        self.assertEqual(other.post('/api/admin/accounts/'+other_id+'/restore',json={},headers=HEADERS).status_code,403)
+        self.assertEqual(other.post('/api/admin/passkeys/'+key+'/restore',json={},headers=HEADERS).status_code,403)
+        admin_id=self.client.get('/api/auth/status').json['user']['id']
+        self.assertEqual(self.client.delete('/api/admin/accounts/'+admin_id,json={},headers=HEADERS).status_code,400)
+        self.assertEqual(self.client.delete('/api/admin/passkeys/'+bytes_to_base64url(b'credential'),json={},headers=HEADERS).status_code,400)
+        self.assertEqual(self.client.delete('/api/admin/passkeys/'+key,json={},headers=HEADERS).status_code,200)
+        self.assertEqual(other.get('/api/state').status_code,401)
+        other.post('/api/auth/login/options',json={},headers=HEADERS)
+        with patch('cloud.verify_authentication_response') as verify:
+            self.assertEqual(other.post('/api/auth/login/verify',json={'id':key,'response':{}},headers=HEADERS).status_code,401)
+            verify.assert_not_called()
+        self.assertEqual(self.client.post('/api/admin/passkeys/'+key+'/restore',json={},headers=HEADERS).status_code,200)
+        self.assertEqual(self.client.delete('/api/admin/accounts/'+other_id,json={},headers=HEADERS).status_code,200)
+        self.assertEqual(self.client.get('/api/state?user='+other_id).status_code,404)
+        self.assertNotIn(other_id,{a['id'] for a in self.client.get('/api/accounts').json['accounts']})
+        listed=self.client.get('/api/admin/accounts').json['accounts']
+        self.assertTrue(next(a for a in listed if a['id']==other_id)['disabled'])
+        self.assertEqual(self.client.post('/api/admin/accounts/'+other_id+'/restore',json={},headers=HEADERS).status_code,200)
+        self.assertEqual(self.client.get('/api/state?user='+other_id).json['state']['watchlist'],['AAPL'])
+
     def test_daily_cache_survives_restart(self):
         self.store.set_cache("quote:QA", {"financial_checked_at": "2026-10-04"})
         cached = Store(sqlite_path=self.path).get_cache("quote:QA")

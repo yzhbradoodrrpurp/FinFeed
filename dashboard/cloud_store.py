@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS flows (
 CREATE TABLE IF NOT EXISTS state_history (
     revision INTEGER PRIMARY KEY, state TEXT NOT NULL, created DOUBLE PRECISION NOT NULL
 );
+CREATE TABLE IF NOT EXISTS disabled_accounts (
+    id TEXT PRIMARY KEY, created DOUBLE PRECISION NOT NULL
+);
+CREATE TABLE IF NOT EXISTS revoked_passkeys (
+    id TEXT PRIMARY KEY, created DOUBLE PRECISION NOT NULL
+);
 CREATE TABLE IF NOT EXISTS invitations (
     id TEXT PRIMARY KEY, created DOUBLE PRECISION NOT NULL, expires DOUBLE PRECISION NOT NULL,
     used_by TEXT
@@ -125,20 +131,20 @@ class Store:
     def account(self, connection, user_id=None):
         user_id = user_id or self.owner(connection)["user_handle"]
         suffix = "" if self.sqlite_path else " FOR UPDATE"
-        row = self.execute(connection, "SELECT * FROM accounts WHERE id=?" + suffix, (user_id,)).fetchone()
+        row = self.execute(connection, "SELECT * FROM accounts WHERE id=? AND NOT EXISTS (SELECT 1 FROM disabled_accounts d WHERE d.id=accounts.id)" + suffix, (user_id,)).fetchone()
         if not row:
             raise ValueError("账户不存在")
         return dict(row)
 
     def accounts(self):
         with self.transaction() as connection:
-            return [dict(row) for row in self.execute(connection, "SELECT a.id,a.name FROM accounts a WHERE EXISTS (SELECT 1 FROM credentials c WHERE c.user_id=a.id) ORDER BY a.created").fetchall()]
+            return [dict(row) for row in self.execute(connection, "SELECT a.id,a.name FROM accounts a WHERE NOT EXISTS (SELECT 1 FROM disabled_accounts d WHERE d.id=a.id) AND EXISTS (SELECT 1 FROM credentials c WHERE c.user_id=a.id AND NOT EXISTS (SELECT 1 FROM revoked_passkeys r WHERE r.id=c.id)) ORDER BY a.created").fetchall()]
 
     def credentials(self, connection: Any, user_id=None) -> list[dict]:
-        return [dict(row) for row in self.execute(connection, "SELECT * FROM credentials" + (" WHERE user_id=?" if user_id else "") + " ORDER BY created", (user_id,) if user_id else ()).fetchall()]
+        return [dict(row) for row in self.execute(connection, "SELECT * FROM credentials WHERE NOT EXISTS (SELECT 1 FROM revoked_passkeys r WHERE r.id=credentials.id) AND NOT EXISTS (SELECT 1 FROM disabled_accounts d WHERE d.id=credentials.user_id)" + (" AND user_id=?" if user_id else "") + " ORDER BY created", (user_id,) if user_id else ()).fetchall()]
 
     def session(self, connection: Any, token: str) -> dict | None:
-        row = self.execute(connection, "SELECT * FROM sessions WHERE id=? AND expires>?", (digest(token), time.time())).fetchone()
+        row = self.execute(connection, "SELECT * FROM sessions WHERE id=? AND expires>? AND NOT EXISTS (SELECT 1 FROM disabled_accounts d WHERE d.id=sessions.user_id)", (digest(token), time.time())).fetchone()
         return dict(row) if row else None
 
     def new_session(self, connection: Any, user_id=None) -> str:

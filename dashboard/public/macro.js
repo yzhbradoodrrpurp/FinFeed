@@ -2,7 +2,11 @@
 window.FinFeedMacro=(()=>{
   const names={jobs:["EMPLOYMENT","非农就业"],pce:["INFLATION","PCE 通胀"],dxy:["US DOLLAR","美元指数"],treasury:["TREASURY","十年期美债"]};
   const calendarLinks={
-    jobs:[['非农就业 · Trading Economics','https://tradingeconomics.com/united-states/non-farm-payrolls']],
+    jobs:[
+      ['非农就业 · Trading Economics','https://tradingeconomics.com/united-states/non-farm-payrolls'],
+      ['失业率 · Trading Economics','https://tradingeconomics.com/united-states/unemployment-rate'],
+      ['平均时薪同比 · Trading Economics','https://tradingeconomics.com/united-states/average-hourly-earnings-yoy']
+    ],
     pce:[
       ['总体 PCE 同比 · Trading Economics','https://tradingeconomics.com/united-states/pce-price-index-annual-change'],
       ['总体 PCE 环比 · Trading Economics','https://tradingeconomics.com/united-states/pce-price-index-monthly-change'],

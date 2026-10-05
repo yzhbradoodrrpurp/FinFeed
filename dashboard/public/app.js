@@ -2,9 +2,9 @@
 let initialLoading=true;
 const fetchingTickers=new Set();
 let readOnly=false,currentUser=null;
-const surfaceNames=["watchlist","portfolio","macro","whales"];
+const surfaceNames=["home","watchlist","portfolio","macro","whales"];
 const initialSurface=new URLSearchParams(location.search).get("surface");
-let holdings=[],surface=surfaceNames.includes(initialSurface)?initialSurface:"watchlist",editingPosition=null;
+let holdings=[],surface=surfaceNames.includes(initialSurface)?initialSurface:"home",editingPosition=null;
 let viewedUserId=null;
 const surfaceAccounts={watchlist:null,portfolio:null};
 function rememberSurfaceAccount(name,id){
@@ -14,7 +14,7 @@ function rememberSurfaceAccount(name,id){
 function accountViewURL(name,id){
   const params=new URLSearchParams();
   if(id!==currentUser.id)params.set("user",id);
-  if(name!=="watchlist")params.set("surface",name);
+  if(name!=="home")params.set("surface",name);
   return "/"+(params.size?"?"+params.toString():"");
 }
 const groups = [
@@ -212,17 +212,18 @@ async function switchSurface(next){
   }
   surface=next;
   const viewURL=new URL(location.href);
-  if(next==="watchlist")viewURL.searchParams.delete("surface");
+  if(next==="home")viewURL.searchParams.delete("surface");
   else viewURL.searchParams.set("surface",next);
   history.replaceState(history.state,"",viewURL);
   if(next==="macro")FinFeedMacro.open();
   for(const name of surfaceNames)el(`${name}-surface`).hidden=surface!==name;
-  el("page-title").textContent={watchlist:"关注列表",portfolio:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
-  el("page-eyebrow").textContent={watchlist:"MY WATCHLIST",portfolio:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
+  el("page-title").textContent={home:currentUser?"Hi "+currentUser.name:"Hi",watchlist:"关注列表",portfolio:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
+  el("page-eyebrow").textContent={home:"HOME",watchlist:"MY WATCHLIST",portfolio:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
   document.querySelector(".account-browser").hidden=!["watchlist","portfolio"].includes(surface);
   document.querySelector(".title-actions").hidden=!["watchlist","portfolio"].includes(surface);
   document.querySelector(".source-footer").hidden=!["watchlist","portfolio"].includes(surface);
   document.querySelectorAll("[data-surface]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.surface===surface)));
+  if(next==="home"&&currentUser)FinFeedHome.open(currentUser);
   render();
 }
 function feedback(s){el("feedback").textContent=s;el("feedback").hidden=!s;}
@@ -383,6 +384,7 @@ async function initializeState(){
       FinFeedAuth.request("/api/state"+(requestedId?"?user="+encodeURIComponent(requestedId):""))
     ]);
     currentUser=auth.user;
+    if(surface==="home")FinFeedHome.open(currentUser);
     // Start Macro alongside stock data, even when its view is hidden.
     FinFeedMacro.open();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;

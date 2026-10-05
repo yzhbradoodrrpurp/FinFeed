@@ -482,6 +482,11 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         except ValueError as error:
             return jsonify(error=str(error)), 400
 
+    @app.get("/api/home")
+    def home_data():
+        from market_home import snapshot
+        return jsonify(snapshot())
+
     @app.get("/api/macro/<kind>")
     def macro_data(kind):
         if kind == "fed":

@@ -15,6 +15,13 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_macro_requires_login_and_returns_public_card(self):
+        self.assertEqual(self.client.get('/api/macro/jobs').status_code, 401)
+        self.enroll()
+        with patch('macro.snapshot', return_value={'id': 'jobs', 'metrics': [], 'errors': []}):
+            self.assertEqual(self.client.get('/api/macro/jobs').json['id'], 'jobs')
+        self.assertEqual(self.client.get('/api/macro/unknown').status_code, 404)
+
     def frontend_setup(self):
         self.frontend = "https://finfeed.vercel.app"
         self.app = create_app({"TESTING": True, "PUBLIC_ORIGIN": ORIGIN,

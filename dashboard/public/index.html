@@ -5,7 +5,7 @@
   <meta name="description" content="FinFeed 私人自选股与持仓：行情、季度财务、成本、市值和未实现盈亏。">
   <title>FinFeed · 市场研究</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f47729'/%3E%3Cpath d='M8 24V8h17M8 15h13' stroke='%23ffffff' stroke-width='4' fill='none'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/style.css"><script src="/auth-client.js" defer></script><script src="/positions.js" defer></script><script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/style.css"><script src="/auth-client.js" defer></script><script src="/positions.js" defer></script><script src="/macro.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body class="dashboard-page">
   <aside class="sidebar">
@@ -42,7 +42,9 @@
       <div class="table-footer"><span>收益率 = 未实现盈亏 ÷ 成本；平均成本可直接填券商显示的数值。</span><span>仅计算持仓价格盈亏，不含现金、已实现盈亏、股息和汇率收益。</span></div>
     </section>
     <section id="macro-surface" hidden aria-label="宏观动向视图">
-      <div class="macro-placeholder"><div class="macro-illustration" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M12 48V16M12 48h40M20 39l10-12 10 6 12-17"/><circle cx="30" cy="27" r="3"/><circle cx="40" cy="33" r="3"/></svg></div><span class="coming-label">即将加入</span><h2>从更大的视角，观察市场。</h2><p>宏观动向将在这里汇集政策与经济数据。</p><div class="macro-topics"><span>非农就业</span><span>PCE 通胀</span><span>美元指数</span><span>十年期美债</span></div></div>
+      <div class="macro-toolbar"><p>美国宏观经济 · 发布数据与市场走势</p><button id="macro-refresh" class="secondary">刷新</button></div>
+      <div id="macro-grid" class="macro-grid" aria-live="polite"></div>
+      <p class="macro-footnote">时间同时显示北京时间与美国东部时间；官方发布日程可能调整。图表为历史统计或日线，数据失败时留空。</p>
     </section>
     <section id="whales-surface" hidden aria-label="巨鲸持仓视图"><div class="macro-placeholder"><span class="coming-label">即将加入</span><h2>巨鲸持仓</h2><p>在这里跟踪机构持仓与季度变化。</p></div></section>
     <div class="source-footer"><a href="https://ranaroussi.github.io/yfinance/" target="_blank" rel="noreferrer">数据来源与使用范围</a></div>

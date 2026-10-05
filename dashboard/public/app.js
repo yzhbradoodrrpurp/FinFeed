@@ -188,6 +188,7 @@ async function switchSurface(next){
     return;
   }
   surface=next;
+  if(next==="macro")FinFeedMacro.open();
   for(const name of surfaceNames)el(`${name}-surface`).hidden=surface!==name;
   el("page-title").textContent={watchlist:"自选股",holdings:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
   el("page-eyebrow").textContent={watchlist:"MY WATCHLIST",holdings:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];

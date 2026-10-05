@@ -482,6 +482,13 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         except ValueError as error:
             return jsonify(error=str(error)), 400
 
+    @app.get("/api/macro/<kind>")
+    def macro_data(kind):
+        from macro import snapshot
+        if kind not in {"jobs", "pce", "dxy", "treasury"}:
+            abort(404)
+        return jsonify(snapshot(kind))
+
     @app.get("/api/security/<symbol>")
     def quote(symbol: str):
         symbol = symbol.upper()

@@ -5,7 +5,9 @@ window.FinFeedMacro=(()=>{
     jobs:[['非农就业 · Trading Economics','https://tradingeconomics.com/united-states/non-farm-payrolls']],
     pce:[
       ['总体 PCE 同比 · Trading Economics','https://tradingeconomics.com/united-states/pce-price-index-annual-change'],
-      ['总体 PCE 环比 · Trading Economics','https://tradingeconomics.com/united-states/pce-price-index-monthly-change']
+      ['总体 PCE 环比 · Trading Economics','https://tradingeconomics.com/united-states/pce-price-index-monthly-change'],
+      ['核心 PCE 同比 · Trading Economics','https://tradingeconomics.com/united-states/core-pce-price-index-annual-change'],
+      ['核心 PCE 环比 · Trading Economics','https://tradingeconomics.com/united-states/core-pce-price-index-mom']
     ]
   };
   let started=false,busy=false;

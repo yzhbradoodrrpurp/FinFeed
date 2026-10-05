@@ -127,9 +127,14 @@ async function storeHoldings(next){
   await persistState({positions:next});holdings=next;
 }
 function switchSurface(next){
-  surface=next;el("watchlist-surface").hidden=surface!=="watchlist";el("holdings-surface").hidden=surface!=="holdings";
-  el("page-title").textContent=surface==="holdings"?"我的持仓":"自选股";
-  el("page-eyebrow").textContent=surface==="holdings"?"MY PORTFOLIO":"MY WATCHLIST";
+  if(!["watchlist","holdings","macro"].includes(next))return;
+  surface=next;
+  for(const name of ["watchlist","holdings","macro"])el(`${name}-surface`).hidden=surface!==name;
+  el("page-title").textContent={watchlist:"自选股",holdings:"我的持仓",macro:"宏观动向"}[surface];
+  el("page-eyebrow").textContent={watchlist:"MY WATCHLIST",holdings:"MY PORTFOLIO",macro:"MACRO OUTLOOK"}[surface];
+  document.querySelector(".account-browser").hidden=surface==="macro";
+  document.querySelector(".title-actions").hidden=surface==="macro";
+  document.querySelector(".source-footer").hidden=surface==="macro";
   document.querySelectorAll("[data-surface]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.surface===surface)));
   render();
 }
@@ -189,7 +194,7 @@ function render(){
   el("load-status").textContent=running||queue.length?`正在读取 ${fetched} / ${tickers.length} 个标的…`:`${withPrice} / ${tickers.length} 个标的取得行情 · 点击详情查看检索时间`;
   el("refresh").disabled=Boolean(running||queue.length);
   renderHoldings();
-  if(surface!=="holdings")flashChangedCells();
+  if(surface==="watchlist")flashChangedCells();
 }
 async function getRecord(ticker,refresh=false){
   const response=await FinFeedAuth.request(`/api/security/${encodeURIComponent(ticker)}${refresh?"?refresh=1":""}`);

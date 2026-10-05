@@ -4,15 +4,25 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="FinFeed 私人自选股与持仓：行情、季度财务、成本、市值和未实现盈亏。">
   <title>FinFeed · 自选股与持仓</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23152b3d'/%3E%3Cpath d='M8 24V8h17M8 15h13' stroke='%235edab0' stroke-width='4' fill='none'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f47729'/%3E%3Cpath d='M8 24V8h17M8 15h13' stroke='%23ffffff' stroke-width='4' fill='none'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/style.css"><script src="/auth-client.js" defer></script><script src="/positions.js" defer></script><script src="/app.js" defer></script>
 </head>
-<body>
-  <header class="masthead"><a class="brand" href="/" aria-label="FinFeed 自选股"><span class="brand-icon">F</span>FinFeed</a><button id="account-button" class="secondary" hidden>我的账户</button></header>
-  <main>
-    <div class="title-row"><div><div class="eyebrow" id="page-eyebrow">MY WATCHLIST</div><h1 id="page-title">自选股</h1></div><div class="title-actions"><button id="method-button" class="secondary">指标口径</button><button id="refresh" class="primary">刷新数据</button></div></div>
+<body class="dashboard-page">
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="FinFeed 首页"><span class="brand-icon">F</span>FinFeed<span class="brand-dot">.</span></a>
+    <div class="nav-caption">工作空间</div>
+    <nav class="surface-tabs" aria-label="研究视图">
+      <button data-surface="watchlist" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h4"/></svg><span>Watchlist<small>自选股</small></span></button>
+      <button data-surface="holdings" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V4h8v3M3 12h18M10 12v3h4v-3"/></svg><span>Portfolio<small>持仓</small></span></button>
+      <button data-surface="macro" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M7 14l4-4 4 2 5-7"/></svg><span>宏观动向<small>Macro</small></span></button>
+    </nav>
+    <div class="sidebar-bottom"><span class="workspace-mark" aria-hidden="true"></span><span>FinFeed Workspace</span></div>
+  </aside>
+  <main class="workspace">
+    <header class="workspace-topbar"><span class="workspace-label">市场研究<span class="topbar-slash">/</span><span id="page-eyebrow">MY WATCHLIST</span></span><button id="account-button" class="secondary" hidden>我的账户</button></header>
+    <div class="workspace-content">
+    <div class="title-row"><div><div class="section-kicker">FINFEED</div><h1 id="page-title">自选股</h1></div><div class="title-actions"><button id="method-button" class="secondary">指标口径</button><button id="refresh" class="primary">刷新数据</button></div></div>
     <div class="account-browser"><label for="view-account">查看账户</label><select id="view-account" aria-label="查看账户"></select><span id="account-mode"></span></div>
-    <nav class="surface-tabs" aria-label="研究视图"><button data-surface="watchlist" aria-pressed="true">Watchlist · 自选股</button><button data-surface="holdings" aria-pressed="false">Portfolio · 持仓</button></nav>
     <section id="watchlist-surface" aria-label="自选股视图">
     <div class="control-row"><form id="add-form"><label class="sr-only" for="ticker-input">添加 ticker</label><input id="ticker-input" autocomplete="off" spellcheck="false" placeholder="添加 Ticker，如 AAPL / VOO" maxlength="150"><button type="submit" class="secondary">添加</button></form><span id="count" class="count"></span></div>
     <div class="order-toolbar"><button id="order-button" class="secondary">手动排序</button><div class="views" aria-label="指标视图"><button data-view="all" aria-pressed="true">全部指标</button><button data-view="market" aria-pressed="false">行情与估值</button><button data-view="financial" aria-pressed="false">季度财务</button></div></div>
@@ -28,7 +38,11 @@
       <div class="table-shell holdings-table" tabindex="0" aria-label="持仓表，可横向滚动"><table><thead><tr><th class="sticky">Ticker / Name</th><th>数量</th><th>平均成本</th><th>成本总额</th><th>最近价</th><th>市值</th><th>未实现盈亏</th><th>收益率</th><th>同币种仓位占比</th><th>报价日期</th><th>操作</th></tr></thead><tbody id="holdings-body"></tbody></table></div>
       <div class="table-footer"><span>收益率 = 未实现盈亏 ÷ 成本；平均成本可直接填券商显示的数值。</span><span>仅计算持仓价格盈亏，不含现金、已实现盈亏、股息和汇率收益。</span></div>
     </section>
+    <section id="macro-surface" hidden aria-label="宏观动向视图">
+      <div class="macro-placeholder"><div class="macro-illustration" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M12 48V16M12 48h40M20 39l10-12 10 6 12-17"/><circle cx="30" cy="27" r="3"/><circle cx="40" cy="33" r="3"/></svg></div><span class="coming-label">即将加入</span><h2>从更大的视角，观察市场。</h2><p>宏观动向将在这里汇集政策与经济数据。</p><div class="macro-topics"><span>非农就业</span><span>PCE 通胀</span><span>美元指数</span><span>十年期美债</span></div></div>
+    </section>
     <div class="source-footer"><a href="https://ranaroussi.github.io/yfinance/" target="_blank" rel="noreferrer">数据来源与使用范围</a></div>
+    </div>
   </main>
   <dialog id="position-dialog" aria-labelledby="position-title"><div class="dialog-top"><div><div class="eyebrow">POSITION RECORD</div><h2 id="position-title">添加持仓</h2></div><button class="icon-button" data-close aria-label="关闭持仓编辑">×</button></div><form id="position-form" class="position-form"><label>Ticker<input id="position-ticker" autocomplete="off" spellcheck="false" placeholder="如 NVDA" maxlength="20" required></label><label>持仓数量<input id="position-quantity" type="number" min="0" step="any" placeholder="可填写小数" required></label><label>每股 / 每单位平均成本<input id="position-cost" type="number" min="0" step="any" placeholder="按券商成本口径填写" required></label><label>成本币种<input id="position-currency" list="currency-codes" maxlength="3" value="USD" autocomplete="off" required></label><datalist id="currency-codes"><option value="USD"><option value="HKD"><option value="EUR"><option value="GBP"><option value="JPY"><option value="KRW"><option value="CAD"><option value="AUD"><option value="CHF"><option value="CNY"></datalist><p class="position-help">数量和成本保存在私人数据库。成本币种须与报价一致才能计算盈亏；不会自动换汇。买卖后可在此更新剩余数量和平均成本。</p><p id="position-error" role="alert" hidden></p><div class="position-form-actions"><button type="button" class="secondary" data-close>取消</button><button type="submit" class="primary">保存持仓</button></div></form></dialog>
   <dialog id="order-dialog" aria-labelledby="order-title"><div class="dialog-top"><div><div class="eyebrow">WATCHLIST ORDER</div><h2 id="order-title">排列 Ticker</h2></div><button class="icon-button" data-close aria-label="关闭手动排序">×</button></div><p class="order-help">拖动标的，或用“上移 / 下移”调整顺序。顺序自动保存在私人数据库，刷新数据后保留。</p><ol id="order-list"></ol><p id="order-status" class="sr-only" role="status" aria-live="polite"></p><div class="order-footer"><button class="primary" data-close>完成</button></div></dialog>

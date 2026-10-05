@@ -78,6 +78,13 @@ function scheduleRender(){
 }
 function renderHoldings(){
   if(surface!=="holdings")return;
+  if(initialLoading){
+    el("holdings-count").textContent="正在加载持仓…";
+    el("holdings-summary").innerHTML=`<section class="currency-summary" aria-busy="true"><div class="summary-heading"><span class="skeleton"></span></div><div class="summary-metrics">${["成本总额 · 全部持仓","当前市值","未实现盈亏","持仓收益率"].map(label=>`<div><small>${label}</small><strong><span class="skeleton"></span></strong></div>`).join("")}</div></section>`;
+    patchRows(el("holdings-body"),Array.from({length:4},()=>`<tr class="initial-loading">${Array.from({length:11},(_,i)=>`<td${i===0?' class="sticky"':""}><span class="skeleton"></span></td>`).join("")}</tr>`).join(""),"holdingTicker");
+    el("holdings-status").textContent="正在加载持仓…";
+    return;
+  }
   const rows=holdings.map(p=>FinFeedPositions.evaluate(p,records.get(p.ticker)));
   const summaries=FinFeedPositions.summarize(rows);
   el("holdings-count").textContent=`${holdings.length} 项持仓`;
@@ -91,12 +98,21 @@ function renderHoldings(){
   patchRows(el("holdings-body"),holdingHTML,"holdingTicker");
   rows.forEach(r=>{
     const row=[...el("holdings-body").rows].find(row=>row.dataset.holdingTicker===r.position.ticker);
+    const pending=fetchingTickers.has(r.position.ticker);
+    for(let i=4;i<=9;i++){
+      row.cells[i].classList.toggle("cell-fetching",pending);
+      if(pending&&!r.record)row.cells[i].innerHTML='<span class="skeleton"></span>';
+    }
+    row.setAttribute("aria-busy",String(pending));
     const g=summaries.find(g=>g.currency===r.position.currency);
     const values=[r.position.quantity,r.position.averageCost,r.cost,r.price,r.marketValue,r.pnl,r.returnRate,r.marketValue!==null&&g.marketValue>0?r.marketValue/g.marketValue:null];
     values.forEach((value,i)=>{if(Number.isFinite(value)){row.cells[i+1].dataset.changeKey=`holding:${r.position.ticker}:${r.position.currency}:${i}`;row.cells[i+1].dataset.changeValue=value;}});
   });
   summaries.forEach((g,i)=>{
     const cells=el("holdings-summary").children[i].querySelectorAll(".summary-metrics>div");
+    const pending=rows.some(r=>r.position.currency===g.currency&&fetchingTickers.has(r.position.ticker));
+    el("holdings-summary").children[i].setAttribute("aria-busy",String(pending));
+    cells.forEach((cell,j)=>{if(j>0){cell.classList.toggle("cell-fetching",pending);if(pending&&!g.pricedCount)cell.querySelector("strong").innerHTML='<span class="skeleton"></span>';}});
     [g.cost,g.marketValue,g.pnl,g.returnRate].forEach((value,j)=>{if(Number.isFinite(value)){cells[j].dataset.changeKey=`summary:${g.currency}:${j}`;cells[j].dataset.changeValue=value;}});
   });
   flashChangedCells();

@@ -1,6 +1,13 @@
 "use strict";
 window.FinFeedMacro=(()=>{
   const names={jobs:["EMPLOYMENT","非农就业"],pce:["INFLATION","PCE 通胀"],dxy:["US DOLLAR","美元指数"],treasury:["TREASURY","十年期美债"]};
+  const calendarLinks={
+    jobs:[['非农就业 · Trading Economics','https://tradingeconomics.com/united-states/non-farm-payrolls']],
+    pce:[
+      ['总体 PCE 同比 · Trading Economics','https://tradingeconomics.com/united-states/pce-price-index-annual-change'],
+      ['总体 PCE 环比 · Trading Economics','https://tradingeconomics.com/united-states/pce-price-index-monthly-change']
+    ]
+  };
   let started=false,busy=false;
   const escape=s=>String(s??"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function time(s,zone){return s?new Intl.DateTimeFormat('zh-CN',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(s)):"暂无日程";}
@@ -26,7 +33,7 @@ window.FinFeedMacro=(()=>{
       ${id==='jobs'||id==='pce'?`<div class="macro-release"><div><span>本次发布时间</span><p>${times(data.last_release)}</p></div><div><span>下次发布时间</span><p>${times(data.next_release)}</p></div></div>`:''}
       <p class="macro-note">${escape((data.note||'').replace('5.05%','5.1%'))}</p>
       ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
-      <div class="macro-sources">${metrics.map(m=>`<a href="${escape(m.source)}" target="_blank" rel="noreferrer">${escape(m.label)}来源 ↗</a>`).join('')}${data.calendar_source?`<a href="${escape(data.calendar_source)}" target="_blank" rel="noreferrer">官方日历 ↗</a>`:''}${id==='jobs'?'<a href="https://www.bls.gov/news.release/empsit.htm" target="_blank" rel="noreferrer">本次就业报告 ↗</a>':''}${id==='pce'?'<a href="https://www.bea.gov/data/income-saving/personal-income" target="_blank" rel="noreferrer">BEA 发布内容 ↗</a>':''}</div><p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
+      <div class="macro-sources">${metrics.map(m=>`<a href="${escape(m.source)}" target="_blank" rel="noreferrer">${escape(m.label)}来源 ↗</a>`).join('')}${data.calendar_source?`<a href="${escape(data.calendar_source)}" target="_blank" rel="noreferrer">官方日历 ↗</a>`:''}${id==='jobs'?'<a href="https://www.bls.gov/news.release/empsit.htm" target="_blank" rel="noreferrer">本次就业报告 ↗</a>':''}${id==='pce'?'<a href="https://www.bea.gov/data/income-saving/personal-income" target="_blank" rel="noreferrer">BEA 发布内容 ↗</a>':''}${(calendarLinks[id]||[]).map(([label,url])=>`<a href="${escape(url)}" target="_blank" rel="noreferrer">${escape(label)} ↗</a>`).join('')}</div><p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
   }
   async function refresh(){
     if(busy)return;busy=true;document.getElementById('macro-refresh').disabled=true;

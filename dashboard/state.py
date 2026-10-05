@@ -9,9 +9,9 @@ def validate(state):
     if not isinstance(state, dict) or set(state) != {'watchlist', 'positions'}:
         raise ValueError('无效保存格式')
     watchlist, positions = state['watchlist'], state['positions']
-    if not isinstance(watchlist, list) or len(watchlist) > 40 or any(not isinstance(t, str) or not SYMBOL.fullmatch(t) for t in watchlist) or len(set(watchlist)) != len(watchlist):
+    if not isinstance(watchlist, list) or len(watchlist) > 128 or any(not isinstance(t, str) or not SYMBOL.fullmatch(t) for t in watchlist) or len(set(watchlist)) != len(watchlist):
         raise ValueError('无效自选股列表')
-    if not isinstance(positions, list) or len(positions) > 40:
+    if not isinstance(positions, list) or len(positions) > 128:
         raise ValueError('无效持仓列表')
     symbols = []
     for p in positions:
@@ -24,6 +24,6 @@ def validate(state):
         if not isinstance(p.get('currency'), str) or not re.fullmatch('[A-Z]{3}', p['currency']):
             raise ValueError('无效成本币种')
         symbols.append(p['ticker'])
-    if len(set(symbols)) != len(symbols) or len(set(watchlist + symbols)) > 40:
-        raise ValueError('标的重复或合计超过 40 个')
+    if len(set(symbols)) != len(symbols) or len(set(watchlist + symbols)) > 128:
+        raise ValueError('标的重复或合计超过 128 个')
     return state

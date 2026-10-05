@@ -172,10 +172,11 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(403)
         body = json_body()
         verifier = body.get("verifier", "")
-        if not isinstance(verifier, str) or len(verifier) != 43:
+        ticket = body.get("ticket", "")
+        if not isinstance(verifier, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", verifier) or not isinstance(ticket, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", ticket):
             abort(400)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
-        flow = database.consume_flow(body.get("ticket", ""))
+        flow = database.consume_flow(ticket)
         if not flow or flow.get("kind") != "frontend" or flow.get("origin") != frontend or not secrets.compare_digest(flow.get("challenge", ""), challenge):
             abort(401, description="登录链接无效或已过期，请重新登录")
         with database.transaction() as connection:

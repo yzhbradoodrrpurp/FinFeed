@@ -12,7 +12,7 @@ function showMode(){
   if(signup)params.delete("register");else params.set("register","1");
   link.href="/login?"+params;
   link.textContent=signup?"已有账户？返回登录":"首次使用？通过邀请码创建账户";
-  document.getElementById("login-description").textContent=signup?"填写邀请码和账户名称，保存 Passkey 后即可创建账户。":"使用已保存的 Passkey 登录，无需再次填写邀请码。";
+  document.getElementById("login-description").textContent=signup?"填写邀请码和账户名称，保存 Passkey 后即可创建账户。":"使用已保存的 Passkey 登录。";
 }
 async function authenticate(){
   controller?.abort();const active=new AbortController();controller=active;

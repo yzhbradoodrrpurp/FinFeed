@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="FinFeed 私人自选股与持仓：行情、季度财务、成本、市值和未实现盈亏。">
+  <meta name="description" content="FinFeed 私人关注列表与持仓：行情、季度财务、成本、市值和未实现盈亏。">
   <title>FinFeed · 市场研究</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f47729'/%3E%3Cpath d='M8 24V8h17M8 15h13' stroke='%23ffffff' stroke-width='4' fill='none'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/style.css"><script src="/auth-client.js" defer></script><script src="/positions.js" defer></script><script src="/macro.js" defer></script><script src="/app.js" defer></script>
@@ -14,7 +14,7 @@
     <div id="sidebar-resize" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" aria-valuemin="154" aria-valuemax="320" aria-valuenow="184" tabindex="0"></div>
     <div class="nav-caption">工作空间</div>
     <nav class="surface-tabs" aria-label="研究视图">
-      <button aria-label="Watchlist 自选股" data-surface="watchlist" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h4"/></svg><span>Watchlist<small>自选股</small></span></button>
+      <button aria-label="Watchlist 关注列表" data-surface="watchlist" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h4"/></svg><span>Watchlist<small>关注列表</small></span></button>
       <button aria-label="Portfolio 持仓" data-surface="holdings" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V4h8v3M3 12h18M10 12v3h4v-3"/></svg><span>Portfolio<small>持仓</small></span></button>
       <button aria-label="Macro 宏观动向" data-surface="macro" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M7 14l4-4 4 2 5-7"/></svg><span>Macro<small>宏观动向</small></span></button>
       <button aria-label="Whale Holdings 巨鲸持仓" data-surface="whales" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h18M5 17V9h4v8M11 17V5h4v12M17 17v-6h4v6"/></svg><span>Whale Holdings<small>巨鲸持仓</small></span></button>
@@ -24,14 +24,14 @@
   <main class="workspace">
     <header class="workspace-topbar"><span class="workspace-label">市场研究<span class="topbar-slash">/</span><span id="page-eyebrow">MY WATCHLIST</span></span><button id="account-button" class="secondary" hidden>我的账户</button></header>
     <div class="workspace-content">
-    <div class="title-row"><div><div class="section-kicker">FINFEED</div><h1 id="page-title">自选股</h1></div><div class="title-actions"><button id="method-button" class="secondary">指标口径</button><button id="refresh" class="primary">刷新数据</button></div></div>
+    <div class="title-row"><div><div class="section-kicker">FINFEED</div><h1 id="page-title">关注列表</h1></div><div class="title-actions"><button id="method-button" class="secondary">指标口径</button><button id="refresh" class="primary">刷新数据</button></div></div>
     <div class="account-browser"><label for="view-account">查看账户</label><select id="view-account" aria-label="查看账户"></select></div>
-    <section id="watchlist-surface" aria-label="自选股视图">
+    <section id="watchlist-surface" aria-label="关注列表视图">
     <div class="control-row"><form id="add-form"><label class="sr-only" for="ticker-input">添加 ticker</label><input id="ticker-input" autocomplete="off" spellcheck="false" placeholder="添加 Ticker，如 AAPL / VOO" maxlength="150"><button type="submit" class="secondary">添加</button></form><span id="count" class="count"></span></div>
     <div class="order-toolbar"><button id="order-button" class="secondary">手动排序</button><div class="views" aria-label="指标视图"><button data-view="all" aria-pressed="true">全部指标</button><button data-view="market" aria-pressed="false">行情与估值</button><button data-view="financial" aria-pressed="false">季度财务</button></div></div>
     <span id="load-status" hidden></span>
     <div id="feedback" role="alert" hidden></div>
-    <div class="table-shell" tabindex="0" aria-label="自选股指标表，可横向滚动"><table id="watchlist"><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
+    <div class="table-shell" tabindex="0" aria-label="关注列表指标表，可横向滚动"><table id="watchlist"><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
 
     </section>
     <section id="holdings-surface" hidden aria-label="持仓视图">
@@ -66,10 +66,10 @@
   </div></dialog>
   <dialog id="account-dialog"><div class="dialog-heading"><h2>我的账户</h2><button id="account-close" class="secondary" aria-label="关闭账户窗口">关闭</button></div>
     <p>我的账户名称：<strong id="profile-name"></strong></p>
-    <section id="domain-passkey" hidden><h3>新网址 Passkey</h3><p>为此网址保存 Passkey，绑定到当前账户，保留你的自选股与持仓。</p><button id="bind-domain-passkey" class="primary">绑定此网址 Passkey</button><a id="passkey-reauth" href="/login?legacy=1" hidden>重新验证原账户</a></section>
+    <section id="domain-passkey" hidden><h3>新网址 Passkey</h3><p>为此网址保存 Passkey，绑定到当前账户，保留你的关注列表与持仓。</p><button id="bind-domain-passkey" class="primary">绑定此网址 Passkey</button><a id="passkey-reauth" href="/login?legacy=1" hidden>重新验证原账户</a></section>
     <section id="invite-controls" hidden><h3>邀请朋友</h3><button id="create-invite" class="secondary">生成邀请码</button><p id="invite-result" hidden></p><p>邀请码限用一次，7 天后过期。请复制后发送给受邀人。</p></section>
     <section id="admin-controls" hidden><hr><h3>用户</h3><span id="users-loading" class="loading-indicator" role="status" hidden>正在加载用户…</span><div id="admin-accounts"></div></section>
-    <hr><h3>自选股与持仓</h3><p>自选股顺序、数量和平均成本保存在私人数据库，可导出备份或导入记录文件。</p>
+    <hr><h3>关注列表与持仓</h3><p>关注列表顺序、数量和平均成本保存在私人数据库，可导出备份或导入记录文件。</p>
     <button id="export-state" class="secondary">导出记录</button><button id="choose-import" class="secondary">选择导入文件</button>
     <input id="import-state" type="file" accept="application/json,.json" hidden>
     <div id="import-preview" hidden><p id="import-summary"></p><button id="confirm-import" class="primary">确认替换云端记录</button></div>

@@ -217,7 +217,7 @@ async function switchSurface(next){
   history.replaceState(history.state,"",viewURL);
   if(next==="macro")FinFeedMacro.open();
   for(const name of surfaceNames)el(`${name}-surface`).hidden=surface!==name;
-  el("page-title").textContent={watchlist:"自选股",holdings:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
+  el("page-title").textContent={watchlist:"关注列表",holdings:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
   el("page-eyebrow").textContent={watchlist:"MY WATCHLIST",holdings:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
   document.querySelector(".account-browser").hidden=!["watchlist","holdings"].includes(surface);
   document.querySelector(".title-actions").hidden=!["watchlist","holdings"].includes(surface);
@@ -226,7 +226,7 @@ async function switchSurface(next){
   render();
 }
 function feedback(s){el("feedback").textContent=s;el("feedback").hidden=!s;}
-function save(){persistState({watchlist:tickers}).catch(error=>feedback(`自选股尚未保存：${error.message}。请重试操作。`));}
+function save(){persistState({watchlist:tickers}).catch(error=>feedback(`关注列表尚未保存：${error.message}。请重试操作。`));}
 function renderOrder(){
   el("order-list").innerHTML=tickers.map((ticker,index)=>`<li draggable="true" data-order-ticker="${escapeHTML(ticker)}"><span class="drag-handle" aria-hidden="true">⠿</span><span class="order-security"><strong>${escapeHTML(ticker)}</strong><span>${escapeHTML(records.get(ticker)?.name||ticker)}</span></span><span class="order-actions"><button class="secondary" data-move="up" data-order-symbol="${escapeHTML(ticker)}" aria-label="上移 ${escapeHTML(ticker)}" ${index===0?"disabled":""}>上移</button><button class="secondary" data-move="down" data-order-symbol="${escapeHTML(ticker)}" aria-label="下移 ${escapeHTML(ticker)}" ${index===tickers.length-1?"disabled":""}>下移</button></span></li>`).join("")||'<li class="order-empty">尚未添加标的。</li>';
 }
@@ -303,7 +303,7 @@ function addTickers(text){
   if(!added.length)throw new Error("请输入 Ticker，例如 AAPL。");
   if(added.some(t=>! /^[A-Z0-9][A-Z0-9.^=-]{0,19}$/.test(t)))throw new Error("Ticker 格式不正确，可输入 AAPL、BRK-B 或 000660.KS。");
   const fresh=added.filter(t=>!tickers.includes(t));
-  if(new Set([...trackedTickers(),...fresh]).size>128)throw new Error("自选股和持仓合计最多 128 个不同标的，以控制免费源请求量。");
+  if(new Set([...trackedTickers(),...fresh]).size>128)throw new Error("关注列表和持仓合计最多 128 个不同标的，以控制免费源请求量。");
   tickers.push(...fresh);save();render();load(fresh);return fresh;
 }
 function detail(ticker){
@@ -315,7 +315,7 @@ function detail(ticker){
   }).join("")}`;
   el("detail-dialog").showModal();
 }
-el("add-form").addEventListener("submit",event=>{event.preventDefault();try{const fresh=addTickers(el("ticker-input").value);el("ticker-input").value="";feedback(fresh.length?"":"这些标的已在自选股中。");}catch(error){feedback(error.message);}});
+el("add-form").addEventListener("submit",event=>{event.preventDefault();try{const fresh=addTickers(el("ticker-input").value);el("ticker-input").value="";feedback(fresh.length?"":"这些标的已在关注列表中。");}catch(error){feedback(error.message);}});
 el("refresh").addEventListener("click",()=>{feedback("");refreshWatchlist();});
 el("method-button").addEventListener("click",()=>el("method-dialog").showModal());
 document.querySelectorAll("[data-surface]").forEach(b=>b.addEventListener("click",()=>switchSurface(b.dataset.surface)));
@@ -326,7 +326,7 @@ el("position-form").addEventListener("submit",async event=>{
   try{
     const p=FinFeedPositions.validate({ticker:el("position-ticker").value.trim().toUpperCase(),quantity:Number(el("position-quantity").value),averageCost:Number(el("position-cost").value),currency:el("position-currency").value.trim().toUpperCase(),updatedAt:new Date().toISOString()});
     if(!editingPosition&&holdings.some(h=>h.ticker===p.ticker))throw new Error("该 Ticker 已有持仓，请点击对应行的编辑按钮。");
-    if(new Set([...trackedTickers(),p.ticker]).size>128)throw new Error("自选股和持仓合计最多 128 个不同标的。");
+    if(new Set([...trackedTickers(),p.ticker]).size>128)throw new Error("关注列表和持仓合计最多 128 个不同标的。");
     const next=editingPosition?holdings.map(h=>h.ticker===editingPosition?p:h):[...holdings,p];
     await storeHoldings(next);el("position-dialog").close();renderHoldings();
     if(!records.has(p.ticker)&&!queue.some(t=>t.ticker===p.ticker))load([p.ticker]);
@@ -369,8 +369,8 @@ el("watchlist").addEventListener("keydown",event=>{if(event.target.matches("tr[d
 // Use identical visible actions when the browser supports the proposed WebMCP API.
 if(document.modelContext?.registerTool){
   for(const tool of [
-    {name:"read_watchlist",description:"读取当前私人自选股及已有指标快照",inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute:()=>tickers.map(t=>records.get(t)||{ticker:t,loading:true})},
-    {name:"add_watchlist_tickers",description:"将 ticker 加入私人自选股并读取指标；与页面添加操作相同",inputSchema:{type:"object",properties:{tickers:{type:"array",items:{type:"string"},minItems:1,maxItems:128}},required:["tickers"],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>{if(!input||!Array.isArray(input.tickers)||!input.tickers.length||input.tickers.some(t=>typeof t!=="string"))throw new Error("tickers 必须为非空字符串数组");return {added:addTickers(input.tickers.join(","))};}}
+    {name:"read_watchlist",description:"读取当前私人关注列表及已有指标快照",inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute:()=>tickers.map(t=>records.get(t)||{ticker:t,loading:true})},
+    {name:"add_watchlist_tickers",description:"将 ticker 加入私人关注列表并读取指标；与页面添加操作相同",inputSchema:{type:"object",properties:{tickers:{type:"array",items:{type:"string"},minItems:1,maxItems:128}},required:["tickers"],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>{if(!input||!Array.isArray(input.tickers)||!input.tickers.length||input.tickers.some(t=>typeof t!=="string"))throw new Error("tickers 必须为非空字符串数组");return {added:addTickers(input.tickers.join(","))};}}
   ]){try{Promise.resolve(document.modelContext.registerTool(tool)).catch(()=>{});}catch{}}
 }
 async function initializeState(){
@@ -455,10 +455,10 @@ el("import-state").addEventListener("change",async()=>{
     const file=el("import-state").files[0];if(!file)return;
     if(file.size>65536)throw new Error("文件不能超过 64 KB");
     const state=JSON.parse(await file.text());
-    if(!Array.isArray(state.watchlist)||!Array.isArray(state.positions)||state.watchlist.length>128||state.positions.length>128||state.watchlist.some(t=>typeof t!=="string"||!/^[A-Z0-9][A-Z0-9.^=-]{0,19}$/.test(t))||new Set(state.watchlist).size!==state.watchlist.length)throw new Error("文件中的自选股格式不正确");
+    if(!Array.isArray(state.watchlist)||!Array.isArray(state.positions)||state.watchlist.length>128||state.positions.length>128||state.watchlist.some(t=>typeof t!=="string"||!/^[A-Z0-9][A-Z0-9.^=-]{0,19}$/.test(t))||new Set(state.watchlist).size!==state.watchlist.length)throw new Error("文件中的关注列表格式不正确");
     state.positions.forEach(p=>FinFeedPositions.validate(p));
     const positionSymbols=state.positions.map(p=>p.ticker);
-    if(new Set(positionSymbols).size!==positionSymbols.length||new Set([...state.watchlist,...positionSymbols]).size>128)throw new Error("标的重复或自选股与持仓合计超过 128 个");
+    if(new Set(positionSymbols).size!==positionSymbols.length||new Set([...state.watchlist,...positionSymbols]).size>128)throw new Error("标的重复或关注列表与持仓合计超过 128 个");
     pendingImport={watchlist:state.watchlist,positions:state.positions};
     el("import-summary").textContent=`将导入 ${state.watchlist.length} 个自选标的与 ${state.positions.length} 项持仓。现有云端记录会被替换，并保留历史备份。`;
     el("import-preview").hidden=false;accountFeedback("");
@@ -471,7 +471,7 @@ el("confirm-import").addEventListener("click",async()=>{
     const state=await persistState(pendingImport);
     initialLoading=false;tickers=state.watchlist;holdings=state.positions;pendingImport=null;
     el("import-preview").hidden=true;sortKey=null;queue=[];records.clear();cellValues.clear();cellFlashes.clear();
-    render();load(trackedTickers());accountFeedback("自选股与持仓已保存到云端。");
+    render();load(trackedTickers());accountFeedback("关注列表与持仓已保存到云端。");
   }catch(e){accountFeedback(e.message);}
   finally{el("confirm-import").disabled=false;}
 });

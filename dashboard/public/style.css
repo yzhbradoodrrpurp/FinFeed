@@ -112,7 +112,7 @@ dialog{border-color:#e6e0d6;border-radius:13px;box-shadow:0 24px 85px #4b2f1622;
 /* Adjustable desktop navigation. */
 #sidebar-toggle{position:absolute;right:-12px;top:76px;width:24px;height:24px;display:grid;place-items:center;padding:0;border:1px solid var(--line);border-radius:50%;background:white;color:#a37859;font-size:19px;z-index:2}
 #sidebar-resize{position:absolute;inset:0 -4px 0 auto;width:8px;cursor:col-resize;touch-action:none}
-#sidebar-resize::after{content:"";position:absolute;top:50%;left:2px;width:4px;height:32px;border-radius:4px;background:transparent}
+#sidebar-resize::after{content:"";position:absolute;top:0;bottom:0;left:3px;width:2px;background:transparent}
 #sidebar-resize:hover::after,#sidebar-resize:focus-visible::after,.sidebar-resizing #sidebar-resize::after{background:#f4772980}
 #sidebar-resize:focus-visible{outline:none}
 body.sidebar-resizing{cursor:col-resize;user-select:none}

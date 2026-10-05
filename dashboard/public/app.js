@@ -356,6 +356,8 @@ async function initializeState(){
       FinFeedAuth.request("/api/state"+(requestedId?"?user="+encodeURIComponent(requestedId):""))
     ]);
     currentUser=auth.user;
+    // Start Macro alongside stock data, even when its view is hidden.
+    FinFeedMacro.open();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;
     el("profile-name").textContent=currentUser.name;
     el("invite-controls").hidden=!auth.canInvite;

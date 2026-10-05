@@ -32,7 +32,7 @@ applySidebar();
 window.addEventListener("resize",applySidebar);
 el("sidebar-toggle").addEventListener("click",()=>{sidebarCollapsed=!sidebarCollapsed;applySidebar();saveSidebar();});
 const sidebarHandle=el("sidebar-resize");
-sidebarHandle.addEventListener("pointerdown",event=>{if(event.button!==0)return;sidebarHandle.setPointerCapture(event.pointerId);document.body.classList.add("sidebar-resizing");event.preventDefault();});
+sidebarHandle.addEventListener("pointerdown",event=>{if(event.button!==0)return;sidebarHandle.focus();sidebarHandle.setPointerCapture(event.pointerId);document.body.classList.add("sidebar-resizing");event.preventDefault();});
 sidebarHandle.addEventListener("pointermove",event=>{if(!sidebarHandle.hasPointerCapture(event.pointerId))return;sidebarWidth=Math.max(154,Math.min(320,event.clientX));applySidebar();});
 function finishSidebarResize(){document.body.classList.remove("sidebar-resizing");saveSidebar();}
 sidebarHandle.addEventListener("pointerup",finishSidebarResize);

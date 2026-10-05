@@ -27,8 +27,8 @@ yf.config.debug.hide_exceptions = False
 yf.config.network.retries = 1
 yahoo_session.configure_transport()
 # yfinance protects cookie/crumb setup with its own lock. Bound concurrent
-# network work; keep a Gunicorn thread available for state/auth requests.
-LIMIT = threading.Semaphore(3)
+# network work across all users in this single backend process.
+LIMIT = threading.Semaphore(1024)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60

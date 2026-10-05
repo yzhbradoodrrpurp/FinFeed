@@ -261,7 +261,7 @@ async function getRecord(ticker,refresh=false){
   return response.json();
 }
 function pump(){
-  while(running<3&&queue.length){const task=queue.shift();running++;getRecord(task.ticker,task.refresh).then(record=>{if(trackedTickers().includes(task.ticker))records.set(task.ticker,record);}).catch(error=>{if(trackedTickers().includes(task.ticker)){records.set(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});}}).finally(()=>{fetchingTickers.delete(task.ticker);running--;scheduleRender();pump();});}
+  while(running<128&&queue.length){const task=queue.shift();running++;getRecord(task.ticker,task.refresh).then(record=>{if(trackedTickers().includes(task.ticker))records.set(task.ticker,record);}).catch(error=>{if(trackedTickers().includes(task.ticker)){records.set(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});}}).finally(()=>{fetchingTickers.delete(task.ticker);running--;scheduleRender();pump();});}
 }
 function load(tickersToLoad,refresh=false){tickersToLoad.forEach(t=>fetchingTickers.add(t));scheduleRender();queue.push(...tickersToLoad.map(ticker=>({ticker,refresh})));el("refresh").disabled=true;pump();}
 function refreshWatchlist(){

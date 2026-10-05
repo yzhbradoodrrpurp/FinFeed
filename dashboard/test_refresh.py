@@ -8,7 +8,22 @@ import data
 
 
 class RefreshCases(unittest.TestCase):
-    def test_provider_requests_overlap_but_never_exceed_three(self):
+    def test_provider_limit_is_1024(self):
+        acquired = 0
+        try:
+            for _ in range(1024):
+                self.assertTrue(data.LIMIT.acquire(blocking=False))
+                acquired += 1
+            self.assertFalse(data.LIMIT.acquire(blocking=False))
+        finally:
+            for _ in range(acquired):
+                data.LIMIT.release()
+
+    def test_provider_requests_overlap_and_wait_at_global_limit(self):
+        # Reserve most permits to test the real global limit with four threads.
+        for _ in range(1021):
+            self.assertTrue(data.LIMIT.acquire(blocking=False))
+            self.addCleanup(data.LIMIT.release)
         release = threading.Event()
         three_entered = threading.Event()
         guard = threading.Lock()

@@ -2,7 +2,11 @@
 
 唯一运行入口为 Render 上的 `cloud:create_app()`，使用 Supabase PostgreSQL 保存记录及应用缓存，所有账户数据访问和修改要求 Passkey 登录。部署设置见 [DEPLOY.md](DEPLOY.md)。不提供无登录的本机服务或浏览器本地记录模式。
 
-线上入口：<https://finfeed-private.onrender.com>。Render 跟踪 GitHub `main` 分支，推送后自动部署。
+线上入口：<https://finfeed-research.vercel.app>；后端为 <https://finfeed-private.onrender.com>。Vercel 与 Render 跟踪 GitHub `main` 分支，推送后自动部署。
+
+原网址用户可通过登录页的“已有原网址 Passkey”入口验证身份，再在“我的账户 → 新网址 Passkey”绑定到当前账户。绑定要求最近 5 分钟内验证过身份；超时可重新验证原账户。新凭据按网址保存 RP ID，验证挑战绑定发起域名，原凭据继续仅用于原网址。邀请码注册的新用户可直接在 Vercel 保存 Passkey。
+
+表格进入时先显示列标题和占位动画，标的记录返回后显示 ticker 与已有公司名称；数据请求期间对应单元格显示轻微流动效果。“我的账户”用户列表首次加载显示占位动画，窗口打开期间每 60 秒自动刷新，关闭时停止。
 
 页面打开期间，每 60 秒刷新行情；季度财务和盈利预测每日检查一次。有效行情缓存共享 60 秒，包括自动刷新；同一标的请求在后端合并，最多同时请求 3 个标的。刷新失败时相应字段留空，不使用历史快照补值。关闭页面后停止刷新；刷新频率不改变供应商行情本身的延迟。
 

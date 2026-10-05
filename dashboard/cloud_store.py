@@ -95,6 +95,13 @@ class Store:
                         "SELECT column_name FROM information_schema.columns WHERE table_schema='finfeed_private' AND table_name=%s", (table,))}
                 if "user_id" not in columns:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT")
+            if sqlite_path:
+                credential_columns = {row["name"] for row in connection.execute("PRAGMA table_info(credentials)")}
+            else:
+                credential_columns = {row["column_name"] for row in connection.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_schema='finfeed_private' AND table_name='credentials'")}
+            if "rp_id" not in credential_columns:
+                connection.execute("ALTER TABLE credentials ADD COLUMN rp_id TEXT")
             legacy = self.owner(connection)
             self.execute(connection, "INSERT INTO accounts (id,name,state,revision,created) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
                          (legacy["user_handle"], "Liam", legacy["state"], legacy["revision"], time.time()))

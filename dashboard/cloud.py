@@ -93,6 +93,13 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         set_cookie(response, session_cookie, database.new_session(connection, user_id), 43200)
         response.delete_cookie(flow_cookie, secure=secure, httponly=True, samesite="Strict", path="/")
 
+    def ceremony_origin():
+        return frontend if frontend and request.headers.get("Origin") == frontend else origin
+
+    def check_ceremony(flow):
+        if flow.get("origin", origin) != ceremony_origin():
+            abort(403, description="验证域名已改变，请重新开始")
+
     @app.before_request
     def guard() -> None:
         if request.path != "/api/health" and request.host != parsed.netloc:
@@ -100,7 +107,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if request.method in {"POST", "PUT", "DELETE", "PATCH"}:
             # Exact origin + non-simple JSON/header prevents cross-site writes/login CSRF.
             allowed = {origin}
-            if frontend and (not request.path.startswith("/api/auth/") or request.path in {"/api/auth/frontend-exchange", "/api/auth/logout"}):
+            if frontend:
                 allowed.add(frontend)
             if request.headers.get("Origin") not in allowed or request.headers.get("X-FinFeed-Client") != "1" or request.mimetype != "application/json":
                 abort(403, description="仅允许网站内发起的操作")
@@ -199,8 +206,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         with database.transaction() as connection:
             account = database.account(connection, session["user_id"]) if session else None
             database_owner_id = database.owner(connection)["user_handle"]
+            bound = bool(account and frontend and any(key.get("rp_id") == urlsplit(frontend).hostname for key in database.credentials(connection, account["id"])))
         return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=False, invitationRequired=True, isAdmin=bool(session and session["user_id"] == database_owner_id), canInvite=bool(session and session["user_id"] == database_owner_id), cloud=True, authenticated=bool(session), setupRequired=setup,
-                       bootstrapAvailable=bool(bootstrap), passkeySupported=True)
+                       bootstrapAvailable=bool(bootstrap), passkeySupported=True, frontendPasskeyBound=bound)
 
     @app.post("/api/auth/register/options")
     def register_options():
@@ -240,17 +248,17 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             if len(credentials) >= 10:
                 abort(400, description="最多绑定 10 把 Passkey")
             options = generate_registration_options(
-                rp_id=parsed.hostname, rp_name="FinFeed", user_name=name,
+                rp_id=urlsplit(ceremony_origin()).hostname, rp_name="FinFeed", user_name=name,
                 user_display_name=name, user_id=base64url_to_bytes(user_id),
                 authenticator_selection=AuthenticatorSelectionCriteria(
                     resident_key=ResidentKeyRequirement.REQUIRED,
                     user_verification=UserVerificationRequirement.REQUIRED),
-                exclude_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(row["id"])) for row in credentials],
+                exclude_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(row["id"])) for row in credentials if (row.get("rp_id") or parsed.hostname) == urlsplit(ceremony_origin()).hostname],
             )
             label = body.get("label", "我的 Passkey")
             if not isinstance(label, str) or not 1 <= len(label.strip()) <= 60:
                 abort(400, description="Passkey 名称需为 1–60 个字符")
-            token = database.flow(connection, {"kind": "register", "mode": mode, "binding": binding,
+            token = database.flow(connection, {"kind": "register", "origin": ceremony_origin(), "mode": mode, "binding": binding,
                                                "challenge": bytes_to_base64url(options.challenge), "label": label.strip(), "user_id": user_id, "name": name, "invite_id": invite_id})
         response = jsonify(json.loads(options_to_json(options)))
         set_cookie(response, flow_cookie, token, 300)
@@ -262,10 +270,11 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         flow = database.consume_flow(request.cookies.get(flow_cookie, ""))
         if not flow or flow.get("kind") != "register" or not flow.get("user_id"):
             abort(400, description="绑定请求已过期，请重新开始")
+        check_ceremony(flow)
         try:
             verification = verify_registration_response(
                 credential=body, expected_challenge=base64url_to_bytes(flow["challenge"]),
-                expected_rp_id=parsed.hostname, expected_origin=origin, require_user_verification=True,
+                expected_rp_id=urlsplit(flow.get("origin", origin)).hostname, expected_origin=flow.get("origin", origin), require_user_verification=True,
             )
         except (WebAuthnException, ValueError, TypeError, KeyError):
             abort(400, description="Passkey 绑定验证失败，请重新开始")
@@ -291,10 +300,10 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
                 abort(400, description="最多绑定 10 把 Passkey")
             if database.execute(connection, "SELECT id FROM credentials WHERE id=?", (bytes_to_base64url(verification.credential_id),)).fetchone():
                 abort(400, description="这把 Passkey 已绑定，请使用它登录")
-            database.execute(connection, "INSERT INTO credentials (id,public_key,sign_count,label,created,user_id) VALUES (?,?,?,?,?,?)", (
+            database.execute(connection, "INSERT INTO credentials (id,public_key,sign_count,label,created,user_id,rp_id) VALUES (?,?,?,?,?,?,?)", (
                 bytes_to_base64url(verification.credential_id),
                 bytes_to_base64url(verification.credential_public_key), verification.sign_count,
-                flow["label"], time.time(), user_id))
+                flow["label"], time.time(), user_id, urlsplit(flow.get("origin", origin)).hostname))
             response = jsonify(ok=True)
             finish_login(connection, response, user_id)
         return response
@@ -303,14 +312,14 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def login_options():
         json_body()
         with database.transaction() as connection:
-            credentials = database.credentials(connection)
+            credentials = [key for key in database.credentials(connection) if (key.get("rp_id") or parsed.hostname) == urlsplit(ceremony_origin()).hostname]
             if not credentials:
-                abort(400, description="请先绑定第一把 Passkey")
+                abort(400, description="此网址还没有可用的 Passkey，请先通过原网址登录并绑定")
             # Limit the authenticator picker to credentials of active accounts.
-            options = generate_authentication_options(rp_id=parsed.hostname,
+            options = generate_authentication_options(rp_id=urlsplit(ceremony_origin()).hostname,
                         allow_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(key["id"])) for key in credentials],
                         user_verification=UserVerificationRequirement.REQUIRED)
-            token = database.flow(connection, {"kind": "login", "challenge": bytes_to_base64url(options.challenge)})
+            token = database.flow(connection, {"kind": "login", "origin": ceremony_origin(), "challenge": bytes_to_base64url(options.challenge)})
         response = jsonify(json.loads(options_to_json(options)))
         set_cookie(response, flow_cookie, token, 300)
         return response
@@ -321,12 +330,15 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         flow = database.consume_flow(request.cookies.get(flow_cookie, ""))
         if not flow or flow.get("kind") != "login":
             abort(400, description="登录请求已过期，请重新开始")
+        check_ceremony(flow)
         with database.transaction() as connection:
             database.owner(connection)
             credential_id = body.get("id")
             credential = database.execute(connection, "SELECT * FROM credentials WHERE id=?", (credential_id if isinstance(credential_id, str) else "",)).fetchone()
             if not credential or database.execute(connection, "SELECT id FROM revoked_passkeys WHERE id=?", (credential_id,)).fetchone() or database.execute(connection, "SELECT id FROM disabled_accounts WHERE id=?", (credential["user_id"],)).fetchone():
                 abort(401, description="Passkey 登录验证失败")
+            if (credential["rp_id"] or parsed.hostname) != urlsplit(flow.get("origin", origin)).hostname:
+                abort(401, description="Passkey 不属于此网址")
             account = database.account(connection, credential["user_id"])
             try:
                 handle = body.get("response", {}).get("userHandle")
@@ -334,7 +346,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
                     abort(401, description="Passkey 登录验证失败")
                 verification = verify_authentication_response(
                     credential=body, expected_challenge=base64url_to_bytes(flow["challenge"]),
-                    expected_rp_id=parsed.hostname, expected_origin=origin,
+                    expected_rp_id=urlsplit(flow.get("origin", origin)).hostname, expected_origin=flow.get("origin", origin),
                     credential_public_key=base64url_to_bytes(credential["public_key"]),
                     credential_current_sign_count=credential["sign_count"], require_user_verification=True,
                 )

@@ -89,3 +89,16 @@ dialog{border-color:#e6e0d6;border-radius:13px;box-shadow:0 24px 85px #4b2f1622;
 @media(min-width:1600px){:root{--sidebar:200px}.workspace-content{padding-left:32px;padding-right:32px}}
 @media(max-width:1000px){:root{--sidebar:154px}.sidebar{padding:23px 9px}.sidebar .brand{font-size:20px;padding:0 5px}.surface-tabs button{padding:11px 9px;gap:9px}.workspace-content{padding:23px 18px}.workspace-topbar{padding:0 18px}.sidebar-bottom{font-size:9px;padding-left:5px}.workspace-label{font-size:11px}}
 @media(max-width:640px){:root{--sidebar:64px}.sidebar{padding:20px 6px}.sidebar .brand{font-size:0;margin-bottom:31px;padding:0;justify-content:center}.brand-dot,.nav-caption,.sidebar-bottom{display:none}.surface-tabs{gap:10px}.surface-tabs button{padding:12px 5px;justify-content:center;gap:0}.surface-tabs button span{font-size:0}.surface-tabs button small{display:none}.surface-tabs button svg{width:21px;height:21px}.workspace-content{padding:20px 12px}.workspace-topbar{height:54px;padding:0 12px}.workspace-label{gap:8px;font-size:10px}#page-eyebrow{font-size:8px}.title-row{align-items:center;gap:8px;margin-bottom:18px}.title-row h1{font-size:24px}.title-actions .secondary{display:none}.primary,.secondary{font-size:11px;padding:8px 10px}.account-browser{gap:6px;margin-bottom:18px}.account-browser select{font-size:11px;max-width:190px}#account-mode{font-size:10px}#add-form{width:100%}#ticker-input{width:auto;flex:1}.control-row{gap:8px}.order-toolbar{gap:9px}.order-toolbar .views{margin-left:0}.views button{font-size:10px;padding:7px}#watchlist-surface .table-shell{--frozen:132px;height:calc(100vh - 294px);min-height:350px}#watchlist .security-name{max-width:94px}#watchlist th,#watchlist td{min-width:96px;padding-left:8px;padding-right:8px}#watchlist .sticky{min-width:var(--frozen)}.macro-placeholder h2{font-size:19px}.summary-metrics strong{font-size:21px}.holdings-table{--frozen:132px}.login-page .masthead{padding:0 20px}.login-card{padding:26px}}
+
+/* Loading states keep table geometry stable while requests complete. */
+.skeleton{background:linear-gradient(100deg,#f3f0eb 25%,#e9e3da 45%,#f3f0eb 65%);background-size:250% 100%;animation:loading-shimmer 1.6s ease-in-out infinite;min-width:45px;height:9px}
+@keyframes loading-shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+.loading-indicator{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.loading-indicator::before{content:"";width:12px;height:12px;border:2px solid #f3dfce;border-top-color:var(--accent);border-radius:50%;animation:loading-spin .8s linear infinite}
+@keyframes loading-spin{to{transform:rotate(360deg)}}
+.user-placeholder{padding:18px 0;max-width:240px}.initial-loading td{height:44px}
+#domain-passkey{padding:14px 0}#passkey-reauth{margin-left:12px;font-size:13px}
+@media(prefers-reduced-motion:reduce){.skeleton,.loading-indicator::before{animation:none}}
+
+.cell-fetching{background-image:linear-gradient(100deg,transparent 25%,#edddc340 45%,transparent 65%);background-size:250% 100%;animation:loading-shimmer 1.6s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.cell-fetching{animation:none}}

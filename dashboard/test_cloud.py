@@ -38,7 +38,7 @@ class CloudCases(unittest.TestCase):
         ticket, verifier = self.frontend_ticket()
         frontend = self.app.test_client()
         headers = {**HEADERS, "Origin": self.frontend}
-        self.assertEqual(frontend.post("/api/auth/login/options", json={}, headers=headers).status_code, 403)
+        self.assertEqual(frontend.post("/api/auth/login/options", json={}, headers=headers).status_code, 400)
         self.assertEqual(frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers={**HEADERS, "Origin": "https://evil.example"}).status_code, 403)
         response = frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers=headers)
         self.assertEqual(response.status_code, 200)
@@ -66,6 +66,46 @@ class CloudCases(unittest.TestCase):
         response.close()
         response = self.post("/api/auth/login/options")
         self.assertEqual(response.json["rpId"], "localhost")
+
+    def test_frontend_enrollment_binds_existing_account_and_scopes_credentials(self):
+        self.frontend_setup()
+        before = self.client.get("/api/state").json
+        headers = {**HEADERS, "Origin": self.frontend}
+        response = self.client.post("/api/auth/register/options", json={}, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["rp"]["id"], "finfeed.vercel.app")
+        self.assertEqual(response.json["excludeCredentials"], [])
+        with patch("cloud.verify_registration_response", return_value=SimpleNamespace(
+                credential_id=b"frontend-key", credential_public_key=b"publickey", sign_count=0)) as verify:
+            response = self.client.post("/api/auth/register/verify", json={}, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(verify.call_args.kwargs["expected_origin"], self.frontend)
+        self.assertEqual(self.client.get("/api/state").json["account"], before["account"])
+        self.assertTrue(self.client.get("/api/auth/status").json["frontendPasskeyBound"])
+        from webauthn.helpers import bytes_to_base64url
+        front_id = bytes_to_base64url(b"frontend-key")
+        front = self.client.post("/api/auth/login/options", json={}, headers=headers).json
+        self.assertEqual([key["id"] for key in front["allowCredentials"]], [front_id])
+        with patch("cloud.verify_authentication_response", return_value=SimpleNamespace(new_sign_count=1)) as verify:
+            result = self.client.post("/api/auth/login/verify", json={"id": front_id, "response": {}}, headers=headers)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(verify.call_args.kwargs["expected_rp_id"], "finfeed.vercel.app")
+        legacy = self.post("/api/auth/login/options").json
+        self.assertNotIn(front_id, [key["id"] for key in legacy["allowCredentials"]])
+
+    def test_cross_origin_flow_and_legacy_credential_rejected(self):
+        self.frontend_setup()
+        headers = {**HEADERS, "Origin": self.frontend}
+        self.client.post("/api/auth/register/options", json={}, headers=headers)
+        with patch("cloud.verify_registration_response") as verify:
+            self.assertEqual(self.post("/api/auth/register/verify").status_code, 403)
+            verify.assert_not_called()
+        self.post("/api/auth/login/options")
+        with patch("cloud.verify_authentication_response") as verify:
+            self.assertEqual(self.client.post("/api/auth/login/verify", json={}, headers=headers).status_code, 403)
+            verify.assert_not_called()
+        self.post("/api/auth/logout")
+        self.assertEqual(self.client.post("/api/auth/register/options", json={}, headers=headers).status_code, 401)
 
     def test_frontend_ticket_expiry_and_deleted_account(self):
         self.frontend_setup()

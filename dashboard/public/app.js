@@ -1,4 +1,6 @@
 "use strict";
+let initialLoading=true;
+const fetchingTickers=new Set();
 let readOnly=false,currentUser=null;
 let holdings=[],surface="watchlist",editingPosition=null;
 const groups = [
@@ -183,9 +185,9 @@ function render(){
     return `<tr data-ticker="${escapeHTML(t)}" tabindex="0" aria-label="查看 ${escapeHTML(t)} 数据详情"><td class="sticky"><div class="security-cell"><div><span class="symbol">${escapeHTML(t)}</span><div class="security-name" title="${escapeHTML(record?.name||"等待数据")}">${escapeHTML(record?.name||"等待数据")}</div></div><button class="remove" data-remove="${escapeHTML(t)}" aria-label="移除 ${escapeHTML(t)}">×</button></div></td>${cols.map(([key,,,type])=>{
       const metric=m[key];if(!record)return `<td><span class="skeleton"></span></td>`;
       const value=format(metric,type);const color=value==="—"?"missing":type==="growth"?(metric.value>=0?"positive":"negative"):"";
-      return `<td ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}" title="${escapeHTML(metric?.reason||metric?.basis||"")}">${value}${value==="—"?`<span class="missing-label">${shortMissing(metric)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
+      return `<td ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}${fetchingTickers.has(t)?" cell-fetching":""}" title="${escapeHTML(metric?.reason||metric?.basis||"")}">${value}${value==="—"?`<span class="missing-label">${shortMissing(metric)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
     }).join("")}<td class="status-cell">${escapeHTML(record?.quote_date||"—")}<div class="missing-label">${record?.stale?"旧快照 · 刷新失败":record?.errors?.length?"部分数据未取得":record?record.volume_complete?"完整交易日":"部分数据待确认":"读取中"}</div></td></tr>`;
-  }).join(""):`<tr class="empty-row"><td colspan="${cols.length+2}">添加股票或 ETF 的 Ticker，开始查看指标。</td></tr>`;
+  }).join(""):initialLoading?Array.from({length:8},()=>`<tr class="initial-loading"><td class="sticky"><span class="skeleton"></span></td>${cols.map(()=>`<td><span class="skeleton"></span></td>`).join("")}<td><span class="skeleton"></span></td></tr>`).join(""):`<tr class="empty-row"><td colspan="${cols.length+2}">添加股票或 ETF 的 Ticker，开始查看指标。</td></tr>`;
   patchRows(el("table-body"),watchHTML,"ticker");
   }
   const fetched=tickers.filter(t=>records.has(t)).length;
@@ -202,9 +204,9 @@ async function getRecord(ticker,refresh=false){
   return response.json();
 }
 function pump(){
-  while(running<3&&queue.length){const task=queue.shift();running++;getRecord(task.ticker,task.refresh).then(record=>{if(trackedTickers().includes(task.ticker))records.set(task.ticker,record);}).catch(error=>{if(trackedTickers().includes(task.ticker)){records.set(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});}}).finally(()=>{running--;scheduleRender();pump();});}
+  while(running<3&&queue.length){const task=queue.shift();running++;getRecord(task.ticker,task.refresh).then(record=>{if(trackedTickers().includes(task.ticker))records.set(task.ticker,record);}).catch(error=>{if(trackedTickers().includes(task.ticker)){records.set(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});}}).finally(()=>{fetchingTickers.delete(task.ticker);running--;scheduleRender();pump();});}
 }
-function load(tickersToLoad,refresh=false){queue.push(...tickersToLoad.map(ticker=>({ticker,refresh})));el("refresh").disabled=true;pump();}
+function load(tickersToLoad,refresh=false){tickersToLoad.forEach(t=>fetchingTickers.add(t));scheduleRender();queue.push(...tickersToLoad.map(ticker=>({ticker,refresh})));el("refresh").disabled=true;pump();}
 function refreshWatchlist(){
   const tracked=trackedTickers();
   if(running||queue.length||!tracked.length)return;
@@ -287,6 +289,7 @@ if(document.modelContext?.registerTool){
   ]){try{Promise.resolve(document.modelContext.registerTool(tool)).catch(()=>{});}catch{}}
 }
 async function initializeState(){
+  render();
   document.querySelector("main").inert=true;
   try{
     const requestedId=new URLSearchParams(location.search).get("user");
@@ -295,6 +298,7 @@ async function initializeState(){
       FinFeedAuth.request("/api/state"+(requestedId?"?user="+encodeURIComponent(requestedId):""))
     ]);
     currentUser=auth.user;
+    el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;
     el("profile-name").textContent=currentUser.name;
     el("invite-controls").hidden=!auth.canInvite;
     el("admin-controls").hidden=!auth.isAdmin;
@@ -311,7 +315,7 @@ async function initializeState(){
     let state=data.state;
     if(!state&&readOnly)state={watchlist:[],positions:[]};
     if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
-    tickers=state.watchlist;holdings=state.positions;
+    initialLoading=false;tickers=state.watchlist;holdings=state.positions;
     for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
     render();load(trackedTickers());
     document.querySelector("main").inert=false;
@@ -325,12 +329,22 @@ async function initializeState(){
 initializeState();
 
 // Account actions are exposed only by the cloud service.
-let pendingImport=null;
+let pendingImport=null,usersTimer=null,usersLoading=false;
 function accountFeedback(message){el("account-error").textContent=message;el("account-error").hidden=!message;}
 el("account-button").addEventListener("click",async()=>{
   el("account-dialog").showModal();accountFeedback("");
-  if(!el("admin-controls").hidden)loadAdminAccounts().catch(e=>accountFeedback(e.message));
+  if(!el("admin-controls").hidden){
+    loadAdminAccounts().catch(e=>accountFeedback(e.message));
+    clearInterval(usersTimer);usersTimer=setInterval(()=>loadAdminAccounts().catch(e=>accountFeedback(e.message)),60_000);
+  }
 
+});
+el("account-dialog").addEventListener("close",()=>{clearInterval(usersTimer);usersTimer=null;});
+el("bind-domain-passkey").addEventListener("click",async()=>{
+  const button=el("bind-domain-passkey");button.disabled=true;accountFeedback("");
+  try{await FinFeedAuth.passkey(true,"","FinFeed · 新网址");el("domain-passkey").hidden=true;accountFeedback("已绑定此网址，下次可直接使用新 Passkey 登录。");}
+  catch(error){accountFeedback(FinFeedAuth.message(error));if(error.message.includes("重新验证"))el("passkey-reauth").hidden=false;}
+  finally{button.disabled=false;}
 });
 el("account-close").addEventListener("click",()=>el("account-dialog").close());
 el("logout").addEventListener("click",async()=>{
@@ -361,7 +375,7 @@ el("confirm-import").addEventListener("click",async()=>{
   if(!pendingImport)return;el("confirm-import").disabled=true;
   try{
     const state=await persistState(pendingImport);
-    tickers=state.watchlist;holdings=state.positions;pendingImport=null;
+    initialLoading=false;tickers=state.watchlist;holdings=state.positions;pendingImport=null;
     el("import-preview").hidden=true;sortKey=null;queue=[];records.clear();cellValues.clear();cellFlashes.clear();
     render();load(trackedTickers());accountFeedback("自选股与持仓已保存到云端。");
   }catch(e){accountFeedback(e.message);}
@@ -384,11 +398,17 @@ el("create-invite").addEventListener("click",async()=>{
 });
 
 async function loadAdminAccounts(){
-  const response=await FinFeedAuth.request("/api/admin/accounts"),data=await response.json();
-  if(!response.ok)throw new Error(data.error);
-  el("admin-accounts").innerHTML=data.accounts.filter(a=>!a.disabled).map(a=>`<section class="admin-account"><strong>${escapeHTML(a.name)}${a.admin?" · 管理员":" · 普通用户"}</strong>${a.admin?"":`<button class="secondary" data-admin-action="delete-account" data-admin-id="${escapeHTML(a.id)}">删除账户</button>`}</section>`).join("");
+  if(usersLoading)return;
+  usersLoading=true;el("users-loading").hidden=false;el("admin-accounts").setAttribute("aria-busy","true");
+  if(!el("admin-accounts").children.length)el("admin-accounts").innerHTML=Array.from({length:3},()=>'<div class="user-placeholder"><span class="skeleton"></span></div>').join("");
+  try{
+    const response=await FinFeedAuth.request("/api/admin/accounts"),data=await response.json();
+    if(!response.ok)throw new Error(data.error);
+    const html=data.accounts.filter(a=>!a.disabled).map(a=>`<section class="admin-account"><strong>${escapeHTML(a.name)}${a.admin?" · 管理员":" · 普通用户"}</strong>${a.admin?"":`<button class="secondary" data-admin-action="delete-account" data-admin-id="${escapeHTML(a.id)}">删除账户</button>`}</section>`).join("");
+    if(el("admin-accounts").innerHTML!==html)el("admin-accounts").innerHTML=html;
+  }catch(error){el("admin-accounts").querySelectorAll(".user-placeholder").forEach(node=>node.remove());throw error;}
+  finally{usersLoading=false;el("users-loading").hidden=true;el("admin-accounts").setAttribute("aria-busy","false");}
 }
-el("reload-admin").addEventListener("click",()=>loadAdminAccounts().catch(e=>accountFeedback(e.message)));
 el("admin-accounts").addEventListener("click",async event=>{
   const button=event.target.closest("[data-admin-action]");if(!button)return;
   const action=button.dataset.adminAction,id=encodeURIComponent(button.dataset.adminId),isAccount=action.endsWith("account"),restore=action.startsWith("restore");

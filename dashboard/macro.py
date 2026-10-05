@@ -130,5 +130,5 @@ def snapshot(kind):
             return entry['value']
         value = load(kind)
         entry['value'] = value
-        entry['expires'] = time.monotonic() + (60 if value['errors'] else (300 if kind in {'treasury', 'dxy'} else 3600))
+        entry['expires'] = time.monotonic() + (60 if value['errors'] else 86400)
         return value

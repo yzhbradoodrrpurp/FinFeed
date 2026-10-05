@@ -34,6 +34,6 @@ window.FinFeedMacro=(()=>{
     }));busy=false;document.getElementById('macro-refresh').disabled=false;
   }
   document.getElementById('macro-refresh').addEventListener('click',refresh);
-  setInterval(()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden)refresh();},300000);
+  setInterval(()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden)refresh();},86400000);
   return {open(){if(!started){started=true;refresh();}}};
 })();

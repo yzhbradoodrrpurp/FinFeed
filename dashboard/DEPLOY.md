@@ -80,4 +80,4 @@ node test_positions.cjs
 
 在 Render 私密环境变量设置 `FRED_API_KEY`（免费申请），不要放入 Vercel 前端或仓库。
 Macro 在已登录用户访问时请求 `/api/macro/jobs|pce|treasury|dxy`。就业和 PCE 为 BLS/BEA 经 FRED 发布的统计数据，官方日历分别读取 BLS ICS 与 BEA JSON；DXY 使用 yfinance `DX-Y.NYB` 日线，DGS10 为 H.15 日度恒定期限收益率。
-月度数据共享有效缓存 1 小时，日线数据 5 分钟；页面在 Macro 可见时每 5 分钟重新请求。刷新失败替换过期快照，失败提示保留 60 秒，不使用旧数据补齐。BEA 数字暂经 FRED 获取，因此当前无需保存 BEA Key。市场预期和修订前快照暂无。
+四项指标均共享有效缓存 24 小时；页面在 Macro 可见时每 24 小时重新请求，首次进入仍立即加载。手动刷新读取有效缓存，不强制访问上游。刷新失败替换过期快照，失败提示保留 60 秒，不使用旧数据补齐。BEA 数字暂经 FRED 获取，因此当前无需保存 BEA Key。市场预期和修订前快照暂无。

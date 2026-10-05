@@ -1,0 +1,9 @@
+"use strict";
+const fs=require("node:fs"),path=require("node:path");
+const out=path.join(__dirname,"dist");
+fs.rmSync(out,{recursive:true,force:true});fs.mkdirSync(out);
+for(const name of ["index.html","style.css","app.js","positions.js","auth-client.js"])
+  fs.copyFileSync(path.join(__dirname,"../dashboard/public",name),path.join(out,name));
+for(const name of ["bridge.html","callback.html","bridge.js"])
+  fs.copyFileSync(path.join(__dirname,name),path.join(out,name));
+console.log("Built FinFeed static frontend; credentials and account data remain on the backend.");

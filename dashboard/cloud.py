@@ -1,12 +1,15 @@
 """Cloud entry point: multi-account WebAuthn and persistent private state."""
 import json
+import base64
+import hashlib
+import re
 import os
 from pathlib import Path
 import secrets
 import sqlite3
 import threading
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlencode
 
 from flask import Flask, abort, g, jsonify, redirect, request, send_from_directory
 import psycopg
@@ -33,6 +36,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
     app.config.update(
         PUBLIC_ORIGIN=os.environ.get("PUBLIC_ORIGIN") or os.environ.get("RENDER_EXTERNAL_URL", ""),
+        FRONTEND_ORIGIN=os.environ.get("FRONTEND_ORIGIN", ""),
         BOOTSTRAP_TOKEN=os.environ.get("FINFEED_BOOTSTRAP_TOKEN", ""),
         DATABASE_URL=os.environ.get("DATABASE_URL", ""),
         MAX_CONTENT_LENGTH=65536,
@@ -44,6 +48,11 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     if not parsed.hostname or parsed.path or parsed.query or parsed.fragment or parsed.username or (parsed.scheme != "https" and not local_test):
         raise ValueError("PUBLIC_ORIGIN 必须是网站的 HTTPS origin（不含路径）")
     bootstrap = app.config["BOOTSTRAP_TOKEN"]
+    frontend = app.config["FRONTEND_ORIGIN"].rstrip("/")
+    if frontend:
+        target = urlsplit(frontend)
+        if target.scheme != "https" or not target.hostname or target.path or target.query or target.fragment or target.username or target.password or frontend == origin:
+            raise ValueError("FRONTEND_ORIGIN 必须为独立前端的 HTTPS origin")
     if bootstrap and len(bootstrap) < 32:
         raise ValueError("首次绑定码至少需要 32 个字符，请在部署平台生成高强度随机值")
     database = store or Store(app.config["DATABASE_URL"])
@@ -90,7 +99,10 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(403, description="网站域名不匹配")
         if request.method in {"POST", "PUT", "DELETE", "PATCH"}:
             # Exact origin + non-simple JSON/header prevents cross-site writes/login CSRF.
-            if request.headers.get("Origin") != origin or request.headers.get("X-FinFeed-Client") != "1" or request.mimetype != "application/json":
+            allowed = {origin}
+            if frontend and (not request.path.startswith("/api/auth/") or request.path in {"/api/auth/frontend-exchange", "/api/auth/logout"}):
+                allowed.add(frontend)
+            if request.headers.get("Origin") not in allowed or request.headers.get("X-FinFeed-Client") != "1" or request.mimetype != "application/json":
                 abort(403, description="仅允许网站内发起的操作")
         if request.path.startswith("/api/auth/") and request.method == "POST":
             now = time.time()
@@ -138,6 +150,45 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.get("/api/health")
     def health():
         return jsonify(ok=True, service="FinFeed")
+
+    @app.post("/api/auth/frontend-ticket")
+    def frontend_ticket():
+        if not frontend:
+            abort(404)
+        session = require_owner(recent=True)
+        body = json_body()
+        challenge, state = body.get("challenge", ""), body.get("state", "")
+        if not isinstance(challenge, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", challenge) or not isinstance(state, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", state):
+            abort(400, description="无效前端登录请求")
+        with database.transaction() as connection:
+            token = database.flow(connection, {"kind": "frontend", "challenge": challenge,
+                "state": state, "user_id": session["user_id"], "origin": frontend,
+                "session_id": digest(request.cookies.get(session_cookie, ""))})
+        return jsonify(redirect=frontend + "/auth/callback#" + urlencode({"ticket": token, "state": state}))
+
+    @app.post("/api/auth/frontend-exchange")
+    def frontend_exchange():
+        if not frontend or request.headers.get("Origin") != frontend:
+            abort(403)
+        body = json_body()
+        verifier = body.get("verifier", "")
+        if not isinstance(verifier, str) or len(verifier) != 43:
+            abort(400)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+        flow = database.consume_flow(body.get("ticket", ""))
+        if not flow or flow.get("kind") != "frontend" or flow.get("origin") != frontend or not secrets.compare_digest(flow.get("challenge", ""), challenge):
+            abort(401, description="登录链接无效或已过期，请重新登录")
+        with database.transaction() as connection:
+            active = database.execute(connection, "SELECT id FROM sessions WHERE id=? AND user_id=? AND expires>?", (flow["session_id"], flow["user_id"], time.time())).fetchone()
+            if not active:
+                abort(401)
+            try:
+                database.account(connection, flow["user_id"])
+            except ValueError:
+                abort(401)
+            response = jsonify(ok=True)
+            finish_login(connection, response, flow["user_id"])
+        return response
 
     @app.get("/api/auth/status")
     def auth_status():
@@ -436,7 +487,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/login")
     def login_page():
-        if logged_in():
+        if logged_in() and request.args.get("frontend") != "1":
             return redirect("/")
         return send_from_directory(ROOT / "public", "login.html")
 

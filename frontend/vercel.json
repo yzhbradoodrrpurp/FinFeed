@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "node build.cjs",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://finfeed-private.onrender.com/api/:path*" },
+    { "source": "/login", "destination": "/bridge.html" },
+    { "source": "/auth/callback", "destination": "/callback.html" }
+  ],
+  "headers": [
+    { "source": "/(.*)", "headers": [
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "Referrer-Policy", "value": "no-referrer" },
+      { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" },
+      { "key": "Cache-Control", "value": "no-cache" }
+    ] },
+    { "source": "/api/:path*", "headers": [
+      { "key": "Cache-Control", "value": "no-store" }
+    ] }
+  ]
+}

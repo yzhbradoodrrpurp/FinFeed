@@ -15,6 +15,72 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def frontend_setup(self):
+        self.frontend = "https://finfeed.vercel.app"
+        self.app = create_app({"TESTING": True, "PUBLIC_ORIGIN": ORIGIN,
+            "FRONTEND_ORIGIN": self.frontend, "BOOTSTRAP_TOKEN": "a" * 43}, self.store)
+        self.client = self.app.test_client()
+        self.enroll()
+
+    def frontend_ticket(self):
+        import base64, hashlib
+        verifier = "v" * 43
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+        result = self.post("/api/auth/frontend-ticket", {"challenge": challenge, "state": "s" * 43})
+        self.assertEqual(result.status_code, 200)
+        from urllib.parse import urlsplit, parse_qs
+        target = urlsplit(result.json["redirect"])
+        self.assertEqual(target.scheme + "://" + target.netloc, self.frontend)
+        return parse_qs(target.fragment)["ticket"][0], verifier
+
+    def test_frontend_handoff_pkce_session_and_replay(self):
+        self.frontend_setup()
+        ticket, verifier = self.frontend_ticket()
+        frontend = self.app.test_client()
+        headers = {**HEADERS, "Origin": self.frontend}
+        self.assertEqual(frontend.post("/api/auth/login/options", json={}, headers=headers).status_code, 403)
+        self.assertEqual(frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers={**HEADERS, "Origin": "https://evil.example"}).status_code, 403)
+        response = frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("HttpOnly", response.headers["Set-Cookie"])
+        self.assertIn("SameSite=Strict", response.headers["Set-Cookie"])
+        self.assertEqual(frontend.get("/api/state").status_code, 200)
+        self.assertEqual(frontend.put("/api/state", json={"watchlist": ["AAPL"], "positions": []}, headers=headers).status_code, 200)
+        self.assertEqual(frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers=headers).status_code, 401)
+
+    def test_frontend_wrong_verifier_and_revoked_parent_cannot_login(self):
+        self.frontend_setup()
+        ticket, verifier = self.frontend_ticket()
+        headers = {**HEADERS, "Origin": self.frontend}
+        frontend = self.app.test_client()
+        self.assertEqual(frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": "x" * 43}, headers=headers).status_code, 401)
+        ticket, verifier = self.frontend_ticket()
+        self.post("/api/auth/logout")
+        self.assertEqual(frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers=headers).status_code, 401)
+
+    def test_frontend_login_still_uses_existing_passkey_domain(self):
+        self.frontend_setup()
+        self.assertEqual(self.client.get("/login").status_code, 302)
+        response = self.client.get("/login?frontend=1")
+        self.assertEqual(response.status_code, 200)
+        response.close()
+        response = self.post("/api/auth/login/options")
+        self.assertEqual(response.json["rpId"], "localhost")
+
+    def test_frontend_ticket_expiry_and_deleted_account(self):
+        self.frontend_setup()
+        ticket, verifier = self.frontend_ticket()
+        with self.store.transaction() as connection:
+            self.store.execute(connection, "UPDATE flows SET expires=0 WHERE id=?", (digest(ticket),))
+        frontend = self.app.test_client()
+        headers = {**HEADERS, "Origin": self.frontend}
+        self.assertEqual(frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers=headers).status_code, 401)
+        ticket, verifier = self.frontend_ticket()
+        with self.store.transaction() as connection:
+            user_id = self.store.owner(connection)["user_handle"]
+            self.store.execute(connection, "INSERT INTO disabled_accounts VALUES (?,?)", (user_id, time.time()))
+        self.assertEqual(frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers=headers).status_code, 401)
+
     def test_initial_state_returns_only_tracked_current_snapshots_without_provider(self):
         from data import SCHEMA_VERSION
         self.store.update_state({"initialize": True, "watchlist": ["AAPL", "OLD"], "positions": [{"ticker": "VOO", "quantity": 1, "averageCost": 10, "currency": "USD"}]})

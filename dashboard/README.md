@@ -93,3 +93,17 @@ node --check public/app.js
 - Supabase 使用 1–4 条 PostgreSQL 连接的小型池，归还连接前提交或回滚事务，取连接时检查可用性；连接使用 TLS，关闭预备语句，私人 schema 隔离保持。
 - 每个 ticker 继续限制并发和合并请求；60 秒内有效行情供不同账户复用，日度财务仍按北京时间日期检查。失败时不回退到过期缓存。
 - 免费 Render 的休眠、用户网络和 Yahoo 上游延迟仍会影响首次打开与抓取速度，代码优化不保证固定加载时长。
+
+## Vercel 前端与 Render 后端
+
+Vercel 项目从同一 GitHub 仓库导入，Root Directory 设为 `frontend`，Framework Preset 为 Other。
+`frontend/vercel.json` 使用 `node build.cjs` 构建静态页面，输出 `dist`，并将 `/api/*` 转发至现有 Render 服务。
+构建目录只包含页面和脚本；数据库、Yahoo Cookie、代理配置和 API Key 均留在 Render。
+Render 的 `FRONTEND_ORIGIN` 需要设为实际 Vercel 生产站点的 HTTPS origin；`PUBLIC_ORIGIN` 保持原 Render origin。
+
+已有 Passkey 继续在原 Render 域名验证。前端登录生成 PKCE S256 校验值及随机 state，验证后通过五分钟内有效的一次性链接返回 Vercel。
+兑换检查 PKCE、指定生产 origin、原验证会话及账户有效性，再设置 HttpOnly、Secure、SameSite=Strict 会话 Cookie。
+兑换链接只放在 URL fragment，回调立即清除 fragment；验证私钥不会转移。
+邀请码注册使用相同路径，已有数据库记录无需迁移。预览部署不加入生产允许 origin。
+
+静态界面由 Vercel 提供，后端请求仍依赖 Render 是否已唤醒和 Yahoo 请求延迟。

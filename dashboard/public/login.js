@@ -1,6 +1,8 @@
 "use strict";
 let setupRequired=false,signup=new URLSearchParams(location.search).get("register")==="1",controller=null;
 const button=document.getElementById("passkey-submit"),errorBox=document.getElementById("login-error");
+const loginParams=new URLSearchParams(location.search),frontendLogin=loginParams.get("frontend")==="1";
+if(frontendLogin){const signupParams=new URLSearchParams(loginParams);signupParams.set("register","1");document.getElementById("signup-link").href="/login?"+signupParams;}
 function error(message){errorBox.textContent=message;errorBox.hidden=false;}
 function showMode(){
   document.getElementById("signup-fields").hidden=!signup;
@@ -21,7 +23,10 @@ async function authenticate(){
     await FinFeedAuth.passkey(signup||setupRequired,code,"我的 Passkey",extra,{signal:active.signal});
     if(active.signal.aborted)return;
     document.getElementById("setup-code").value="";document.getElementById("invite-code").value="";
-    location.replace("/");
+    if(frontendLogin){
+      const result=await FinFeedAuth.post("/api/auth/frontend-ticket",{challenge:loginParams.get("challenge"),state:loginParams.get("state")});
+      location.replace(result.redirect);
+    }else location.replace("/");
   }catch(e){if(!active.signal.aborted)error(FinFeedAuth.message(e));}
   finally{if(controller===active){controller=null;button.disabled=false;}}
 }
@@ -30,7 +35,7 @@ async function authenticate(){
     const response=await FinFeedAuth.request("/api/auth/status");
     if(!response.ok)throw new Error("无法连接验证服务，请稍后刷新");
     const status=await response.json();
-    if(status.authenticated){location.replace("/");return;}
+    if(status.authenticated&&!frontendLogin){location.replace("/");return;}
     setupRequired=status.setupRequired;showMode();
     document.getElementById("signup-toggle").hidden=false;
     if(!window.PublicKeyCredential)throw new Error("当前浏览器不支持 Passkey，请使用新版 Safari、Chrome 或 Edge。");

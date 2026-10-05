@@ -323,7 +323,7 @@ class CloudCases(unittest.TestCase):
         migrated.update_state({'watchlist':['AAPL']})
         self.assertEqual(Store(sqlite_path=path).read_state()['watchlist'], ['AAPL'])
 
-    def test_invitation_required_single_use_and_only_admin_can_issue(self):
+    def test_invitation_required_single_use_and_all_users_can_issue(self):
         self.enroll()
         owner = self.client.get("/api/auth/status").json["user"]["id"]
         self.assertTrue(self.client.get("/api/auth/status").json["canInvite"])
@@ -341,8 +341,10 @@ class CloudCases(unittest.TestCase):
         with patch("cloud.verify_registration_response", return_value=SimpleNamespace(credential_id=b"competing", credential_public_key=b"public", sign_count=0)):
             self.assertEqual(competing.post("/api/auth/register/verify", json={}, headers=HEADERS).status_code, 403)
         self.assertEqual(competing.post("/api/auth/register/options", json=body, headers=HEADERS).status_code, 403)
-        self.assertFalse(other.get("/api/auth/status").json["canInvite"])
-        self.assertEqual(other.post("/api/invitations", json={}, headers=HEADERS).status_code, 403)
+        self.assertTrue(other.get("/api/auth/status").json["canInvite"])
+        self.assertEqual(other.post("/api/invitations", json={}, headers=HEADERS).status_code, 200)
+        self.assertEqual(other.get("/api/admin/accounts").status_code, 403)
+        self.assertEqual(self.app.test_client().post("/api/invitations", json={}, headers=HEADERS).status_code, 401)
         self.assertIn(self.client.patch("/api/account", json={"name":"Changed"}, headers=HEADERS).status_code, (404,405))
         self.assertEqual(self.client.get("/api/auth/status").json["user"]["name"], "Liam")
         with self.store.transaction() as connection:

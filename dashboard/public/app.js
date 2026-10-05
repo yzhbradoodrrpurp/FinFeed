@@ -305,13 +305,12 @@ async function initializeState(){
     if(!directoryResponse.ok)throw new Error("账户列表读取失败");
     const directory=await directoryResponse.json();
     const requestedUser=new URLSearchParams(location.search).get("user")||currentUser.id;
-    el("view-account").innerHTML=directory.accounts.map(a=>`<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}${a.id===currentUser.id?" · 我的账户":" · "+escapeHTML(a.id.slice(0,6))}</option>`).join("");
+    el("view-account").innerHTML=directory.accounts.map(a=>`<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}${a.id===currentUser.id?" · 我的账户":""}</option>`).join("");
     el("view-account").value=requestedUser;
     el("account-button").hidden=false;
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||"记录读取失败");
     readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
-    el("account-mode").textContent=readOnly?`${data.account.name} · 只读，无法修改`:"我的账户 · 可编辑";
     let state=data.state;
     if(!state&&readOnly)state={watchlist:[],positions:[]};
     if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});

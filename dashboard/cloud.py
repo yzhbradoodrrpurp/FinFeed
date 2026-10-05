@@ -207,7 +207,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             account = database.account(connection, session["user_id"]) if session else None
             database_owner_id = database.owner(connection)["user_handle"]
             bound = bool(account and frontend and any(key.get("rp_id") == urlsplit(frontend).hostname for key in database.credentials(connection, account["id"])))
-        return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=False, invitationRequired=True, isAdmin=bool(session and session["user_id"] == database_owner_id), canInvite=bool(session and session["user_id"] == database_owner_id), cloud=True, authenticated=bool(session), setupRequired=setup,
+        return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=False, invitationRequired=True, isAdmin=bool(session and session["user_id"] == database_owner_id), canInvite=bool(session), cloud=True, authenticated=bool(session), setupRequired=setup,
                        bootstrapAvailable=bool(bootstrap), passkeySupported=True, frontendPasskeyBound=bound)
 
     @app.post("/api/auth/register/options")
@@ -383,10 +383,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         body = json_body()
         if body:
             abort(400, description="无效邀请码请求")
-        session = require_owner()
+        require_owner()
         with database.transaction() as connection:
-            if session["user_id"] != database.owner(connection)["user_handle"]:
-                abort(403, description="只有网站管理账户可以创建邀请码")
             issued = database.execute(connection, "SELECT COUNT(*) AS total FROM invitations WHERE used_by IS NULL AND expires>?", (time.time(),)).fetchone()["total"]
             if issued >= 20:
                 abort(400, description="最多保留 20 个未使用的邀请码，请使用或等待现有码过期")

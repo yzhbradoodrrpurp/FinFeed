@@ -105,7 +105,7 @@ def load(kind):
                 card['note'] = 'BEA 价格指数经 FRED 获取；同比 = 指数 ÷ 12 个月前指数 − 1，环比 = 指数 ÷ 上月指数 − 1。暂无市场预期。'
             else:
                 card['metrics'] = [metric('十年期美债收益率', values['DGS10'], '%', 'https://fred.stlouisfed.org/series/DGS10')]
-                card['note'] = 'H.15 十年恒定期限收益率，日度统计；非实时单只国债报价。工作日 16:15 美国东部时间发布，节假日除外。5.05% 为个人观察线。'
+                card['note'] = 'H.15 十年恒定期限收益率，日度统计；非实时单只国债报价。工作日 16:15 美国东部时间发布，节假日除外。5.1% 为个人观察线。'
         if not card['metrics'] or any(m['latest'] is None for m in card['metrics']):
             card['errors'].append('部分数据未取得')
     except Exception:

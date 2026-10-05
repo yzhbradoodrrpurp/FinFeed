@@ -89,6 +89,24 @@ class RefreshCases(unittest.TestCase):
         with patch.object(data, 'now', return_value=timestamp):
             return data.fetch_security('QA', saved)
 
+    def test_independent_yahoo_calls_overlap(self):
+        quote_barrier = threading.Barrier(2)
+        financial_barrier = threading.Barrier(5)
+        def overlap(barrier, value):
+            def call(*args, **kwargs):
+                barrier.wait(timeout=2)
+                return value
+            return call
+        self.item.get_info.side_effect = overlap(quote_barrier, self.item.get_info.return_value)
+        self.item.history.side_effect = overlap(quote_barrier, None)
+        for method in ('get_income_stmt', 'get_balance_sheet', 'get_cashflow', 'get_earnings_estimate'):
+            mock = getattr(self.item, method)
+            mock.side_effect = overlap(financial_barrier, mock.return_value)
+        self.item.get_shares_full.side_effect = overlap(financial_barrier, None)
+        record = self.fetch('2026-10-04T02:00:00+00:00')
+        self.assertEqual(record['metrics']['eps_q0']['value'], 2)
+        self.assertFalse(any('BrokenBarrierError' in error for error in record['errors']))
+
     def test_same_day_only_market_updates_and_pe_uses_daily_eps(self):
         first = self.fetch('2026-10-04T02:00:00+00:00')
         self.item.get_info.return_value.update(regularMarketPrice=120, trailingEps=99)

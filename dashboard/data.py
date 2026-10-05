@@ -1,5 +1,6 @@
 """Yahoo Finance personal-use adapter with dated provenance and conservative gaps."""
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 import threading
 import tempfile
 import time
@@ -183,6 +184,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     started = now()
     session_status = yahoo_session.initialize()
     item = yf.Ticker(symbol)
+    history_item = yf.Ticker(symbol)
     errors = []
     if session_status["error"]:
         errors.append(session_status["error"])
@@ -196,23 +198,25 @@ def fetch_security(symbol, saved=None, estimate_store=None):
                           + (f" ({category})" if category else ""))
             return default
     info_day = financial_day(started)
-    if saved and not financial_due(saved, started) and saved.get("info_checked_day") == info_day:
-        info = deepcopy(saved.get("security_info") or {})
-        for key in ("regularMarketPrice", "regularMarketTime", "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "marketCap"):
-            info.pop(key, None)
-    else:
-        info = load("证券信息", item.get_info, {}) or {}
+    reuse_info = saved and not financial_due(saved, started) and saved.get("info_checked_day") == info_day
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        history_task = pool.submit(load, "日线", lambda: history_item.history(
+            period="1mo", auto_adjust=False, actions=True, raise_errors=True, timeout=15), None)
+        if reuse_info:
+            info = deepcopy(saved.get("security_info") or {})
+            for key in ("regularMarketPrice", "regularMarketTime", "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "marketCap"):
+                info.pop(key, None)
+        else:
+            info_task = pool.submit(load, "证券信息", item.get_info, {})
+            info = info_task.result() or {}
+        history = history_task.result()
     security_info = deepcopy(info)
-    # 52-week bounds come from chart metadata. Volume needs only 11 daily bars;
-    # avoid downloading a whole year on every minute refresh.
-    history = load("日线", lambda: item.history(period="1mo", auto_adjust=False, actions=True,
-                                              raise_errors=True, timeout=15), None)
     # quoteSummary can return {} after logging HTTP 401 without raising.
     # Chart metadata uses an independent endpoint and still identifies securities.
     info_available = bool(info.get("quoteType"))
     if not info_available:
         errors.append("Yahoo 证券信息接口未返回有效数据；使用日线元数据，部分指标可能缺失")
-    metadata = load("交易时段", item.get_history_metadata, {}) or {}
+    metadata = load("交易时段", history_item.get_history_metadata, {}) or {}
     chart_info = {**metadata, "quoteType": metadata.get("instrumentType")}
     info = {**chart_info, **{key: value for key, value in info.items() if value is not None}}
     # The chart quote is refreshed each minute even when profile data is daily.
@@ -289,11 +293,6 @@ def fetch_security(symbol, saved=None, estimate_store=None):
         # Shares endpoint is independent of quoteSummary; refresh at most daily.
         shares = (saved or {}).get("shares_outstanding") if not financial_due(saved, started) else None
         shares_period = (saved or {}).get("shares_period") if shares is not None else None
-        if financial_due(saved, started):
-            share_frame = load("流通股数", lambda: item.get_shares_full(start=(datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()), None)
-            if share_frame is not None and not share_frame.empty:
-                shares = number(share_frame.iloc[-1])
-                shares_period = share_frame.index[-1].date().isoformat()
         result["shares_outstanding"], result["shares_period"] = shares, shares_period
         if shares and price:
             m["market_cap"] = field(price * shares, quote_date, "市值 = 最近价格 × Yahoo 最近披露在外股数；股数可能滞后", quote_url,
@@ -306,13 +305,31 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     result["financial_checked_at"] = started
     result["financial_fetched_at"] = started
     result["trailing_eps"] = number(info.get("trailingEps"))
-    income = load("利润表", lambda: item.get_income_stmt(freq="quarterly"), None)
     if symbol == "GOOG":
         result["financial_diagnostics"] = {}
-        balance = load("资产负债表", lambda: balance_with_diagnostics(item, result["financial_diagnostics"]), None)
-    else:
-        balance = load("资产负债表", lambda: item.get_balance_sheet(freq="quarterly"), None)
-    cashflow = load("现金流量表", lambda: item.get_cashflow(freq="quarterly"), None)
+    # Separate Ticker objects avoid concurrently mutating financial statement caches.
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        income_task = pool.submit(load, "利润表", lambda: yf.Ticker(symbol).get_income_stmt(freq="quarterly"), None)
+        balance_task = pool.submit(load, "资产负债表", lambda: (
+            balance_with_diagnostics(yf.Ticker(symbol), result["financial_diagnostics"])
+            if symbol == "GOOG" else yf.Ticker(symbol).get_balance_sheet(freq="quarterly")), None)
+        cashflow_task = pool.submit(load, "现金流量表", lambda: yf.Ticker(symbol).get_cashflow(freq="quarterly"), None)
+        shares_task = None
+        if m["market_cap"].get("value") is None:
+            shares_task = pool.submit(load, "流通股数", lambda: yf.Ticker(symbol).get_shares_full(
+                start=(datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()), None)
+        # Report forecast errors after statement_errors is captured below.
+        estimates_task = pool.submit(item.get_earnings_estimate)
+        income, balance, cashflow = income_task.result(), balance_task.result(), cashflow_task.result()
+    if shares_task is not None:
+        share_frame = shares_task.result()
+        if share_frame is not None and not share_frame.empty:
+            shares = number(share_frame.iloc[-1])
+            shares_period = share_frame.index[-1].date().isoformat()
+            result["shares_outstanding"], result["shares_period"] = shares, shares_period
+            if shares and price:
+                m["market_cap"] = field(price * shares, quote_date, "市值 = 最近价格 × Yahoo 最近披露在外股数；股数可能滞后", quote_url,
+                                        currency=currency, inputs={"price": price, "shares": shares, "shares_period": shares_period})
     for label, frame in (("利润表", income), ("资产负债表", balance), ("现金流量表", cashflow)):
         if frame is None or frame.empty:
             errors.append(f"{label}未返回数据")
@@ -347,7 +364,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     # Forecast permission failures must not discard successfully fetched actual
     # statements (including historical quarters needed for growth rates).
     statement_errors = errors[financial_error_start:]
-    estimates = load("分析师预期", item.get_earnings_estimate, None)
+    estimates = load("分析师预期", estimates_task.result, None)
     if symbol == "GOOG":
         previous_probe = (saved or {}).get("provider_probe", {})
         if previous_probe.get("revision") == PROBE_REVISION:

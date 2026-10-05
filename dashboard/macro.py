@@ -75,7 +75,7 @@ def metric(label, rows, unit, source):
             'previous': rows[-2] if len(rows) > 1 else None, 'history': rows[-24:], 'source': source}
 
 
-def load(kind):
+def _load_metrics(kind):
     now = datetime.now(UTC)
     card = {'id': kind, 'retrieved_at': now.isoformat(), 'metrics': [], 'errors': []}
     try:
@@ -111,9 +111,19 @@ def load(kind):
     except Exception:
         # HTTP exceptions may contain credential-bearing URLs. Never serialize them.
         card['errors'].append('数据请求失败，暂不显示历史缓存，请稍后重试')
-    if kind in {'jobs', 'pce'}:
+    return card
+
+
+def load(kind):
+    # Calendar retrieval and metrics have no dependency on one another.
+    if kind not in {'jobs', 'pce'}:
+        return _load_metrics(kind)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        metrics_task = pool.submit(_load_metrics, kind)
+        calendar_task = pool.submit(schedule, kind, datetime.now(UTC))
+        card = metrics_task.result()
         try:
-            card.update(schedule(kind, now))
+            card.update(calendar_task.result())
         except Exception:
             card['errors'].append('发布日历暂不可用')
     return card

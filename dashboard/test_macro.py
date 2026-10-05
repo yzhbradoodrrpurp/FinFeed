@@ -1,9 +1,29 @@
 import unittest
+import threading
 from datetime import datetime, timezone
 from unittest.mock import patch
 import macro
 
 class MacroCases(unittest.TestCase):
+    def test_metrics_and_calendar_overlap(self):
+        barrier = threading.Barrier(2)
+        def metrics(kind):
+            barrier.wait(timeout=2)
+            return {'metrics': [1], 'errors': []}
+        def calendar(kind, now):
+            barrier.wait(timeout=2)
+            return {'next_release': 'future'}
+        with patch('macro._load_metrics', side_effect=metrics), patch('macro.schedule', side_effect=calendar):
+            result = macro.load('pce')
+        self.assertEqual(result['metrics'], [1])
+        self.assertEqual(result['next_release'], 'future')
+
+    def test_calendar_failure_preserves_metrics(self):
+        with patch('macro._load_metrics', return_value={'metrics': [1], 'errors': []}), patch('macro.schedule', side_effect=RuntimeError):
+            result = macro.load('jobs')
+        self.assertEqual(result['metrics'], [1])
+        self.assertEqual(result['errors'], ['发布日历暂不可用'])
+
     def test_growth_does_not_bridge_missing_month(self):
         rows=[{'date':'2026-01-01','value':100},{'date':'2026-03-01','value':110}]
         self.assertEqual(macro.growth(rows,1), [])

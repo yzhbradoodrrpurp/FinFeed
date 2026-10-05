@@ -108,3 +108,16 @@ dialog{border-color:#e6e0d6;border-radius:13px;box-shadow:0 24px 85px #4b2f1622;
 #admin-accounts .admin-account strong{min-width:0;overflow-wrap:anywhere}
 #admin-accounts .admin-account button{flex-shrink:0;margin:0;padding:7px 12px;min-height:32px;border-color:#efd8cb;color:#a6532a}
 @media(max-width:500px){#admin-accounts .admin-account{gap:12px;flex-wrap:wrap}}
+
+/* Adjustable desktop navigation. */
+#sidebar-toggle{position:absolute;right:-12px;top:76px;width:24px;height:24px;display:grid;place-items:center;padding:0;border:1px solid var(--line);border-radius:50%;background:white;color:#a37859;font-size:19px;z-index:2}
+#sidebar-resize{position:absolute;inset:0 -4px 0 auto;width:8px;cursor:col-resize;touch-action:none}
+#sidebar-resize:hover,#sidebar-resize:focus-visible{background:#f4772930}
+body.sidebar-resizing{cursor:col-resize;user-select:none}
+body.sidebar-collapsed{--sidebar:64px!important}
+.sidebar-collapsed .sidebar{padding-left:6px;padding-right:6px}
+.sidebar-collapsed .sidebar .brand{padding:0;justify-content:center}
+.sidebar-collapsed .brand-name,.sidebar-collapsed .nav-caption,.sidebar-collapsed .sidebar-bottom,.sidebar-collapsed .surface-tabs button span{display:none}
+.sidebar-collapsed .surface-tabs button{justify-content:center;padding:12px 5px;gap:0}
+.sidebar-collapsed #sidebar-resize{display:none}
+@media(max-width:640px){#sidebar-toggle,#sidebar-resize{display:none}}

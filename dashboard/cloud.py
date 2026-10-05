@@ -484,6 +484,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/api/macro/<kind>")
     def macro_data(kind):
+        if kind == "fed":
+            from polymarket import snapshot as fed_snapshot
+            return jsonify(fed_snapshot())
         from macro import snapshot
         if kind not in {"jobs", "pce", "dxy", "treasury"}:
             abort(404)

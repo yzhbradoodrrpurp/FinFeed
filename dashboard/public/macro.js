@@ -47,6 +47,35 @@ window.FinFeedMacro=(()=>{
       ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
       <div class="macro-sources">${metrics.map(m=>`<a href="${escape(m.source)}" target="_blank" rel="noreferrer">${escape(m.label)}来源 ↗</a>`).join('')}${data.calendar_source?`<a href="${escape(data.calendar_source)}" target="_blank" rel="noreferrer">官方日历 ↗</a>`:''}${id==='jobs'?'<a href="https://www.bls.gov/news.release/empsit.htm" target="_blank" rel="noreferrer">本次就业报告 ↗</a>':''}${id==='pce'?'<a href="https://www.bea.gov/data/income-saving/personal-income" target="_blank" rel="noreferrer">BEA 发布内容 ↗</a>':''}</div><p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
   }
+  let fedBusy=false,fedUpdated=0;
+  const fedColors=['#83baff','#416bff','#ee7523','#e5b500','#9871cc'];
+  async function refreshFed(){
+    if(fedBusy)return;fedBusy=true;
+    const card=document.getElementById('macro-fed');
+    if(!fedUpdated)card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-note">正在获取市场定价…</p>';
+    try{
+      const response=await FinFeedAuth.request('/api/macro/fed');if(!response.ok)throw new Error();
+      const data=await response.json(),series=data.series||[];
+      const rows=series.flatMap(s=>s.history),end=Date.parse(data.retrieved_at)/1000;
+      const first=rows.length?Math.min(...rows.map(r=>r.t)):end;
+      const x=t=>12+(t-first)/(end-first||1)*896,y=p=>242-p*220;
+      const lines=series.map((s,i)=>s.history.length?`<polyline points="${[...s.history,{t:end,p:s.price}].map(r=>`${x(r.t)},${y(r.p)}`).join(' ')}" fill="none" stroke="${fedColors[i%5]}" stroke-width="2" vector-effect="non-scaling-stroke"/>`:'').join('');
+      const ticks=[0,.25,.5,.75,1].map(p=>`<line x1="12" x2="908" y1="${y(p)}" y2="${y(p)}" stroke="#e8e4df" stroke-dasharray="3 4"/><text x="920" y="${y(p)+4}" fill="#8a8177" font-size="12">${p*100}%</text>`).join('');
+      card.innerHTML=`<div class="macro-card-heading"><div><span class="eyebrow">POLYMARKET · 市场隐含预期</span><h2>美联储 10 月利率决议</h2></div><span class="macro-badge">${data.closed?'已结束':'每分钟更新'}</span></div>
+        <p class="macro-note">2026 年 10 月 27–28 日 FOMC 会议 · 联邦基金利率目标区间上限的变化</p>
+        <div class="fed-legend">${series.map((s,i)=>`<span><i style="background:${fedColors[i%5]}"></i>${escape(s.label)} <strong>${number(s.price*100)}%</strong></span>`).join('')}</div>
+        ${rows.length?`<figure class="fed-chart"><svg viewBox="0 0 970 270" role="img" aria-label="美联储10月利率决议各结果的Polymarket历史市场定价">${ticks}${lines}</svg><figcaption><span>${time(new Date(first*1000).toISOString(),'Asia/Shanghai')}</span><span>${time(data.retrieved_at,'Asia/Shanghai')} 北京</span></figcaption></figure>`:''}
+        ${series.some(s=>s.history_error)?'<p class="macro-error">部分历史曲线暂不可用</p>':''}
+        ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
+        <p class="macro-note">市场价格近似反映隐含概率，受价差、费用和流动性影响；不是美联储承诺。报价每分钟检查，历史曲线按约 6 小时采样、每小时补全；最新端点随报价更新。</p>
+        <p class="macro-note">累计成交额 $${data.volume==null?'—':number(data.volume)} · 流动性 $${data.liquidity==null?'—':number(data.liquidity)}</p>
+        <div class="macro-sources"><a href="${escape(data.source)}" target="_blank" rel="noreferrer">Polymarket 原始市场 ↗</a><a href="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" target="_blank" rel="noreferrer">FOMC 官方日历 ↗</a></div>
+        ${data.rules?`<details class="fed-rules"><summary>结算规则（原文）</summary><p>${escape(data.rules)}</p></details>`:''}
+        <p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
+      fedUpdated=Date.now();
+    }catch{card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-error">数据暂不可用，请稍后刷新</p>';}
+    finally{fedBusy=false;}
+  }
   async function refresh(){
     if(busy)return;busy=true;document.getElementById('macro-refresh').disabled=true;
     const grid=document.getElementById('macro-grid');
@@ -56,7 +85,9 @@ window.FinFeedMacro=(()=>{
       catch{render(id,{metrics:[],errors:['数据暂不可用，请稍后刷新'],retrieved_at:new Date().toISOString()});}
     }));busy=false;document.getElementById('macro-refresh').disabled=false;
   }
-  document.getElementById('macro-refresh').addEventListener('click',refresh);
+  document.getElementById('macro-refresh').addEventListener('click',()=>{refresh();refreshFed();});
   setInterval(()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden)refresh();},3600000);
-  return {open(){if(!started){started=true;refresh();}}};
+  setInterval(()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden)refreshFed();},60000);
+  document.addEventListener('visibilitychange',()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden&&Date.now()-fedUpdated>=60000)refreshFed();});
+  return {open(){if(!started){started=true;refresh();}if(Date.now()-fedUpdated>=60000)refreshFed();}};
 })();

@@ -129,3 +129,5 @@ body.sidebar-collapsed{--sidebar:64px!important}
 .macro-metrics .macro-warning{display:inline-block;margin:6px 0;padding:4px 8px;border-radius:6px;font-size:11px;color:#a26d44;background:#fff4e9}.macro-metrics .macro-warning.is-triggered{color:#b54132;background:#fff0ed}
 
 .macro-value-link{display:block;color:inherit;text-decoration:none;border-radius:4px}.macro-value-link:hover strong{color:#c06424}.macro-value-link:focus-visible{outline:2px solid #ee7523;outline-offset:3px}
+
+.macro-fed{margin-top:20px}.fed-legend{display:flex;flex-wrap:wrap;gap:12px 24px;margin:24px 0 16px;color:#746d65;font-size:14px}.fed-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px}.fed-legend strong{color:#302c28}.fed-chart{margin:0}.fed-chart svg{display:block;width:100%;height:auto;min-height:160px}.fed-chart figcaption{display:flex;justify-content:space-between;color:#9e958b;font-size:11px;gap:12px}.fed-rules{margin-top:14px;font-size:12px;color:#8a8177}.fed-rules p{white-space:pre-wrap;line-height:1.7}.fed-rules summary{cursor:pointer}

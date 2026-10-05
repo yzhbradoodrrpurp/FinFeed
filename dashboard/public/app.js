@@ -2,7 +2,21 @@
 let initialLoading=true;
 const fetchingTickers=new Set();
 let readOnly=false,currentUser=null;
-let holdings=[],surface="watchlist",editingPosition=null;
+const surfaceNames=["watchlist","holdings","macro","whales"];
+const initialSurface=new URLSearchParams(location.search).get("surface");
+let holdings=[],surface=surfaceNames.includes(initialSurface)?initialSurface:"watchlist",editingPosition=null;
+let viewedUserId=null;
+const surfaceAccounts={watchlist:null,holdings:null};
+function rememberSurfaceAccount(name,id){
+  surfaceAccounts[name]=id;
+  try{sessionStorage.setItem(`finfeed-view:${currentUser.id}:${name}`,id);}catch{}
+}
+function accountViewURL(name,id){
+  const params=new URLSearchParams();
+  if(id!==currentUser.id)params.set("user",id);
+  if(name!=="watchlist")params.set("surface",name);
+  return "/"+(params.size?"?"+params.toString():"");
+}
 const groups = [
   {name:"证券",view:"market",columns:[["market_cap","Market Cap","公司市值","money"]]},
   {name:"价格",view:"market",columns:[["price","Last Price","常规时段","price"],["high_52w","52W High","52 周高点","price"],["low_52w","52W Low","52 周低点","price"]]},
@@ -165,15 +179,21 @@ function persistState(patch){
 async function storeHoldings(next){
   await persistState({positions:next});holdings=next;
 }
-function switchSurface(next){
-  if(!["watchlist","holdings","macro"].includes(next))return;
+async function switchSurface(next){
+  if(!surfaceNames.includes(next))return;
+  if(currentUser&&surfaceAccounts[next]&&surfaceAccounts[next]!==viewedUserId){
+    document.querySelector("main").inert=true;
+    await stateWrites;
+    location.assign(accountViewURL(next,surfaceAccounts[next]));
+    return;
+  }
   surface=next;
-  for(const name of ["watchlist","holdings","macro"])el(`${name}-surface`).hidden=surface!==name;
-  el("page-title").textContent={watchlist:"自选股",holdings:"我的持仓",macro:"宏观动向"}[surface];
-  el("page-eyebrow").textContent={watchlist:"MY WATCHLIST",holdings:"MY PORTFOLIO",macro:"MACRO OUTLOOK"}[surface];
-  document.querySelector(".account-browser").hidden=surface==="macro";
-  document.querySelector(".title-actions").hidden=surface==="macro";
-  document.querySelector(".source-footer").hidden=surface==="macro";
+  for(const name of surfaceNames)el(`${name}-surface`).hidden=surface!==name;
+  el("page-title").textContent={watchlist:"自选股",holdings:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
+  el("page-eyebrow").textContent={watchlist:"MY WATCHLIST",holdings:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
+  document.querySelector(".account-browser").hidden=!["watchlist","holdings"].includes(surface);
+  document.querySelector(".title-actions").hidden=!["watchlist","holdings"].includes(surface);
+  document.querySelector(".source-footer").hidden=!["watchlist","holdings"].includes(surface);
   document.querySelectorAll("[data-surface]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.surface===surface)));
   render();
 }
@@ -326,7 +346,7 @@ if(document.modelContext?.registerTool){
   ]){try{Promise.resolve(document.modelContext.registerTool(tool)).catch(()=>{});}catch{}}
 }
 async function initializeState(){
-  render();
+  switchSurface(surface);
   document.querySelector("main").inert=true;
   try{
     const requestedId=new URLSearchParams(location.search).get("user");
@@ -343,6 +363,12 @@ async function initializeState(){
     const directory=await directoryResponse.json();
     const requestedUser=new URLSearchParams(location.search).get("user")||currentUser.id;
     el("view-account").innerHTML=directory.accounts.map(a=>`<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}${a.id===currentUser.id?" · 我的账户":""}</option>`).join("");
+    viewedUserId=requestedUser;
+    for(const name of ["watchlist","holdings"]){
+      let saved=null;try{saved=sessionStorage.getItem(`finfeed-view:${currentUser.id}:${name}`);}catch{}
+      surfaceAccounts[name]=directory.accounts.some(a=>a.id===saved)?saved:currentUser.id;
+    }
+    if(["watchlist","holdings"].includes(surface))rememberSurfaceAccount(surface,requestedUser);
     el("view-account").value=requestedUser;
     el("account-button").hidden=false;
     const data=await response.json();
@@ -421,7 +447,9 @@ el("confirm-import").addEventListener("click",async()=>{
 el("view-account").addEventListener("change",async()=>{
   document.querySelector("main").inert=true;
   await stateWrites;
-  location.assign(el("view-account").value===currentUser.id?"/":"/?user="+encodeURIComponent(el("view-account").value));
+  const selected=el("view-account").value;
+  rememberSurfaceAccount(surface,selected);
+  location.assign(accountViewURL(surface,selected));
 });
 el("create-invite").addEventListener("click",async()=>{
   el("create-invite").disabled=true;

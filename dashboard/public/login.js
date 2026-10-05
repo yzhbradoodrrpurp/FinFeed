@@ -8,7 +8,10 @@ function showMode(){
   document.getElementById("signup-fields").hidden=!signup;
   document.getElementById("setup-fields").hidden=signup||!setupRequired;
   button.textContent=signup?"创建账户并保存 Passkey":setupRequired?"绑定我的 Passkey":"使用 Passkey 登录";
-  document.getElementById("signup-toggle").textContent=signup?"已有账户，返回登录":"通过邀请码创建账户";
+  const link=document.getElementById("signup-link"),params=new URLSearchParams(loginParams);
+  if(signup)params.delete("register");else params.set("register","1");
+  link.href="/login?"+params;
+  link.textContent=signup?"已有账户？返回登录":"首次使用？通过邀请码创建账户";
   document.getElementById("login-description").textContent=signup?"填写邀请码和账户名称，保存 Passkey 后即可创建账户。":"使用已保存的 Passkey 登录，无需再次填写邀请码。";
 }
 async function authenticate(){
@@ -38,13 +41,9 @@ async function authenticate(){
     const status=await response.json();
     if(status.authenticated&&!frontendLogin){location.replace("/");return;}
     setupRequired=status.setupRequired;showMode();
-    document.getElementById("signup-toggle").hidden=false;
     if(!window.PublicKeyCredential)throw new Error("当前浏览器不支持 Passkey，请使用新版 Safari、Chrome 或 Edge。");
     button.disabled=false;
     if(!signup&&!setupRequired&&!new URLSearchParams(location.search).has("manual"))await authenticate();
   }catch(e){error(FinFeedAuth.message(e));button.textContent="暂时无法登录";}
 })();
 document.getElementById("passkey-form").addEventListener("submit",event=>{event.preventDefault();authenticate();});
-document.getElementById("signup-toggle").addEventListener("click",()=>{
-  controller?.abort();controller=null;signup=!signup;errorBox.hidden=true;button.disabled=false;showMode();
-});

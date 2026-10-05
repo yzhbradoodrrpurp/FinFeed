@@ -15,7 +15,7 @@
     <div class="nav-caption">工作空间</div>
     <nav class="surface-tabs" aria-label="研究视图">
       <button aria-label="Watchlist 关注列表" data-surface="watchlist" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h4"/></svg><span>Watchlist<small>关注列表</small></span></button>
-      <button aria-label="Portfolio 持仓" data-surface="holdings" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V4h8v3M3 12h18M10 12v3h4v-3"/></svg><span>Portfolio<small>持仓</small></span></button>
+      <button aria-label="Portfolio 持仓" data-surface="portfolio" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V4h8v3M3 12h18M10 12v3h4v-3"/></svg><span>Portfolio<small>持仓</small></span></button>
       <button aria-label="Macro 宏观动向" data-surface="macro" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M7 14l4-4 4 2 5-7"/></svg><span>Macro<small>宏观动向</small></span></button>
       <button aria-label="Whale Holdings 巨鲸持仓" data-surface="whales" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h18M5 17V9h4v8M11 17V5h4v12M17 17v-6h4v6"/></svg><span>Whale Holdings<small>巨鲸持仓</small></span></button>
     </nav>
@@ -34,7 +34,7 @@
     <div class="table-shell" tabindex="0" aria-label="关注列表指标表，可横向滚动"><table id="watchlist"><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
 
     </section>
-    <section id="holdings-surface" hidden aria-label="持仓视图">
+    <section id="portfolio-surface" hidden aria-label="持仓视图">
       <div class="holdings-toolbar"><span id="holdings-count" class="count">0 项持仓</span><button id="add-position" class="primary">添加持仓</button></div>
       <div id="holdings-summary" class="holdings-summary"></div>
       <div class="data-strip"><span id="holdings-status" role="status" aria-live="polite"></span><span>每 60 秒更新行情 · 持仓记录存私人数据库</span></div>

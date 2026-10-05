@@ -2,11 +2,11 @@
 let initialLoading=true;
 const fetchingTickers=new Set();
 let readOnly=false,currentUser=null;
-const surfaceNames=["watchlist","holdings","macro","whales"];
+const surfaceNames=["watchlist","portfolio","macro","whales"];
 const initialSurface=new URLSearchParams(location.search).get("surface");
 let holdings=[],surface=surfaceNames.includes(initialSurface)?initialSurface:"watchlist",editingPosition=null;
 let viewedUserId=null;
-const surfaceAccounts={watchlist:null,holdings:null};
+const surfaceAccounts={watchlist:null,portfolio:null};
 function rememberSurfaceAccount(name,id){
   surfaceAccounts[name]=id;
   try{sessionStorage.setItem(`finfeed-view:${currentUser.id}:${name}`,id);}catch{}
@@ -112,7 +112,7 @@ function scheduleRender(){
   requestAnimationFrame(()=>{scheduledRender=false;render();});
 }
 function renderHoldings(){
-  if(surface!=="holdings")return;
+  if(surface!=="portfolio")return;
   if(initialLoading){
     el("holdings-count").textContent="正在加载持仓…";
     el("holdings-summary").innerHTML=`<section class="currency-summary" aria-busy="true"><div class="summary-heading"><span class="skeleton"></span></div><div class="summary-metrics">${["成本总额 · 全部持仓","当前市值","未实现盈亏","持仓收益率"].map(label=>`<div><small>${label}</small><strong><span class="skeleton"></span></strong></div>`).join("")}</div></section>`;
@@ -217,11 +217,11 @@ async function switchSurface(next){
   history.replaceState(history.state,"",viewURL);
   if(next==="macro")FinFeedMacro.open();
   for(const name of surfaceNames)el(`${name}-surface`).hidden=surface!==name;
-  el("page-title").textContent={watchlist:"关注列表",holdings:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
-  el("page-eyebrow").textContent={watchlist:"MY WATCHLIST",holdings:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
-  document.querySelector(".account-browser").hidden=!["watchlist","holdings"].includes(surface);
-  document.querySelector(".title-actions").hidden=!["watchlist","holdings"].includes(surface);
-  document.querySelector(".source-footer").hidden=!["watchlist","holdings"].includes(surface);
+  el("page-title").textContent={watchlist:"关注列表",portfolio:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
+  el("page-eyebrow").textContent={watchlist:"MY WATCHLIST",portfolio:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
+  document.querySelector(".account-browser").hidden=!["watchlist","portfolio"].includes(surface);
+  document.querySelector(".title-actions").hidden=!["watchlist","portfolio"].includes(surface);
+  document.querySelector(".source-footer").hidden=!["watchlist","portfolio"].includes(surface);
   document.querySelectorAll("[data-surface]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.surface===surface)));
   render();
 }
@@ -394,11 +394,11 @@ async function initializeState(){
     const requestedUser=new URLSearchParams(location.search).get("user")||currentUser.id;
     el("view-account").innerHTML=directory.accounts.map(a=>`<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}${a.id===currentUser.id?" · 我的账户":""}</option>`).join("");
     viewedUserId=requestedUser;
-    for(const name of ["watchlist","holdings"]){
+    for(const name of ["watchlist","portfolio"]){
       let saved=null;try{saved=sessionStorage.getItem(`finfeed-view:${currentUser.id}:${name}`);}catch{}
       surfaceAccounts[name]=directory.accounts.some(a=>a.id===saved)?saved:currentUser.id;
     }
-    if(["watchlist","holdings"].includes(surface))rememberSurfaceAccount(surface,requestedUser);
+    if(["watchlist","portfolio"].includes(surface))rememberSurfaceAccount(surface,requestedUser);
     el("view-account").value=requestedUser;
     el("account-button").hidden=false;
     const data=await response.json();

@@ -188,6 +188,10 @@ async function switchSurface(next){
     return;
   }
   surface=next;
+  const viewURL=new URL(location.href);
+  if(next==="watchlist")viewURL.searchParams.delete("surface");
+  else viewURL.searchParams.set("surface",next);
+  history.replaceState(history.state,"",viewURL);
   if(next==="macro")FinFeedMacro.open();
   for(const name of surfaceNames)el(`${name}-surface`).hidden=surface!==name;
   el("page-title").textContent={watchlist:"自选股",holdings:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];

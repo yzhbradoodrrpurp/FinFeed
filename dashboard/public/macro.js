@@ -27,7 +27,8 @@ window.FinFeedMacro=(()=>{
     const span=max-min||1;
     const warningY=threshold===null?null:76-(threshold-min)/span*62;
     const warningLine=warningY===null?'':`<line x1="8" x2="392" y1="${warningY}" y2="${warningY}" stroke="#c94a39" stroke-width="1" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
-    const points=rows.map((r,i)=>`${8+i/(rows.length-1)*384},${76-(r.value-min)/span*62}`).join(' ');
+    const firstDate=Date.parse(rows[0].date),dateSpan=Date.parse(rows.at(-1).date)-firstDate||1;
+    const points=rows.map(r=>`${8+(Date.parse(r.date)-firstDate)/dateSpan*384},${76-(r.value-min)/span*62}`).join(' ');
     return `<figure class="macro-chart"><svg viewBox="0 0 400 90" role="img" aria-label="${escape(m.label)}历史走势"><path d="M8 78H392" stroke="#eee8de"/>${warningLine}<polyline points="${points}" fill="none" stroke="#ee7523" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg><figcaption><span>${escape(rows[0].date)}</span><span>${escape(rows.at(-1).date)}</span></figcaption></figure>`;
   }
   function metricValue(id,m){

@@ -25,8 +25,12 @@ def observations(series):
     key = os.environ.get('FRED_API_KEY', '')
     if not key:
         raise ValueError('FRED_API_KEY 未配置')
-    params = urlencode({'api_key': key, 'file_type': 'json', 'series_id': series,
-                        'sort_order': 'desc', 'limit': 450 if series == 'DGS10' else 36})
+    query = {'api_key': key, 'file_type': 'json', 'series_id': series, 'sort_order': 'desc'}
+    if series == 'DGS10':
+        query['observation_start'] = history_start()
+    else:
+        query['limit'] = 36
+    params = urlencode(query)
     data = json.loads(fetch('https://api.stlouisfed.org/fred/series/observations?' + params))
     return sorted([{'date': r['date'], 'value': float(r['value'])}
                    for r in data['observations'] if r['value'] != '.'], key=lambda r: r['date'])
@@ -70,9 +74,18 @@ def schedule(kind, now):
             'next_release': min(future).isoformat() if future else None, 'calendar_source': source}
 
 
-def metric(label, rows, unit, source):
+def history_start():
+    today = datetime.now(UTC).date()
+    try:
+        return today.replace(year=today.year-3).isoformat()
+    except ValueError:
+        return today.replace(year=today.year-3, day=28).isoformat()
+
+
+def metric(label, rows, unit, source, full_history=False):
     return {'label': label, 'unit': unit, 'latest': rows[-1] if rows else None,
-            'previous': rows[-2] if len(rows) > 1 else None, 'history': rows[-24:], 'source': source}
+            'previous': rows[-2] if len(rows) > 1 else None,
+            'history': rows if full_history else rows[-24:], 'source': source}
 
 
 def _load_metrics(kind):
@@ -83,10 +96,10 @@ def _load_metrics(kind):
             import yfinance as yf
             from data import LIMIT
             with LIMIT:
-                frame = yf.Ticker('DX-Y.NYB').history(period='6mo', auto_adjust=False, timeout=20)
+                frame = yf.Ticker('DX-Y.NYB').history(start=history_start(), interval='1d', auto_adjust=False, timeout=20)
             rows = [{'date': d.date().isoformat(), 'value': float(row['Close'])} for d, row in frame.iterrows() if row['Close'] == row['Close']]
-            card['metrics'] = [metric('美元指数', rows, '点', 'https://finance.yahoo.com/quote/DX-Y.NYB/')]
-            card['note'] = 'Yahoo 日线最近价，最新一日可能尚未收盘；非实时行情，无固定月度发布时间。'
+            card['metrics'] = [metric('美元指数', rows, '点', 'https://finance.yahoo.com/quote/DX-Y.NYB/', full_history=True)]
+            card['note'] = '最近三年 Yahoo 日线收盘价，最新一日可能尚未收盘；非实时行情，无固定月度发布时间。'
         else:
             with ThreadPoolExecutor(max_workers=3) as pool:
                 values = dict(zip(SERIES[kind], pool.map(observations, SERIES[kind])))
@@ -104,8 +117,8 @@ def _load_metrics(kind):
                     card['metrics'].extend([metric(label+'同比', growth(values[series], 12), '%', 'https://fred.stlouisfed.org/series/'+series), metric(label+'环比', growth(values[series], 1), '%', 'https://fred.stlouisfed.org/series/'+series)])
                 card['note'] = 'BEA 价格指数经 FRED 获取；同比 = 指数 ÷ 12 个月前指数 − 1，环比 = 指数 ÷ 上月指数 − 1。暂无市场预期。'
             else:
-                card['metrics'] = [metric('十年期美债收益率', values['DGS10'], '%', 'https://fred.stlouisfed.org/series/DGS10')]
-                card['note'] = 'H.15 十年恒定期限收益率，日度统计；非实时单只国债报价。工作日 16:15 美国东部时间发布，节假日除外。5.1% 为个人观察线。'
+                card['metrics'] = [metric('十年期美债收益率', values['DGS10'], '%', 'https://fred.stlouisfed.org/series/DGS10', full_history=True)]
+                card['note'] = '最近三年 H.15 十年恒定期限收益率，日度统计；非实时单只国债报价。工作日 16:15 美国东部时间发布，节假日除外。5.1% 为个人观察线。'
         if not card['metrics'] or any(m['latest'] is None for m in card['metrics']):
             card['errors'].append('部分数据未取得')
     except Exception:

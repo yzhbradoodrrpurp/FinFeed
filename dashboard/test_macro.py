@@ -1,10 +1,29 @@
 import unittest
 import threading
+import os
+import json
+from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timezone
 from unittest.mock import patch
 import macro
 
 class MacroCases(unittest.TestCase):
+    def test_treasury_fetches_three_years_without_row_limit(self):
+        rows=[{'date':'2023-10-05','value':'4.7'},{'date':'2023-10-06','value':'.'}]
+        with patch.dict(os.environ, {'FRED_API_KEY':'test'}), patch('macro.history_start',return_value='2023-10-05'), patch('macro.fetch',return_value=json.dumps({'observations':rows})) as fetch:
+            result=macro.observations('DGS10')
+        query=parse_qs(urlparse(fetch.call_args.args[0]).query)
+        self.assertEqual(query['observation_start'],['2023-10-05'])
+        self.assertNotIn('limit',query)
+        self.assertEqual(result,[{'date':'2023-10-05','value':4.7}])
+
+    def test_daily_history_keeps_all_observations(self):
+        rows=[{'date':f'2026-01-{day:02d}','value':day} for day in range(1,32)]
+        result=macro.metric('daily',rows,'%', 'source',full_history=True)
+        self.assertEqual(result['history'],rows)
+        self.assertEqual(result['latest'],rows[-1])
+        self.assertEqual(result['previous'],rows[-2])
+
     def test_metrics_and_calendar_overlap(self):
         barrier = threading.Barrier(2)
         def metrics(kind):

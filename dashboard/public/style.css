@@ -128,4 +128,4 @@ body.sidebar-collapsed{--sidebar:64px!important}
 
 .macro-metrics .macro-warning{display:inline-block;margin:6px 0;padding:4px 8px;border-radius:6px;font-size:11px;color:#a26d44;background:#fff4e9}.macro-metrics .macro-warning.is-triggered{color:#b54132;background:#fff0ed}
 
-.macro-calendar-sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.macro-calendar-sources a{min-width:0}
+.macro-value-link{display:block;color:inherit;text-decoration:none;border-radius:4px}.macro-value-link:hover strong{color:#c06424}.macro-value-link:focus-visible{outline:2px solid #ee7523;outline-offset:3px}

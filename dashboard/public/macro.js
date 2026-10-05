@@ -1,17 +1,17 @@
 "use strict";
 window.FinFeedMacro=(()=>{
   const names={jobs:["EMPLOYMENT","非农就业"],pce:["INFLATION","PCE 通胀"],dxy:["US DOLLAR","美元指数"],treasury:["TREASURY","十年期美债"]};
-  const calendarLinks={
+  const metricLinks={
     jobs:[
-      ['非农就业 · Trading Economics','https://tradingeconomics.com/united-states/non-farm-payrolls'],
-      ['失业率 · Trading Economics','https://tradingeconomics.com/united-states/unemployment-rate'],
-      ['平均时薪同比 · Trading Economics','https://tradingeconomics.com/united-states/average-hourly-earnings-yoy']
+      ['非农新增就业','https://tradingeconomics.com/united-states/non-farm-payrolls'],
+      ['失业率','https://tradingeconomics.com/united-states/unemployment-rate'],
+      ['平均时薪同比','https://tradingeconomics.com/united-states/average-hourly-earnings-yoy']
     ],
     pce:[
-      ['总体 PCE 同比 · Trading Economics','https://tradingeconomics.com/united-states/pce-price-index-annual-change'],
-      ['总体 PCE 环比 · Trading Economics','https://tradingeconomics.com/united-states/pce-price-index-monthly-change'],
-      ['核心 PCE 同比 · Trading Economics','https://tradingeconomics.com/united-states/core-pce-price-index-annual-change'],
-      ['核心 PCE 环比 · Trading Economics','https://tradingeconomics.com/united-states/core-pce-price-index-mom']
+      ['总体PCE同比','https://tradingeconomics.com/united-states/pce-price-index-annual-change'],
+      ['总体PCE环比','https://tradingeconomics.com/united-states/pce-price-index-monthly-change'],
+      ['核心PCE同比','https://tradingeconomics.com/united-states/core-pce-price-index-annual-change'],
+      ['核心PCE环比','https://tradingeconomics.com/united-states/core-pce-price-index-mom']
     ]
   };
   let started=false,busy=false;
@@ -30,16 +30,21 @@ window.FinFeedMacro=(()=>{
     const points=rows.map((r,i)=>`${8+i/(rows.length-1)*384},${76-(r.value-min)/span*62}`).join(' ');
     return `<figure class="macro-chart"><svg viewBox="0 0 400 90" role="img" aria-label="${escape(m.label)}历史走势"><path d="M8 78H392" stroke="#eee8de"/>${warningLine}<polyline points="${points}" fill="none" stroke="#ee7523" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg><figcaption><span>${escape(rows[0].date)}</span><span>${escape(rows.at(-1).date)}</span></figcaption></figure>`;
   }
+  function metricValue(id,m){
+    const value=`<strong>${m.latest?number(m.latest.value):'—'}<small>${escape(m.unit)}</small></strong>`;
+    const link=(metricLinks[id]||[]).find(([label])=>label.replace(/\s/g,'')===m.label.replace(/\s/g,''));
+    return link?`<a class="macro-value-link" href="${escape(link[1])}" target="_blank" rel="noreferrer" aria-label="${escape(m.label)}：在 Trading Economics 查看" title="在 Trading Economics 查看">${value}</a>`:value;
+  }
   function render(id,data){
     const card=document.getElementById(`macro-${id}`);card.setAttribute('aria-busy','false');
     const metrics=data.metrics||[];
     card.innerHTML=`<div class="macro-card-heading"><div><span class="eyebrow">${names[id][0]}</span><h2>${names[id][1]}</h2></div><span class="macro-badge">${id==='jobs'||id==='pce'?'月度发布':'日度数据'}</span></div>
-      <div class="macro-metrics">${metrics.map(m=>`<div><span>${escape(m.label)}</span><strong>${m.latest?number(m.latest.value):'—'}<small>${escape(m.unit)}</small></strong>${id==='treasury'?`<span class="macro-warning ${m.latest&&m.latest.value>=5.1?'is-triggered':''}">${m.latest&&m.latest.value>=5.1?'已达到 5.1% 预警线':'预警线 5.1%'}</span>`:''}<p>前值 ${m.previous?number(m.previous.value):'—'}${escape(m.unit)} · ${escape(m.latest?.date||'暂无数据')}</p></div>`).join('')||'<p class="macro-empty">— 暂无数据</p>'}</div>
+      <div class="macro-metrics">${metrics.map(m=>`<div><span>${escape(m.label)}</span>${metricValue(id,m)}${id==='treasury'?`<span class="macro-warning ${m.latest&&m.latest.value>=5.1?'is-triggered':''}">${m.latest&&m.latest.value>=5.1?'已达到 5.1% 预警线':'预警线 5.1%'}</span>`:''}<p>前值 ${m.previous?number(m.previous.value):'—'}${escape(m.unit)} · ${escape(m.latest?.date||'暂无数据')}</p></div>`).join('')||'<p class="macro-empty">— 暂无数据</p>'}</div>
       ${metrics[0]&&(id==='dxy'||id==='treasury')?chart(metrics[0],id==='treasury'?5.1:null):''}
       ${id==='jobs'||id==='pce'?`<div class="macro-release"><div><span>本次发布时间</span><p>${times(data.last_release)}</p></div><div><span>下次发布时间</span><p>${times(data.next_release)}</p></div></div>`:''}
       <p class="macro-note">${escape((data.note||'').replace('5.05%','5.1%'))}</p>
       ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
-      <div class="macro-sources">${metrics.map(m=>`<a href="${escape(m.source)}" target="_blank" rel="noreferrer">${escape(m.label)}来源 ↗</a>`).join('')}${data.calendar_source?`<a href="${escape(data.calendar_source)}" target="_blank" rel="noreferrer">官方日历 ↗</a>`:''}${id==='jobs'?'<a href="https://www.bls.gov/news.release/empsit.htm" target="_blank" rel="noreferrer">本次就业报告 ↗</a>':''}${id==='pce'?'<a href="https://www.bea.gov/data/income-saving/personal-income" target="_blank" rel="noreferrer">BEA 发布内容 ↗</a>':''}</div>${calendarLinks[id]?`<div class="macro-sources macro-calendar-sources">${calendarLinks[id].map(([label,url])=>`<a href="${escape(url)}" target="_blank" rel="noreferrer">${escape(label)} ↗</a>`).join('')}</div>`:''}<p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
+      <div class="macro-sources">${metrics.map(m=>`<a href="${escape(m.source)}" target="_blank" rel="noreferrer">${escape(m.label)}来源 ↗</a>`).join('')}${data.calendar_source?`<a href="${escape(data.calendar_source)}" target="_blank" rel="noreferrer">官方日历 ↗</a>`:''}${id==='jobs'?'<a href="https://www.bls.gov/news.release/empsit.htm" target="_blank" rel="noreferrer">本次就业报告 ↗</a>':''}${id==='pce'?'<a href="https://www.bea.gov/data/income-saving/personal-income" target="_blank" rel="noreferrer">BEA 发布内容 ↗</a>':''}</div><p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
   }
   async function refresh(){
     if(busy)return;busy=true;document.getElementById('macro-refresh').disabled=true;

@@ -179,13 +179,36 @@ function persistState(patch){
 async function storeHoldings(next){
   await persistState({positions:next});holdings=next;
 }
+async function changeViewedAccount(name,id){
+  const main=document.querySelector("main");main.inert=true;
+  const previousId=viewedUserId;
+  try{
+    await stateWrites;
+    const response=await FinFeedAuth.request("/api/state?user="+encodeURIComponent(id));
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"记录读取失败");
+    let state=data.state;
+    if(!state)state={watchlist:[],positions:[]};
+    viewedUserId=id;readOnly=data.readOnly;
+    document.body.classList.toggle("read-only",readOnly);
+    rememberSurfaceAccount(name,id);el("view-account").value=id;
+    tickers=state.watchlist;holdings=state.positions;initialLoading=false;
+    for(const task of queue)fetchingTickers.delete(task.ticker);
+    queue=[];sortKey=null;cellValues.clear();cellFlashes.clear();
+    for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
+    history.replaceState(history.state,"",accountViewURL(name,id));
+    feedback("");render();
+    load(trackedTickers().filter(t=>!fetchingTickers.has(t)));
+    return true;
+  }catch(error){
+    el("view-account").value=previousId;
+    feedback(`账户加载失败：${error.message}`);return false;
+  }finally{main.inert=false;}
+}
 async function switchSurface(next){
   if(!surfaceNames.includes(next))return;
   if(currentUser&&surfaceAccounts[next]&&surfaceAccounts[next]!==viewedUserId){
-    document.querySelector("main").inert=true;
-    await stateWrites;
-    location.assign(accountViewURL(next,surfaceAccounts[next]));
-    return;
+    if(!await changeViewedAccount(next,surfaceAccounts[next]))return;
   }
   surface=next;
   const viewURL=new URL(location.href);
@@ -454,11 +477,8 @@ el("confirm-import").addEventListener("click",async()=>{
 });
 
 el("view-account").addEventListener("change",async()=>{
-  document.querySelector("main").inert=true;
-  await stateWrites;
   const selected=el("view-account").value;
-  rememberSurfaceAccount(surface,selected);
-  location.assign(accountViewURL(surface,selected));
+  await changeViewedAccount(surface,selected);
 });
 el("create-invite").addEventListener("click",async()=>{
   el("create-invite").disabled=true;

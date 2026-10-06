@@ -46,6 +46,30 @@ class WhaleCases(unittest.TestCase):
         self.assertEqual(data['holdings'][0]['shares'], 40)
         self.assertEqual(len(data['sources']), 3)
 
+    def test_notice_follows_reporting_manager_and_keeps_comparison_scope(self):
+        def recent(forms, periods, accessions):
+            return json.dumps({'filings': {'recent': {'form': forms,
+                'reportDate': periods, 'filingDate': ['2026-08-14'] * len(forms),
+                'accessionNumber': accessions}}})
+        initial = recent(['13F-NT', '13F-HR', '13F-HR'],
+            ['2026-06-30', '2026-03-31', '2025-12-31'], ['notice', 'old', 'older'])
+        parent = recent(['13F-HR', '13F-HR'], ['2026-06-30', '2026-03-31'], ['new', 'prior'])
+        notice = '<XML><root><otherManager><cik>2026053</cik><name>PERSHING SQUARE INC.</name></otherManager></root></XML>'
+        urls = []
+        def download(url, deadline):
+            urls.append(url)
+            if 'CIK0001336528.json' in url: return initial
+            if '/notice/' in url: return notice
+            if 'CIK0002026053.json' in url: return parent
+            return submission()
+        with patch('whales.fetch', side_effect=download):
+            data = snapshot('pershing')
+        self.assertEqual(data['report_date'], '2026-06-30')
+        self.assertEqual(data['previous']['report_date'], '2026-03-31')
+        self.assertEqual(data['reporting_manager'], 'PERSHING SQUARE INC.')
+        self.assertTrue(all('/2026053/' in source['url'] for source in data['sources'] + data['previous']['sources']))
+        self.assertFalse(data['errors'])
+
     def test_quantity_changes_include_exits_and_keep_options_separate(self):
         def row(cusip, shares, value=100, option='', title='COM'):
             return {'name':cusip, 'class':title, 'cusip':cusip, 'shares':shares,

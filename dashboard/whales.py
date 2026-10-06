@@ -52,7 +52,7 @@ def filings(data):
     rows = data.get('filings', {}).get('recent', data)
     result = []
     for i, form in enumerate(rows.get('form', [])):
-        if form in {'13F-HR', '13F-HR/A'}:
+        if form in {'13F-HR', '13F-HR/A', '13F-NT', '13F-NT/A'}:
             result.append({'form': form, 'filed_at': rows['filingDate'][i],
                            'report_date': rows['reportDate'][i], 'accession': rows['accessionNumber'][i],
                            'accepted_at': rows.get('acceptanceDateTime', rows['filingDate'])[i]})
@@ -129,7 +129,8 @@ def quarter(cik, available, report_date, deadline):
     holdings, sources, warnings = [], [], []
     for filing in selected:
         accession = filing['accession']
-        url = f'https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession.replace("-", "")}/{accession}.txt'
+        filing_cik = filing.get('cik', cik)
+        url = f'https://www.sec.gov/Archives/edgar/data/{int(filing_cik)}/{accession.replace("-", "")}/{accession}.txt'
         rows, amendment = parse_submission(fetch(url, deadline), filing['filed_at'], warnings)
         if filing['form'] == '13F-HR' or amendment.upper() == 'RESTATEMENT':
             holdings = rows
@@ -186,6 +187,32 @@ def snapshot(kind, on_update=None):
             if len({row['report_date'] for row in available if row['form'] == '13F-HR'}) >= 2:
                 break
             available.extend(filings(json.loads(fetch('https://data.sec.gov/submissions/' + page['name'], deadline))))
+        # A notice can redirect holdings to another reporting manager.
+        latest_hr = max((row['report_date'] for row in available if row['form'] == '13F-HR'), default='')
+        notices = [row for row in available if row['form'] in {'13F-NT', '13F-NT/A'}
+                   and row['report_date'] > latest_hr]
+        if notices:
+            notice = max(notices, key=lambda row: (row['report_date'], row['accepted_at']))
+            accession = notice['accession']
+            notice_url = f'https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession.replace("-", "")}/{accession}.txt'
+            raw = fetch(notice_url, deadline)
+            roots = [ET.fromstring(part.strip()) for part in re.findall(r'<XML>\s*(.*?)\s*</XML>', raw, re.S | re.I)]
+            managers = [node for root in roots for node in root.iter()
+                        if node.tag.rsplit('}', 1)[-1] == 'otherManager' and text(node, 'cik')]
+            if len(managers) != 1:
+                raise ValueError('SEC 13F 通知未指定唯一申报主体，不能合并猜测')
+            manager_cik, manager_name = text(managers[0], 'cik'), text(managers[0], 'name')
+            if not manager_cik.isdigit() or int(manager_cik) == int(cik):
+                raise ValueError('SEC 13F 通知中的申报主体无效')
+            parent = json.loads(fetch(f'https://data.sec.gov/submissions/CIK{int(manager_cik):010d}.json', deadline))
+            parent_filings = filings(parent)
+            if not any(row['form'] == '13F-HR' and row['report_date'] == notice['report_date'] for row in parent_filings):
+                raise ValueError('SEC 13F 通知指定主体尚未取得对应季度持仓报告')
+            # Use the same reporting scope for both comparison quarters.
+            available = [{**row, 'cik': manager_cik} for row in parent_filings]
+            result['reporting_manager'] = manager_name
+            result['reporting_notice'] = {'url': notice_url, **notice}
+            result['reporting_warning'] = f"原主体自 {notice['report_date']} 起通过 13F-NT 指定 {manager_name} 申报；当前及上季度均读取该主体的报告。本季申报范围发生整合，新建仓、增持及仓位变化可能来自披露范围变化，不能直接视为实际交易。"
         periods = sorted({row['report_date'] for row in available if row['form'] == '13F-HR'}, reverse=True)
         if not periods:
             raise ValueError('SEC 未找到 13F 持仓报告')

@@ -27,6 +27,7 @@ window.FinFeedWhales=(()=>{
     if(tab==='latest')body.innerHTML=table(data,'最新披露季度');
     else if(data.previous)body.innerHTML=tab==='previous'?table(data.previous,'上季度持仓'):changes(data);
     else body.innerHTML='<p class="whale-status">'+esc(data.previous_status==='loading'?'正在读取上季度持仓…':data.previous_status==='failed'?'上季度读取失败，暂不计算变化':'未找到相邻上季度的 13F 报告，暂不计算变化')+'</p>';
+    if(data.reporting_warning)body.insertAdjacentHTML('beforeend',`<p class="whale-status">${esc(data.reporting_warning)} <a href="${esc(data.reporting_notice.url)}" target="_blank" rel="noreferrer">SEC 申报主体变更通知 ↗</a></p>`);
     const time=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(data.retrieved_at));
     body.insertAdjacentHTML('beforeend',`<p class="whale-status whale-retrieved">检索于 ${esc(time)} 北京 · 每 6 小时检查申报更新</p>`);
   }
@@ -43,7 +44,7 @@ window.FinFeedWhales=(()=>{
   }
   async function refresh(){if(busy)return;busy=true;el('whales-refresh').disabled=true;
     await Promise.allSettled(Object.keys(funds).map(async kind=>{try{
-      await FinFeedCache.market('/api/whales/'+kind+'?version=4&stream=1',data=>accept(kind,data),{ttl:21600000});
+      await FinFeedCache.market('/api/whales/'+kind+'?version=5&stream=1',data=>accept(kind,data),{ttl:21600000});
     }catch{accept(kind,good.has(kind)?{...good.get(kind),stale:true}:{errors:['SEC 请求失败，请稍后检查更新']});}}));
     checked=Date.now();busy=false;el('whales-refresh').disabled=false;
   }

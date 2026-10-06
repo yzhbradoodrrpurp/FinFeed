@@ -78,6 +78,10 @@ class Store:
             atexit.register(self.pool.close)
         with self.transaction() as connection:
             if not sqlite_path:
+                # Both Render services can start during one Git push. Serialize
+                # schema/privilege migrations across processes and instances;
+                # PostgreSQL releases this lock when initialization commits.
+                connection.execute("SELECT pg_advisory_xact_lock(1179209286,1396918349)")
                 connection.execute("CREATE SCHEMA IF NOT EXISTS finfeed_private")
                 connection.execute("REVOKE ALL ON SCHEMA finfeed_private FROM PUBLIC")
                 connection.execute("SET search_path TO finfeed_private")

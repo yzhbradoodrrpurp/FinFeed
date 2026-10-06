@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import json
-from whales import parse_submission, aggregate, snapshot, compare, previous_quarter
+from whales import parse_submission, aggregate, snapshot, compare, previous_quarter, quarter
 
 
 def submission(value=100, amendment=''):
@@ -45,6 +45,20 @@ class WhaleCases(unittest.TestCase):
         self.assertEqual(data['total_value'], 500)
         self.assertEqual(data['holdings'][0]['shares'], 40)
         self.assertEqual(len(data['sources']), 3)
+
+    def test_verified_unit_override_is_scoped_and_preserves_raw_value(self):
+        filing = {'form':'13F-HR', 'report_date':'2026-06-30',
+                  'filed_at':'2026-08-14', 'accepted_at':'2026-08-14',
+                  'accession':'0001536411-26-000006'}
+        row = {'name':'NTRA', 'class':'COM', 'cusip':'632307104',
+               'put_call':'', 'amount_type':'SH', 'shares':3186306, 'value':5210856}
+        with patch('whales.fetch', return_value='raw'), patch('whales.parse_submission', return_value=([row],'')):
+            result = quarter('1536411',[filing],'2026-06-30',0)
+        self.assertEqual(result['total_value'],5210856000)
+        self.assertEqual(result['holdings'][0]['raw_value'],5210856)
+        self.assertTrue(result['value_unit_verified'])
+        with patch('whales.fetch', return_value='raw'), patch('whales.parse_submission', return_value=([{**row,'value':5210857}],'')):
+            with self.assertRaises(ValueError): quarter('1536411',[filing],'2026-06-30',0)
 
     def test_notice_follows_reporting_manager_and_keeps_comparison_scope(self):
         def recent(forms, periods, accessions):

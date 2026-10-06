@@ -16,6 +16,11 @@ FUNDS = {'berkshire': ('1067983', '伯克希尔'), 'pershing': ('1336528', 'Pers
          'duquesne': ('1536411', '杜肯家族办公室'), 'appaloosa': ('1656456', '阿帕卢萨管理'),
          'ark': ('1697748', '方舟投资'), 'coatue': ('1135730', '蔻图资本'),
          'altimeter': ('1541617', '阿尔蒂米特资本'), 'tiger': ('1167483', '老虎环球基金')}
+# Only these as-filed reports have been cross-checked against unadjusted
+# NYSE/Nasdaq closing prices (Yahoo) for NTRA, STM and AMZN, retrieved 2026-10-06.
+# Gate by accession AND detail total; a restatement must be verified separately.
+VERIFIED_THOUSAND_VALUES = {'0001536411-26-000006': 5210856,
+                            '0001536411-26-000004': 3376828}
 _guard = threading.Lock()
 _last_request = 0.0
 # Public project maintainer contact; override for another deployment/operator.
@@ -132,6 +137,12 @@ def quarter(cik, available, report_date, deadline):
         filing_cik = filing.get('cik', cik)
         url = f'https://www.sec.gov/Archives/edgar/data/{int(filing_cik)}/{accession.replace("-", "")}/{accession}.txt'
         rows, amendment = parse_submission(fetch(url, deadline), filing['filed_at'], warnings)
+        if accession in VERIFIED_THOUSAND_VALUES:
+            if sum(row['value'] for row in rows) != VERIFIED_THOUSAND_VALUES[accession]:
+                raise ValueError('已核验报告原始市值变化，须重新核验单位')
+            warnings[:] = [warning.replace('美元', '原始单位（千美元）') for warning in warnings]
+            rows = [{**row, 'raw_value': row['value'], 'value': row['value'] * 1000} for row in rows]
+            warnings.append('本报告原始市值字段经 NTRA、STM、AMZN 季末股数 × 未复权收盘价交叉核验，按千美元换算为美元（2026-10-06 核验）。这不是平均买入成本。')
         if filing['form'] == '13F-HR' or amendment.upper() == 'RESTATEMENT':
             holdings = rows
         elif amendment.upper() == 'NEW HOLDINGS':
@@ -141,7 +152,8 @@ def quarter(cik, available, report_date, deadline):
         sources.append({**filing, 'url': url, 'amendment': amendment})
     rows = aggregate(holdings)
     return {'report_date': report_date, 'filed_at': selected[-1]['filed_at'], 'holdings': rows,
-            'total_value': sum(row['value'] for row in rows), 'sources': sources, 'warnings': warnings}
+            'total_value': sum(row['value'] for row in rows), 'sources': sources, 'warnings': warnings,
+            'value_unit_verified': all(source['accession'] in VERIFIED_THOUSAND_VALUES for source in sources)}
 
 
 def compare(current, previous):

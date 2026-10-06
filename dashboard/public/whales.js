@@ -12,7 +12,7 @@ window.FinFeedWhales=(()=>{
   const security=row=>`<strong>${esc(row.name)}</strong><small>${esc(row.class)}${row.put_call?' · '+esc(row.put_call)+' 期权':''}<br>${esc(row.cusip)}</small>`;
   const sources=data=>`<div class="macro-sources">${(data.sources||[]).map((source,i)=>`<a href="${esc(source.url)}" target="_blank" rel="noreferrer">SEC ${esc(source.form)} 原始文件${data.sources.length>1?' '+(i+1):''} ↗</a>`).join('')}</div>`;
   function summary(data){return data?.holdings?.length?`报告期末 ${data.report_date} · ${data.holdings.length} 项证券${data.refreshing?' · 正在检查更新':data.stale?' · 使用旧数据':''}`:data?.errors?.join('；')||'正在读取 SEC 13F…';}
-  const uncertainValue=data=>selected==='duquesne'&&['2026-06-30','2026-03-31'].includes(data?.report_date);
+  const uncertainValue=data=>selected==='duquesne'&&!data?.value_unit_verified&&['2026-06-30','2026-03-31'].includes(data?.report_date);
   const valueLabel=data=>uncertainValue(data)?'原始市值字段（单位待核实）':'季度末市值（USD）';
   const valueFormat=(data,n)=>uncertainValue(data)?number(n):money(n);
   function table(data,label){return `<p class="whale-status">${esc(label)}：${esc(data.report_date)} · 申报日 ${esc(data.filed_at)} · ${uncertainValue(data)?'原始字段合计（单位待核实）':'披露市值合计'} ${valueFormat(data,data.total_value)}</p><div class="whale-table-scroll"><table class="whale-table"><caption>${esc(label)}，按季度末市值排序</caption><thead><tr><th>证券 / CUSIP</th><th>股数 / 本金数量</th><th>${valueLabel(data)}</th><th>披露占比</th></tr></thead><tbody>${data.holdings.map(row=>`<tr><td>${security(row)}</td><td>${number(row.shares)}<small>${row.amount_type==='SH'?'股数':esc(row.amount_type)+' 本金数量'}</small></td><td>${valueFormat(data,row.value)}</td><td>${Number(row.weight).toFixed(2)}%</td></tr>`).join('')}</tbody></table></div>${sources(data)}${(data.warnings||[]).map(w=>'<p class="whale-status">'+esc(uncertainValue(data)?w.replace('美元','原始单位'):w)+'</p>').join('')}`;}
@@ -48,7 +48,7 @@ window.FinFeedWhales=(()=>{
   }
   async function refresh(){if(busy)return;busy=true;el('whales-refresh').disabled=true;
     await Promise.allSettled(Object.keys(funds).map(async kind=>{try{
-      await FinFeedCache.market('/api/whales/'+kind+'?version=6&stream=1',data=>accept(kind,data),{ttl:21600000});
+      await FinFeedCache.market('/api/whales/'+kind+'?version=7&stream=1',data=>accept(kind,data),{ttl:21600000});
     }catch{accept(kind,good.has(kind)?{...good.get(kind),stale:true}:{errors:['SEC 请求失败，请稍后检查更新']});}}));
     checked=Date.now();busy=false;el('whales-refresh').disabled=false;
   }

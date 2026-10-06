@@ -565,7 +565,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         from whales import FUNDS, snapshot
         if kind not in FUNDS:
             abort(404)
-        return refresh_jobs.response('whales:v3:' + kind, lambda publish: snapshot(kind, on_update=publish),
+        return refresh_jobs.response('whales:v4:' + kind, lambda publish: snapshot(kind, on_update=publish),
             21600, lambda value: bool(value.get('holdings')) and value.get('previous_status') != 'failed',
             stream=request.args.get('stream') == '1')
 

@@ -1,6 +1,6 @@
 "use strict";
 window.FinFeedWhales=(()=>{
-  const funds={berkshire:'伯克希尔',pershing:'潘兴广场',appaloosa:'阿帕卢萨管理',ark:'方舟投资',coatue:'蔻图资本',altimeter:'阿尔蒂米特资本',tiger:'老虎环球基金',polar:'北极星资本',alkeon:'阿尔基昂资本',westfield:'韦斯特菲尔德资本'};
+  const funds={berkshire:'伯克希尔',pershing:'潘兴广场',appaloosa:'阿帕卢萨管理',ark:'方舟投资',coatue:'蔻图资本',altimeter:'阿尔蒂米特资本',tiger:'老虎环球基金',polar:'北极星资本',alkeon:'阿尔基昂资本',westfield:'韦斯特菲尔德资本',lightstreet:'光街资本',hmi:'HMI 资本',atika:'阿提卡资本'};
   const states=new Map(),good=new Map();
   let started=false,busy=false,checked=0,selected=null,tab='latest';
   const el=id=>document.getElementById(id);

@@ -17,7 +17,9 @@ FUNDS = {'berkshire': ('1067983', '伯克希尔'), 'pershing': ('1336528', '潘�
          'ark': ('1697748', '方舟投资'), 'coatue': ('1135730', '蔻图资本'),
          'altimeter': ('1541617', '阿尔蒂米特资本'), 'tiger': ('1167483', '老虎环球基金'),
          'polar': ('1837309', '北极星资本'), 'alkeon': ('1230239', '阿尔基昂资本'),
-         'westfield': ('1177719', '韦斯特菲尔德资本')}
+         'westfield': ('1177719', '韦斯特菲尔德资本'),
+         'lightstreet': ('1569049', '光街资本'), 'hmi': ('1469026', 'HMI 资本'),
+         'atika': ('1599731', '阿提卡资本')}
 _guard = threading.Lock()
 _last_request = 0.0
 # Public project maintainer contact; override for another deployment/operator.

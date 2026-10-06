@@ -4,10 +4,10 @@ window.FinFeedMotion=(()=>{
   const running=new WeakMap();
   const reduced=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const easing='cubic-bezier(.22,1,.36,1)';
-  function play(element,frames,duration=300){
+  function play(element,frames,duration=300,curve=easing){
     running.get(element)?.cancel();
     if(reduced()||!element.animate)return;
-    const animation=element.animate(frames,{duration,easing});
+    const animation=element.animate(frames,{duration,easing:curve});
     running.set(element,animation);
     animation.onfinish=()=>{if(running.get(element)===animation)running.delete(element);};
     return animation;
@@ -28,9 +28,12 @@ window.FinFeedMotion=(()=>{
     if(!dialog?.open||closing.has(dialog))return;
     if(reduced()||!dialog.animate){dialog.close();return;}
     closing.add(dialog);
+    // Preserve the current entrance frame even if Close is clicked mid-animation.
+    const style=getComputedStyle(dialog),opacity=style.opacity,transform=style.transform;
+    dialog.style.setProperty('--exit-backdrop-opacity',getComputedStyle(dialog,'::backdrop').opacity);
     dialog.classList.add('motion-closing');
-    const animation=play(dialog,[{opacity:1,transform:'none'},{opacity:0,transform:'translateY(8px) scale(.985)'}],180);
-    animation.finished.catch(()=>{}).then(()=>{dialog.close();dialog.classList.remove('motion-closing');closing.delete(dialog);});
+    const animation=play(dialog,[{opacity,transform},{opacity:0,transform}],160,'cubic-bezier(.4,0,1,1)');
+    animation.finished.catch(()=>{}).then(()=>{dialog.close();dialog.classList.remove('motion-closing');dialog.style.removeProperty('--exit-backdrop-opacity');closing.delete(dialog);});
   }
   // A visual copy exits while the real row and saved state update immediately.
   function removeRow(row){

@@ -14,7 +14,7 @@ const series=[{label:'保持不变',price:.8,history:[{t:100,p:.6},{t:200,p:.7}]
 context.bind({querySelector:()=>figure},series,300,100);
 handlers.pointermove({clientX:460,clientY:150});
 assert(tooltip.innerHTML.includes('70%'));assert(tooltip.innerHTML.includes('30%'));
-assert(tooltip.innerHTML.includes('采样于'));assert(tooltip.innerHTML.includes('暂无历史数据'));
+assert(!tooltip.innerHTML.includes('采样于'));assert.equal((tooltip.innerHTML.match(/<small/g)||[]).length,1);assert(tooltip.innerHTML.endsWith('北京</small>'));assert(tooltip.innerHTML.includes('暂无历史数据'));
 assert.equal(line.attrs.x1,460);assert.equal(dots[0].attrs.cy,88);assert.equal(dots[2].attrs.visibility,'hidden');
 assert.equal(tooltip.style.left,'472px');
 handlers.pointerleave();assert.equal(tooltip.hidden,true);assert(dots.every(dot=>dot.attrs.visibility==='hidden'));

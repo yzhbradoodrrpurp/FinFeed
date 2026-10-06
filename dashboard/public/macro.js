@@ -135,10 +135,9 @@ window.FinFeedMacro=(()=>{
         if(!rows.length){dots[i].setAttribute('visibility','hidden');return `<div>${escape(series[i].label)}：暂无历史数据</div>`;}
         const row=nearestPoint(rows,selected);
         dots[i].setAttribute('cx',x(row.t));dots[i].setAttribute('cy',y(row.p));dots[i].setAttribute('visibility','visible');
-        const stamp=time(new Date(row.t*1000).toISOString(),'Asia/Shanghai');
-        return `<div><i style="background:${fedColors[i%5]}"></i>${escape(series[i].label)} <strong>${number(row.p*100)}%</strong>${row.t!==selected?`<small>采样于 ${stamp} 北京</small>`:''}</div>`;
+        return `<div><i style="background:${fedColors[i%5]}"></i>${escape(series[i].label)} <strong>${number(row.p*100)}%</strong></div>`;
       }).join('');
-      tooltip.innerHTML=`<strong>${time(new Date(selected*1000).toISOString(),'Asia/Shanghai')} 北京</strong>${content}`;
+      tooltip.innerHTML=`${content}<small class="fed-tooltip-time">${time(new Date(selected*1000).toISOString(),'Asia/Shanghai')} 北京</small>`;
       overlay.setAttribute('visibility','visible');tooltip.hidden=false;
       const bounds=figure.getBoundingClientRect();
       let screen=pointer;

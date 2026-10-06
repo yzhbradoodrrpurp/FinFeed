@@ -13,9 +13,9 @@ from xml.etree import ElementTree as ET
 from failure_log import failure
 
 FUNDS = {'berkshire': ('1067983', '伯克希尔'), 'pershing': ('1336528', 'Pershing Square'),
-         'duquesne': ('1536411', 'Duquesne 家族办公室'), 'appaloosa': ('1656456', 'Appaloosa'),
-         'ark': ('1697748', 'ARK Invest'), 'coatue': ('1135730', 'Coatue'),
-         'altimeter': ('1541617', 'Altimeter Capital'), 'tiger': ('1167483', 'Tiger Global')}
+         'duquesne': ('1536411', '杜肯家族办公室'), 'appaloosa': ('1656456', '阿帕卢萨管理'),
+         'ark': ('1697748', '方舟投资'), 'coatue': ('1135730', '蔻图资本'),
+         'altimeter': ('1541617', '阿尔蒂米特资本'), 'tiger': ('1167483', '老虎环球基金')}
 _guard = threading.Lock()
 _last_request = 0.0
 # Public project maintainer contact; override for another deployment/operator.

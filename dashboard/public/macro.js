@@ -14,7 +14,7 @@ window.FinFeedMacro=(()=>{
       ['核心PCE环比','https://tradingeconomics.com/united-states/core-pce-price-index-mom']
     ]
   };
-  let started=false,busy=false;
+  let started=false,busy=false,updated=0;
   const lastGood=new Map();
   function notice(card,message){let node=card.querySelector('.cache-state');if(!node){node=document.createElement('p');node.className='macro-note cache-state';card.append(node);}node.textContent=message;}
 
@@ -98,14 +98,15 @@ window.FinFeedMacro=(()=>{
       try{await FinFeedCache.market('/api/macro/'+id+'?stream=1',data=>{
         if(!data.metrics?.some(m=>m.latest))throw new Error();
         render(id,data);lastGood.set(id,data);FinFeedCache.write('macro-'+id,data);
-        if(data.stale)notice(card,'旧数据 · 正在更新，数据时间见下方');
+        if(data.refreshing)notice(card,'缓存 · 正在更新，数据时间见下方');
+        else if(data.stale)notice(card,'旧数据 · 本次更新失败，数据时间见下方');
         },{ttl:3600000});
       }catch{if(lastGood.has(id))notice(card,'旧数据 · 本次更新失败，数据时间见下方');else render(id,{metrics:[],errors:['数据暂不可用，请稍后刷新'],retrieved_at:new Date().toISOString()});}
-    }));busy=false;document.getElementById('macro-refresh').disabled=false;
+    }));updated=Date.now();busy=false;document.getElementById('macro-refresh').disabled=false;
   }
   document.getElementById('macro-refresh').addEventListener('click',()=>{refresh();refreshFed();});
   setInterval(()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden)refresh();},3600000);
   setInterval(()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden)refreshFed();},60000);
-  document.addEventListener('visibilitychange',()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden&&Date.now()-fedUpdated>=60000)refreshFed();});
-  return {open(){if(!started){started=true;refresh();}if(Date.now()-fedUpdated>=60000)refreshFed();}};
+  document.addEventListener('visibilitychange',()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden){if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=60000)refreshFed();}});
+  return {open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=60000)refreshFed();}};
 })();

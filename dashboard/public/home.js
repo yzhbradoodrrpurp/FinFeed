@@ -39,7 +39,7 @@ window.FinFeedHome=(()=>{
       try{
         await FinFeedCache.market('/api/home?symbol='+encodeURIComponent(index[0])+'&stream=1',data=>{
         if(data.index.price==null&&lastGood.has(slot))throw new Error();
-        renderIndex(data.index,slot,data.stale?'缓存 · 正在更新':'');
+        renderIndex(data.index,slot,data.refreshing?'缓存 · 正在更新':data.stale?'旧数据 · 更新失败':'');
         if(data.index.price!=null){lastGood.set(slot,data.index);FinFeedCache.write('home-'+index[0],data);}
         document.getElementById('home-update-status').textContent=`检索于 ${date(data.retrieved_at,'Asia/Shanghai')} 北京 · 每分钟检查更新，行情可能延迟；涨跌相对前收盘价。`;
         });

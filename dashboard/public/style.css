@@ -174,7 +174,9 @@ main.workspace{transition:margin-left 320ms cubic-bezier(.22,1,.36,1)}
 .sidebar-collapsed .brand-name,.sidebar-collapsed .nav-caption,.sidebar-collapsed .sidebar-bottom,.sidebar-collapsed .surface-tabs button span{display:block;opacity:0;pointer-events:none;position:absolute;visibility:hidden}
 .motion-row-exit{position:fixed;overflow:hidden;pointer-events:none;background:white;z-index:20}
 dialog.motion-closing{animation:none!important}
-dialog.motion-closing::backdrop{animation:finfeed-fade-exit 160ms cubic-bezier(.4,0,1,1) forwards}
+dialog.motion-closing::backdrop{animation:finfeed-fade-exit 240ms cubic-bezier(.4,0,.2,1) forwards}
+/* Avoid Safari repeatedly compositing the large table through backdrop blur. */
+dialog::backdrop{backdrop-filter:none}
 #detail-title:focus,#account-title:focus{outline:none}
 @keyframes finfeed-fade-exit{from{opacity:var(--exit-backdrop-opacity,1)}to{opacity:0}}
 @media(prefers-reduced-motion:reduce){.sidebar,main.workspace,.sidebar .brand-name,.sidebar .nav-caption,.sidebar .sidebar-bottom,.sidebar .surface-tabs button span{transition:none}}

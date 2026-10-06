@@ -24,16 +24,23 @@ window.FinFeedMotion=(()=>{
     });
   }
   const closing=new WeakSet();
+  function finishClose(dialog){
+    dialog.close();
+    // Safari restores focus to a mouse-clicked row and can draw a keyboard ring.
+    if(dialog.dataset.pointerOpened==='true'&&document.activeElement?.matches('tr[data-ticker],tr[data-holding-ticker]'))document.activeElement.blur();
+  }
   function close(dialog){
     if(!dialog?.open||closing.has(dialog))return;
-    if(reduced()||!dialog.animate){dialog.close();return;}
+    if(reduced()||!dialog.animate){finishClose(dialog);return;}
     closing.add(dialog);
     // Preserve the current entrance frame even if Close is clicked mid-animation.
     const style=getComputedStyle(dialog),opacity=style.opacity,transform=style.transform;
     dialog.style.setProperty('--exit-backdrop-opacity',getComputedStyle(dialog,'::backdrop').opacity);
     dialog.classList.add('motion-closing');
-    const animation=play(dialog,[{opacity,transform},{opacity:0,transform}],160,'cubic-bezier(.4,0,1,1)');
-    animation.finished.catch(()=>{}).then(()=>{dialog.close();dialog.classList.remove('motion-closing');dialog.style.removeProperty('--exit-backdrop-opacity');closing.delete(dialog);});
+    const animation=play(dialog,[{opacity,transform},{opacity:0,transform}],240,'cubic-bezier(.4,0,.2,1)');
+    // Keep the final transparent frame until the native dialog leaves the top layer.
+    animation.effect.updateTiming({fill:'forwards'});
+    animation.finished.catch(()=>{}).then(()=>{finishClose(dialog);animation.cancel();dialog.classList.remove('motion-closing');dialog.style.removeProperty('--exit-backdrop-opacity');closing.delete(dialog);});
   }
   // A visual copy exits while the real row and saved state update immediately.
   function removeRow(row){

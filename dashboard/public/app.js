@@ -345,13 +345,14 @@ function addTickers(text){
   tickers.push(...fresh);save();render();load(fresh);
   if(before)window.FinFeedMotion.settle(before,el("watchlist").querySelectorAll("tbody tr[data-ticker]"));return fresh;
 }
-function detail(ticker){
+function detail(ticker,keyboard=false){
   const r=records.get(ticker);if(!r){feedback(`${ticker} 正在读取，请稍后查看。`);return;}
   el("detail-title").textContent=`${ticker} · ${r.name}`;
   const sourceNames={quote:"行情来源",financials:"利润表",balance:"资产负债表",cashflow:"现金流",estimates:"Yahoo 分析师预期",estimates_alpha:"Alpha Vantage 盈利预测",sec:"SEC 披露查询"};
   el("detail-content").innerHTML=`<div class="meta-row">最近披露财季：${escapeHTML(r.quarter_0||"未提供")}　上财季：${escapeHTML(r.quarter_1||"未提供")}<br>行情检索：${timestamp(r.fetched_at)}${r.cached?" · 缓存":""}${r.refreshing?" · 正在更新":r.stale?" · 刷新失败，保留旧快照":""}${r.refresh_checked_at?`<br>本次刷新检查：${timestamp(r.refresh_checked_at)}`:""}<br>财务与预测检索：${timestamp(r.financial_fetched_at)}${r.financial_stale?" · 日度更新失败，使用旧财务数据":""}<br>Alpha Vantage 预测检索：${timestamp(r.estimates_fetched_at)}<br>财务日度检查：${timestamp(r.financial_checked_at)}<br>报价时间：${timestamp(r.quote_at)}　交易所：${escapeHTML(r.exchange||"未提供")} (${escapeHTML(r.exchange_timezone||"未提供")})<br>报价币种：${escapeHTML(r.currency||"未提供")}　财报币种：${escapeHTML(r.financial_currency||"未提供")}　延迟：${r.delay_minutes==null?"供应商未明确提供":escapeHTML(r.delay_minutes)+" 分钟（供应商标记）"}<br>申报日：未由免费聚合源提供，请到 SEC 核对。${r.errors?.length?`<br>${escapeHTML(r.errors.join("；"))}`:""}</div><nav class="source-links">${Object.entries(r.sources||{}).map(([k,url])=>`<a href="${escapeHTML(url)}" target="_blank" rel="noreferrer">${sourceNames[k]||k}</a>`).join("")}</nav>${allColumns.map(([key,title,sub,type])=>{
     const m=r.metrics?.[key];return `<section class="metric-detail"><h3>${title}<br><span style="font-weight:400;color:#81909c">${sub}</span></h3><div><div class="value">${format(m,type)} ${escapeHTML(m?.currency||"")}</div>${m?.reason?`<p>${escapeHTML(m.reason)}</p>`:""}${m?.estimate_stale?"<p>预测更新失败，使用旧预测。</p>":""}${m?.historical_cache?`<p>包含历史缓存：Yahoo 本次未返回部分财季；缓存原始检索时间 ${timestamp(m.cache_fetched_at||m.fetched_at)}。后续修订尚待数据源核验。</p>`:""}<p>数据期：${escapeHTML(m?.period||m?.estimate_label||"未提供")}${m?.comparison_period?" · 比较期："+escapeHTML(m.comparison_period):""}</p><p>${escapeHTML(m?.basis||"未提供口径")}</p>${m?.analysts!=null?`<p>覆盖分析师：${m.analysts}</p>`:""}${m?.inputs?`<p>计算输入：${escapeHTML(JSON.stringify(m.inputs))}</p>`:""}${m?.source?`<a href="${escapeHTML(m.source)}" target="_blank" rel="noreferrer">查看来源</a>`:""}</div></section>`;
   }).join("")}`;
+  el("detail-dialog").dataset.pointerOpened=String(!keyboard);
   el("detail-dialog").showModal();el("detail-title").focus({preventScroll:true});
 }
 el("add-form").addEventListener("submit",event=>{event.preventDefault();try{const fresh=addTickers(el("ticker-input").value);el("ticker-input").value="";feedback(fresh.length?"":"这些标的已在关注列表中。");}catch(error){feedback(error.message);}});
@@ -380,7 +381,7 @@ el("holdings-body").addEventListener("click",async event=>{
   }
   const row=event.target.closest("[data-holding-ticker]");if(row)detail(row.dataset.holdingTicker);
 });
-el("holdings-body").addEventListener("keydown",event=>{if(event.target.matches("tr[data-holding-ticker]")&&(event.key==="Enter"||event.key===" ")){event.preventDefault();detail(event.target.dataset.holdingTicker);}});
+el("holdings-body").addEventListener("keydown",event=>{if(event.target.matches("tr[data-holding-ticker]")&&(event.key==="Enter"||event.key===" ")){event.preventDefault();detail(event.target.dataset.holdingTicker,true);}});
 el("order-button").addEventListener("click",()=>{sortKey=null;render();renderOrder();el("order-dialog").showModal();});
 el("order-list").addEventListener("click",event=>{
   const button=event.target.closest("[data-move]");if(!button)return;
@@ -404,7 +405,7 @@ el("watchlist").addEventListener("click",event=>{
   const sort=event.target.closest("[data-sort]");if(sort){sortAsc=sortKey===sort.dataset.sort?!sortAsc:true;sortKey=sort.dataset.sort;render();return;}
   const row=event.target.closest("tr[data-ticker]");if(row)detail(row.dataset.ticker);
 });
-el("watchlist").addEventListener("keydown",event=>{if(event.target.matches("tr[data-ticker]")&&(event.key==="Enter"||event.key===" ")){event.preventDefault();detail(event.target.dataset.ticker);}});
+el("watchlist").addEventListener("keydown",event=>{if(event.target.matches("tr[data-ticker]")&&(event.key==="Enter"||event.key===" ")){event.preventDefault();detail(event.target.dataset.ticker,true);}});
 // Use identical visible actions when the browser supports the proposed WebMCP API.
 if(document.modelContext?.registerTool){
   for(const tool of [

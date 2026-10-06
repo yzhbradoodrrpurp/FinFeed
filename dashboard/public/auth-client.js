@@ -22,6 +22,11 @@ window.FinFeedAuth = (() => {
       if(error.name !== 'AbortError')reportFailure(url, options, 'network_error', null, started, requestId);
       throw error;
     }
+    const readJSON = response.json?.bind(response);
+    if(readJSON)response.json = async () => {
+      try { return await readJSON(); }
+      catch(error) { reportFailure(url, options, 'invalid_response', response.status, started, requestId); throw error; }
+    };
     if(!response.ok)reportFailure(url, options, 'http_error', response.status, started, requestId);
     if(response.status===401 && !url.startsWith("/api/auth/")) {
       location.replace("/login");throw new Error("登录已过期，请重新验证");

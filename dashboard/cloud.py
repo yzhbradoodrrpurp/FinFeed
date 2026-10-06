@@ -138,8 +138,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.after_request
     def response_headers(response):
         if response.status_code >= 400:
+            payload = response.get_json(silent=True) if response.is_json else None
             failure('backend', request.url_rule.rule if request.url_rule else 'unmatched_route',
-                    reason='HTTP request failed', http_method=request.method,
+                    reason=payload.get('error', 'HTTP request failed') if isinstance(payload, dict) else 'HTTP request failed', http_method=request.method,
                     response_status=response.status_code, request_id=getattr(g, 'request_id', ''),
                     started=getattr(g, 'request_started', None))
         response.headers['X-Request-ID'] = getattr(g, 'request_id', '')
@@ -186,7 +187,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if not isinstance(path, str) or not path.startswith('/api/') or len(path) > 200 or '?' in path or '#' in path:
             abort(400, description='无效日志路径')
         category = body.get('category')
-        if category not in {'network_error', 'http_error'}:
+        if category not in {'network_error', 'http_error', 'invalid_response'}:
             abort(400, description='无效错误类别')
         try:
             endpoint, _ = app.url_map.bind(parsed.netloc).match(path, method=body.get('method', 'GET'))
@@ -322,7 +323,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
                 credential=body, expected_challenge=base64url_to_bytes(flow["challenge"]),
                 expected_rp_id=urlsplit(flow.get("origin", origin)).hostname, expected_origin=flow.get("origin", origin), require_user_verification=True,
             )
-        except (WebAuthnException, ValueError, TypeError, KeyError):
+        except (WebAuthnException, ValueError, TypeError, KeyError) as exc:
+            failure("webauthn", "registration_verify", error=exc, reason="Passkey registration validation failed", request_id=g.request_id)
             abort(400, description="Passkey 绑定验证失败，请重新开始")
         with database.transaction() as connection:
             database.owner(connection)
@@ -396,7 +398,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
                     credential_public_key=base64url_to_bytes(credential["public_key"]),
                     credential_current_sign_count=credential["sign_count"], require_user_verification=True,
                 )
-            except (WebAuthnException, ValueError, TypeError, KeyError, AttributeError):
+            except (WebAuthnException, ValueError, TypeError, KeyError, AttributeError) as exc:
+                failure("webauthn", "login_verify", error=exc, reason="Passkey authentication validation failed", request_id=g.request_id)
                 abort(401, description="Passkey 登录验证失败")
             database.execute(connection, "UPDATE credentials SET sign_count=? WHERE id=?", (verification.new_sign_count, credential["id"]))
             response = jsonify(ok=True)

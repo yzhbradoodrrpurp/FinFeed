@@ -53,7 +53,13 @@ window.FinFeedWhales=(()=>{
     show(new URL(location.href).searchParams.get('fund'),false);
     if(Date.now()-checked>=21600000&&!busy)refresh();}
   document.querySelectorAll('[data-whale]').forEach(button=>button.addEventListener('click',()=>show(button.dataset.whale)));
-  document.querySelectorAll('[data-whale-tab]').forEach(button=>button.addEventListener('click',()=>{if(tab===button.dataset.whaleTab)return;const order=['latest','previous','changes'];const direction=order.indexOf(button.dataset.whaleTab)>order.indexOf(tab)?1:-1;tab=button.dataset.whaleTab;renderDetail();window.FinFeedMotion?.enter(el('whale-detail-content'),{kind:'tab',direction});}));
+  document.querySelectorAll('[data-whale-tab]').forEach(button=>button.addEventListener('click',()=>{
+    if(tab===button.dataset.whaleTab)return;
+    const order=Array.from(document.querySelectorAll('[data-whale-tab]'),item=>item.dataset.whaleTab);
+    const direction=order.indexOf(button.dataset.whaleTab)>order.indexOf(tab)?1:-1;
+    tab=button.dataset.whaleTab;renderDetail();
+    window.FinFeedMotion?.enter(el('whale-detail-content'),{kind:'tab',direction});
+  }));
   el('whale-category-select')?.addEventListener('change',event=>{
     const category=event.target.value;
     const before=window.FinFeedMotion?.capture(document.querySelectorAll('.whale-group-heading,.whale-card'));

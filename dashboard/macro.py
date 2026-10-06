@@ -17,7 +17,7 @@ SERIES = {'jobs': ['PAYEMS', 'UNRATE', 'CES0500000003'], 'pce': ['PCEPI', 'PCEPI
 
 
 def fetch(url):
-    with urlopen(Request(url, headers={'User-Agent': 'FinFeed/1.0 macro research'}), timeout=20) as response:
+    with urlopen(Request(url, headers={'User-Agent': 'FinFeed/1.0 macro research'}), timeout=30) as response:
         return response.read().decode('utf-8')
 
 
@@ -54,7 +54,7 @@ def schedule(kind, now):
         source = 'https://www.bea.gov/news/schedule/full'
     else:
         from curl_cffi import requests
-        response = requests.get('https://www.bls.gov/schedule/news_release/bls.ics', impersonate='chrome', timeout=20)
+        response = requests.get('https://www.bls.gov/schedule/news_release/bls.ics', impersonate='chrome', timeout=30)
         response.raise_for_status()
         text = response.text
         text = re.sub(r'\r?\n[ \t]', '', text)
@@ -96,7 +96,7 @@ def _load_metrics(kind):
             import yfinance as yf
             from data import LIMIT
             with LIMIT:
-                frame = yf.Ticker('DX-Y.NYB').history(start=history_start(), interval='1d', auto_adjust=False, timeout=20)
+                frame = yf.Ticker('DX-Y.NYB').history(start=history_start(), interval='1d', auto_adjust=False, timeout=30)
             rows = [{'date': d.date().isoformat(), 'value': float(row['Close'])} for d, row in frame.iterrows() if row['Close'] == row['Close']]
             card['metrics'] = [metric('美元指数', rows, '点', 'https://finance.yahoo.com/quote/DX-Y.NYB/', full_history=True)]
             card['note'] = '最近三年 Yahoo 日线收盘价，最新一日可能尚未收盘；非实时行情，无固定月度发布时间。'

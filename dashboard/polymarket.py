@@ -19,7 +19,7 @@ _history = {}
 
 
 def get(url, **params):
-    response = requests.get(url, params=params, impersonate='chrome', timeout=20)
+    response = requests.get(url, params=params, impersonate='chrome', timeout=30)
     response.raise_for_status()
     return response.json()
 

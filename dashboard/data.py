@@ -201,7 +201,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     reuse_info = saved and not financial_due(saved, started) and saved.get("info_checked_day") == info_day
     with ThreadPoolExecutor(max_workers=2) as pool:
         history_task = pool.submit(load, "日线", lambda: history_item.history(
-            period="1mo", auto_adjust=False, actions=True, raise_errors=True, timeout=15), None)
+            period="1mo", auto_adjust=False, actions=True, raise_errors=True, timeout=30), None)
         if reuse_info:
             info = deepcopy(saved.get("security_info") or {})
             for key in ("regularMarketPrice", "regularMarketTime", "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "marketCap"):

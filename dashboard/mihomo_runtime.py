@@ -19,7 +19,7 @@ PORT = 17890
 def install():
     if platform.system() != "Linux" or platform.machine() not in {"x86_64", "amd64"}:
         raise RuntimeError("Mihomo build currently requires Linux amd64")
-    with urllib.request.urlopen(URL, timeout=60) as response:
+    with urllib.request.urlopen(URL, timeout=30) as response:
         archive = response.read(50_000_001)
     if len(archive) > 50_000_000 or hashlib.sha256(archive).hexdigest() != SHA256:
         raise RuntimeError("Mihomo download checksum mismatch")

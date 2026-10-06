@@ -39,7 +39,7 @@ def main():
 
         def request(host):
             try:
-                payload = provider.get_raw_json(f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/GOOG", params=params, timeout=12)
+                payload = provider.get_raw_json(f"https://{host}.finance.yahoo.com/v10/finance/quoteSummary/GOOG", params=params, timeout=30)
                 entries = payload["quoteSummary"]["result"][0]["earningsTrend"]["trend"]
                 return {"ok": True, "quarters": [{"period": x.get("period"), "endDate": x.get("endDate"),
                     "eps": (x.get("earningsEstimate") or {}).get("avg")} for x in entries if x.get("period") in ("0q", "+1q")]}
@@ -56,7 +56,7 @@ def main():
         # or crumb is imported, and no credentials are returned by this probe.
         if not out["query2_isolated"].get("ok") and out["query2_isolated"].get("status") == 401:
             try:
-                response = provider._session.get("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=12)
+                response = provider._session.get("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=30)
                 text = response.text.strip()
                 valid = response.status_code == 200 and 0 < len(text) < 128 and not any(c.isspace() for c in text) and not text.startswith(("{", "<"))
                 out["same_host_crumb"] = {"status": response.status_code, "valid_shape": valid}

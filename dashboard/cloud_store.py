@@ -72,8 +72,8 @@ class Store:
         self.database_url = database_url
         self.sqlite_path = sqlite_path
         self.pool = None if sqlite_path else ConnectionPool(
-            database_url, kwargs={"row_factory":dict_row,"connect_timeout":10,"sslmode":"require","prepare_threshold":None},
-            min_size=1, max_size=4, timeout=10, open=True, check=ConnectionPool.check_connection)
+            database_url, kwargs={"row_factory":dict_row,"connect_timeout":30,"sslmode":"require","prepare_threshold":None},
+            min_size=1, max_size=4, timeout=30, open=True, check=ConnectionPool.check_connection)
         if self.pool:
             atexit.register(self.pool.close)
         with self.transaction() as connection:
@@ -118,7 +118,7 @@ class Store:
                 connection.execute("SET LOCAL search_path TO finfeed_private")
                 yield connection
             return
-        connection = sqlite3.connect(self.sqlite_path, timeout=10)
+        connection = sqlite3.connect(self.sqlite_path, timeout=30)
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("BEGIN IMMEDIATE")

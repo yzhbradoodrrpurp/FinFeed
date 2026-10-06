@@ -39,7 +39,7 @@ def estimate_data(symbol, timestamp, store=None):
             store.set_cache('alpha:usage', budget)
             url = 'https://www.alphavantage.co/query?' + urllib.parse.urlencode({'function': 'EARNINGS_ESTIMATES', 'symbol': symbol, 'apikey': key})
             try:
-                with urllib.request.urlopen(url, timeout=25) as response:
+                with urllib.request.urlopen(url, timeout=30) as response:
                     candidate = json.load(response)
                 if candidate.get('symbol') == symbol and isinstance(candidate.get('estimates'), list):
                     payload = candidate

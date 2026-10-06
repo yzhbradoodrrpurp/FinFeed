@@ -1,7 +1,7 @@
 "use strict";
 let initialLoading=true;
 const fetchingTickers=new Set();
-let readOnly=false,currentUser=null;
+let readOnly=true,currentUser=null;
 const surfaceNames=["home","watchlist","portfolio","macro","whales"];
 const initialSurface=new URLSearchParams(location.search).get("surface");
 let holdings=[],surface=surfaceNames.includes(initialSurface)?initialSurface:"home",editingPosition=null;
@@ -191,7 +191,7 @@ async function changeViewedAccount(name,id){
   accountRequest?.abort();accountRequest=new AbortController();
   const controller=accountRequest;
   viewedUserId=id;rememberSurfaceAccount(name,id);
-  if(surface===name)el("view-account").value=id;
+  if(surface===name){el("view-account").value=id;window.FinFeedDropdowns?.sync();}
   readOnly=true;document.body.classList.toggle("read-only",true);
   cancelRecordLoads();tickers=[];holdings=[];initialLoading=true;
   sortKey=null;cellValues.clear();cellFlashes.clear();feedback("");render();
@@ -409,7 +409,8 @@ async function initializeState(){
   if(initializeState.running)return;
   initializeState.running=true;
   switchSurface(surface);
-  const main=document.querySelector("main");main.inert=true;
+  const main=document.querySelector("main");main.inert=false;
+  readOnly=true;document.body.classList.toggle("read-only",true);
   try{
     const auth=await FinFeedAuth.initialize();
     el("startup-status").hidden=true;feedback("");
@@ -440,7 +441,7 @@ async function initializeState(){
         surfaceAccounts[name]=directory.accounts.some(a=>a.id===saved)?saved:currentUser.id;
       }
       el("view-account").value=viewedUserId;
-      el("view-account").disabled=false;
+      el("view-account").disabled=false;window.FinFeedDropdowns?.sync();
     }).catch(error=>feedback(error.message+"，请稍后刷新。"));
     const stateVersion=++accountStateVersion;
     accountRequest=new AbortController();
@@ -472,7 +473,7 @@ async function initializeState(){
     main.inert=false;
     const controls=Array.from(document.querySelectorAll("main button, main input, main select"));
     const disabled=controls.map(control=>control.disabled);
-    controls.forEach(control=>control.disabled=true);
+    controls.forEach(control=>{if(!control.closest(".dropdown"))control.disabled=true;});
     // Retry only startup. No intervals or market requests start before auth succeeds.
     setTimeout(()=>{
       controls.forEach((control,index)=>control.disabled=disabled[index]);

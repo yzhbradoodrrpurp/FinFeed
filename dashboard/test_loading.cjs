@@ -5,13 +5,14 @@ const init=source.slice(source.indexOf('async function initializeState(){'),sour
 const pending=new Map(),calls=[],elements=new Map(),main={inert:false};
 const el=id=>{if(!elements.has(id))elements.set(id,{disabled:false,hidden:false});return elements.get(id);};
 const deferred=url=>new Promise(resolve=>pending.set(url,resolve));
-const context={URLSearchParams,Promise,AbortController,accountStateVersion:0,accountRequest:null,location:{search:'',hostname:'finfeed-research.vercel.app'},surface:'portfolio',currentUser:null,surfaceAccounts:{},viewedUserId:null,records:new Map(),initialLoading:true,readOnly:false,tickers:[],holdings:[],
+const context={window:{},URLSearchParams,Promise,AbortController,accountStateVersion:0,accountRequest:null,location:{search:'',hostname:'finfeed-research.vercel.app'},surface:'portfolio',currentUser:null,surfaceAccounts:{},viewedUserId:null,records:new Map(),initialLoading:true,readOnly:false,tickers:[],holdings:[],
  document:{querySelector:()=>main,querySelectorAll:()=>[],body:{classList:{toggle(){}}}},el,sessionStorage:{getItem:()=>null},escapeHTML:s=>s,switchSurface(){},rememberSurfaceAccount(name,id){context.surfaceAccounts[name]=id;},
  FinFeedAuth:{initialize:()=>deferred('auth'),request:deferred},FinFeedHome:{prefetch:()=>calls.push('home'),open:()=>calls.push('greeting')},FinFeedMacro:{open:()=>calls.push('macro')},FinFeedWhales:{open:()=>calls.push('whales')},
  trackedTickers:()=>[...new Set([...context.tickers,...context.holdings.map(p=>p.ticker)])],render:()=>calls.push('render'),load:tickers=>calls.push([...tickers]),setInterval(){},refreshWatchlist(){},feedback:message=>calls.push(message)};
 vm.createContext(context);vm.runInContext(init,context);
 (async()=>{
  const done=context.initializeState();assert.deepEqual(calls,[]);
+ assert.equal(main.inert,false);assert.equal(context.readOnly,true); // Filters stay usable; writes wait for verified state.
  pending.get('auth')({user:{id:'self',name:'Liam'}});await new Promise(setImmediate);
  assert.deepEqual(calls,['','home','macro','whales']);assert.equal(pending.size,3);assert.equal(main.inert,false);
  pending.get('/api/state')({ok:true,json:async()=>({state:{watchlist:['AAPL'],positions:[{ticker:'AAPL'},{ticker:'MSFT'}]},quotes:{},readOnly:false})});
@@ -22,7 +23,7 @@ vm.createContext(context);vm.runInContext(init,context);
  assert.equal(el('view-account').disabled,false);
  // A failed initial auth check must recover without reloading or duplicating startup.
  calls.length=0;context.currentUser=null;
- const enabled={disabled:false},alreadyDisabled={disabled:true};
+ const enabled={disabled:false,closest:()=>null},alreadyDisabled={disabled:true,closest:()=>null};
  context.document.querySelectorAll=()=>[enabled,alreadyDisabled];
  let retry;
  context.setTimeout=(callback,delay)=>{assert.equal(delay,15000);retry=callback;};

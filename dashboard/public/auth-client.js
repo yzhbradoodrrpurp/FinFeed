@@ -3,8 +3,26 @@
 window.FinFeedAuth = (() => {
   const decode = value => Uint8Array.from(atob(value.replace(/-/g,"+").replace(/_/g,"/") + "=".repeat((4-value.length%4)%4)), c=>c.charCodeAt(0));
   const encode = value => btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
+  function reportFailure(url, options, category, status, started, requestId) {
+    if(url === '/api/auth/client-failure')return;
+    // Never transmit query strings, response bodies, cookies or error messages.
+    const path = new URL(url, location.origin).pathname;
+    void fetch('/api/auth/client-failure', {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-FinFeed-Client':'1'},
+      body:JSON.stringify({path, method:options.method||'GET', category, status,
+        elapsed_ms:Math.round(performance.now()-started), request_id:requestId})}).catch(()=>{});
+  }
   async function request(url, options={}) {
-    const response = await fetch(url, {...options, credentials:"same-origin", headers:{...options.headers,"X-FinFeed-Client":"1"}});
+    const started=performance.now();
+    const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)), b=>b.toString(16).padStart(2,'0')).join('');
+    let response;
+    try {
+      response = await fetch(url, {...options, credentials:"same-origin", headers:{...options.headers,"X-FinFeed-Client":"1","X-FinFeed-Request-ID":requestId}});
+    } catch(error) {
+      if(error.name !== 'AbortError')reportFailure(url, options, 'network_error', null, started, requestId);
+      throw error;
+    }
+    if(!response.ok)reportFailure(url, options, 'http_error', response.status, started, requestId);
     if(response.status===401 && !url.startsWith("/api/auth/")) {
       location.replace("/login");throw new Error("登录已过期，请重新验证");
     }

@@ -111,3 +111,15 @@ Render 的 `FRONTEND_ORIGIN` 需要设为实际 Vercel 生产站点的 HTTPS ori
 邀请码注册使用相同路径，已有数据库记录无需迁移。预览部署不加入生产允许 origin。
 
 静态界面由 Vercel 提供，后端请求仍依赖 Render 是否已唤醒和 Yahoo 请求延迟。
+
+
+### 请求失败日志
+
+后端将失败写入 stderr 的 JSON 日志，Render 的 **Logs → Application logs** 搜索
+`request_failure` 即可查看。覆盖行情、财务、预测、宏观数据与日历、Polymarket、
+登录/账户等后端 API 的 HTTP 错误，以及数据库异常；空数据和无效响应也记录。
+日志包含 UTC 时间、来源、操作/路由、ticker 或序列、异常类型、HTTP 状态及可用的耗时。
+返回旧快照时仍记录本次失败。客户端 HTTP/网络失败会尽力上报，主动取消不算失败；
+后端完全不可达时，上报也可能失败。客户端和后端 HTTP 请求通过请求 ID 关联。
+不记录请求正文、完整 URL、查询参数、Cookie 或账户标识，异常文本中的凭据脱敏。
+平台日志的保留时间以 Render 账户方案为准；不会补录部署前没有保存的失败。

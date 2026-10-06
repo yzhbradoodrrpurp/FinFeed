@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 import yahoo_session
+from failure_log import failure
 from yahoo_diagnostic import balance_with_diagnostics, provider_error_category
 from yahoo_probe import isolated_probe, REVISION as PROBE_REVISION
 from alpha import estimate_data, next_four_eps, SOURCE as ALPHA_SOURCE
@@ -187,13 +188,16 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     history_item = yf.Ticker(symbol)
     errors = []
     if session_status["error"]:
+        failure("yahoo", "session", symbol=symbol, reason=session_status["error"])
         errors.append(session_status["error"])
     def load(label, action, default):
+        request_started = time.monotonic()
         try:
             return action()
         except Exception as exc:
             status = getattr(getattr(exc, "response", None), "status_code", None)
             category = provider_error_category(exc)
+            failure("yahoo", label, symbol=symbol, error=exc, started=request_started, category=category)
             errors.append(f"{label}读取失败：{type(exc).__name__}" + (f" HTTP {status}" if status else "")
                           + (f" ({category})" if category else ""))
             return default
@@ -215,6 +219,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     # Chart metadata uses an independent endpoint and still identifies securities.
     info_available = bool(info.get("quoteType"))
     if not info_available:
+        failure("yahoo", "证券信息", symbol=symbol, reason="quoteType missing / empty response")
         errors.append("Yahoo 证券信息接口未返回有效数据；使用日线元数据，部分指标可能缺失")
     metadata = load("交易时段", history_item.get_history_metadata, {}) or {}
     chart_info = {**metadata, "quoteType": metadata.get("instrumentType")}
@@ -319,7 +324,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
             shares_task = pool.submit(load, "流通股数", lambda: yf.Ticker(symbol).get_shares_full(
                 start=(datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()), None)
         # Report forecast errors after statement_errors is captured below.
-        estimates_task = pool.submit(item.get_earnings_estimate)
+        estimates_task = pool.submit(load, "盈利预测", item.get_earnings_estimate, None)
         income, balance, cashflow = income_task.result(), balance_task.result(), cashflow_task.result()
     if shares_task is not None:
         share_frame = shares_task.result()
@@ -332,6 +337,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
                                         currency=currency, inputs={"price": price, "shares": shares, "shares_period": shares_period})
     for label, frame in (("利润表", income), ("资产负债表", balance), ("现金流量表", cashflow)):
         if frame is None or frame.empty:
+            failure("yahoo", label, symbol=symbol, reason="empty financial response")
             errors.append(f"{label}未返回数据")
     # Use disclosed ordinary shares only for US quote/financial currency pairs;
     # never substitute diluted weighted-average EPS shares for outstanding shares.
@@ -398,7 +404,11 @@ def security(symbol, refresh=False, store=None):
     with lock:
         if store is None:
             raise ValueError("行情缓存需要私人数据库")
-        stored = store.get_cache("quote:" + symbol)
+        try:
+            stored = store.get_cache("quote:" + symbol)
+        except Exception as exc:
+            failure("database", "quote_cache_read", symbol=symbol, error=exc)
+            raise
         saved = stored[0] if stored else None
         age = time.time() - stored[1] if stored else float("inf")
         if saved and saved.get("schema_version") != SCHEMA_VERSION:
@@ -414,18 +424,23 @@ def security(symbol, refresh=False, store=None):
                         "errors": list(dict.fromkeys([*saved.get("errors", []), *errors]))}
             return None
 
+        fetch_started = time.monotonic()
+        stage = "fetch_security"
         try:
             with LIMIT:
                 result = fetch_security(symbol, saved, estimate_store=store)
             if result.get("metrics", {}).get("price", {}).get("value") is None:
+                failure("yahoo", "quote_refresh", symbol=symbol, reason="; ".join(result.get("errors", [])) or "price missing / empty response", started=fetch_started, fallback_available=bool(saved and saved.get("metrics", {}).get("price", {}).get("value") is not None))
                 fallback = failed_snapshot(result.get("errors", []) + ["行情刷新失败，保留上次成功快照"])
                 if fallback:
                     return fallback
                 # Do not persist an unavailable response as a successful snapshot.
                 return {**result, "cached": False}
+            stage = "quote_cache_write"
             store.set_cache("quote:" + symbol, result)
             return {**result, "cached": False}
         except Exception as exc:
+            failure("database" if stage == "quote_cache_write" else "yahoo", stage, symbol=symbol, error=exc, started=fetch_started)
             errors = [f"数据暂不可用：{type(exc).__name__}"]
             fallback = failed_snapshot(errors)
             if fallback:

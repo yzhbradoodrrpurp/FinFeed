@@ -1,4 +1,6 @@
 """Daily consensus estimate cache. Credentials never enter returned provenance."""
+from failure_log import failure
+import time
 import json
 import math
 import os
@@ -30,6 +32,7 @@ def estimate_data(symbol, timestamp, store=None):
         budget = budget_saved[0] if budget_saved else {}
         if budget.get('day') != budget_day:
             budget = {'day': budget_day, 'calls': 0}
+        started = time.monotonic()
         error = None
         payload = None
         if budget['calls'] >= 25:
@@ -49,7 +52,10 @@ def estimate_data(symbol, timestamp, store=None):
                     message = re.sub(r'https?://\S+', '[链接省略]', message.replace(key, '[凭据已隐藏]'))[:400]
                     error = 'Alpha Vantage 未返回预测数据' + ('：' + message if message else '（响应格式不符）')
             except Exception as exc:
+                failure('alpha_vantage', 'http_request', symbol=symbol, error=exc, started=started)
                 error = f'Alpha Vantage 读取失败：{type(exc).__name__}'
+        if error:
+            failure('alpha_vantage', 'earnings_estimates', symbol=symbol, reason=error, started=started)
         result = {'checked_day': day, 'fetched_at': timestamp if payload is not None else saved.get('fetched_at'),
                   'data': payload if payload is not None else saved.get('data'), 'error': error}
         store.set_cache('alpha:' + symbol, result)

@@ -1,4 +1,5 @@
 """Shared US market overview: exchange calendar and Yahoo index quotes."""
+from failure_log import failure
 import math
 import threading
 import time
@@ -35,6 +36,7 @@ def quote(index):
               'source': 'https://finance.yahoo.com/quote/'+symbol.replace('^', '%5E')+'/',
               'price': None, 'previous_close': None, 'change': None, 'change_percent': None,
               'quoted_at': None, 'error': None}
+    started = time.monotonic()
     try:
         import yfinance as yf
         from data import LIMIT
@@ -56,7 +58,8 @@ def quote(index):
                       quoted_at=datetime.fromtimestamp(timestamp, timezone.utc).isoformat())
         if previous is not None and previous > 0:
             result.update(change=price-previous, change_percent=(price/previous-1)*100)
-    except Exception:
+    except Exception as exc:
+        failure('yahoo', 'home_index', symbol=symbol, error=exc, started=started)
         result['error'] = '行情暂不可用'
     return result
 
@@ -81,7 +84,8 @@ def calendar_snapshot():
     try:
         result['sessions'] = sessions(now.astimezone(ZoneInfo('America/New_York')).date())
         result['calendar_error'] = None
-    except Exception:
+    except Exception as exc:
+        failure('nyse_calendar', 'sessions', error=exc)
         result['sessions'] = []
         result['calendar_error'] = '交易日历暂不可用'
     result['calendar_source'] = 'https://www.nyse.com/trade/hours-calendars'

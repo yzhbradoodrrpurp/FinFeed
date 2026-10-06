@@ -1,4 +1,5 @@
 """Read-only public Polymarket event prices; shared cache across accounts."""
+from failure_log import failure
 import json
 import math
 import threading
@@ -19,9 +20,16 @@ _history = {}
 
 
 def get(url, **params):
-    response = requests.get(url, params=params, impersonate='chrome', timeout=30)
-    response.raise_for_status()
-    return response.json()
+    started = time.monotonic()
+    try:
+        response = requests.get(url, params=params, impersonate='chrome', timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:
+        from urllib.parse import urlsplit
+        target = urlsplit(url)
+        failure('polymarket', target.path, error=exc, started=started)
+        raise
 
 
 def valid_price(value):
@@ -61,7 +69,8 @@ def load():
                   'history': [], 'history_error': False}
         try:
             result['history'] = history(token, start, int(now.timestamp()))
-        except Exception:
+        except Exception as exc:
+            failure('polymarket', 'history', reason=result['label'], error=exc)
             result['history_error'] = True
         return result
     markets = sorted(event['markets'], key=lambda m: list(LABELS).index(m['groupItemTitle']) if m.get('groupItemTitle') in LABELS else 99)
@@ -80,7 +89,8 @@ def snapshot():
             return _value
         try:
             _value = load()
-        except Exception:
+        except Exception as exc:
+            failure('polymarket', 'event_snapshot', error=exc)
             _value = {'series': [], 'source': SOURCE, 'retrieved_at': datetime.now(timezone.utc).isoformat(),
                       'errors': ['Polymarket 数据暂不可用，请稍后重试']}
         _expires = time.monotonic()+60

@@ -1,4 +1,5 @@
 """Optional yfinance login session; credentials stay in the server environment."""
+from failure_log import failure
 import os
 import threading
 from urllib.parse import urlsplit
@@ -57,7 +58,8 @@ def initialize():
                 _status["verified"] = bool(yf.Auth().set_login_cookies(cookie_t, cookie_y))
                 if not _status["verified"]:
                     _status["error"] = "Yahoo 登录状态未确认，Cookie 可能过期或验证接口不可达"
-            except Exception:
+            except Exception as exc:
+                failure("yahoo", "login_session", error=exc)
                 # Provider exceptions can contain authenticated request URLs.
                 _status["error"] = "Yahoo 登录验证失败，保留可用行情并明确标注缺失"
         return dict(_status)

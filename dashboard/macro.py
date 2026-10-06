@@ -1,4 +1,5 @@
 """Public macro observations, shared fresh cache, explicit provenance and gaps."""
+from failure_log import failure
 import os
 import json
 import re
@@ -17,11 +18,18 @@ SERIES = {'jobs': ['PAYEMS', 'UNRATE', 'CES0500000003'], 'pce': ['PCEPI', 'PCEPI
 
 
 def fetch(url):
-    with urlopen(Request(url, headers={'User-Agent': 'FinFeed/1.0 macro research'}), timeout=30) as response:
-        return response.read().decode('utf-8')
+    started = time.monotonic()
+    try:
+        with urlopen(Request(url, headers={'User-Agent': 'FinFeed/1.0 macro research'}), timeout=30) as response:
+            return response.read().decode('utf-8')
+    except Exception as exc:
+        from urllib.parse import urlsplit
+        target = urlsplit(url)
+        failure(target.hostname, target.path, error=exc, started=started)
+        raise
 
 
-def observations(series):
+def _observations(series):
     key = os.environ.get('FRED_API_KEY', '')
     if not key:
         raise ValueError('FRED_API_KEY 未配置')
@@ -32,8 +40,22 @@ def observations(series):
         query['limit'] = 36
     params = urlencode(query)
     data = json.loads(fetch('https://api.stlouisfed.org/fred/series/observations?' + params))
+    if 'error_message' in data:
+        raise ValueError(str(data['error_message']))
     return sorted([{'date': r['date'], 'value': float(r['value'])}
                    for r in data['observations'] if r['value'] != '.'], key=lambda r: r['date'])
+
+
+def observations(series):
+    started = time.monotonic()
+    try:
+        rows = _observations(series)
+        if not rows:
+            failure('fred', 'observations', symbol=series, reason='empty observations', started=started)
+        return rows
+    except Exception as exc:
+        failure('fred', 'observations', symbol=series, error=exc, started=started)
+        raise
 
 
 def growth(rows, lag):
@@ -47,7 +69,7 @@ def growth(rows, lag):
     return out
 
 
-def schedule(kind, now):
+def _schedule(kind, now):
     if kind == 'pce':
         data = json.loads(fetch('https://apps.bea.gov/API/signup/release_dates.json'))
         dates = [datetime.fromisoformat(s) for s in data['Personal Income and Outlays']['release_dates']]
@@ -74,6 +96,19 @@ def schedule(kind, now):
             'next_release': min(future).isoformat() if future else None, 'calendar_source': source}
 
 
+def schedule(kind, now):
+    started = time.monotonic()
+    try:
+        result = _schedule(kind, now)
+        if not result.get('next_release'):
+            failure('bea' if kind == 'pce' else 'bls', 'release_calendar',
+                    reason='next release missing', started=started)
+        return result
+    except Exception as exc:
+        failure('bea' if kind == 'pce' else 'bls', 'release_calendar', error=exc, started=started)
+        raise
+
+
 def history_start():
     today = datetime.now(UTC).date()
     try:
@@ -89,6 +124,7 @@ def metric(label, rows, unit, source, full_history=False):
 
 
 def _load_metrics(kind):
+    started = time.monotonic()
     now = datetime.now(UTC)
     card = {'id': kind, 'retrieved_at': now.isoformat(), 'metrics': [], 'errors': []}
     try:
@@ -120,8 +156,10 @@ def _load_metrics(kind):
                 card['metrics'] = [metric('十年期美债收益率', values['DGS10'], '%', 'https://fred.stlouisfed.org/series/DGS10', full_history=True)]
                 card['note'] = '最近三年 H.15 十年恒定期限收益率，日度统计；非实时单只国债报价。工作日 16:15 美国东部时间发布，节假日除外。5.1% 为个人观察线。'
         if not card['metrics'] or any(m['latest'] is None for m in card['metrics']):
+            failure('macro', kind, reason='latest metric missing / empty response', started=started)
             card['errors'].append('部分数据未取得')
-    except Exception:
+    except Exception as exc:
+        failure('macro', kind, error=exc, started=started)
         # HTTP exceptions may contain credential-bearing URLs. Never serialize them.
         card['errors'].append('数据请求失败，暂不显示历史缓存，请稍后重试')
     return card
@@ -137,7 +175,8 @@ def load(kind):
         card = metrics_task.result()
         try:
             card.update(calendar_task.result())
-        except Exception:
+        except Exception as exc:
+            failure('bea' if kind == 'pce' else 'bls', 'release_calendar', error=exc)
             card['errors'].append('发布日历暂不可用')
     return card
 

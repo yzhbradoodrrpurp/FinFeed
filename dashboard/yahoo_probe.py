@@ -1,4 +1,6 @@
 """One bounded anonymous-session probe, isolated from the worker singleton."""
+from failure_log import failure
+import time
 import json
 import os
 import subprocess
@@ -11,11 +13,21 @@ REVISION = 1
 def isolated_probe():
     env = {key: value for key, value in os.environ.items()
            if key not in {"YAHOO_COOKIE_T", "YAHOO_COOKIE_Y", "DATABASE_URL", "ALPHAVANTAGE_API_KEY"}}
+    started = time.monotonic()
     try:
         result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--child"],
                                 env=env, capture_output=True, text=True, timeout=75)
-        return json.loads(result.stdout) if result.returncode == 0 else {"revision": REVISION, "error": "probe_process_failed"}
-    except (subprocess.TimeoutExpired, ValueError):
+        if result.returncode != 0:
+            failure('yahoo', 'isolated_probe', reason='probe process failed', started=started, return_code=result.returncode)
+            return {"revision": REVISION, "error": "probe_process_failed"}
+        output = json.loads(result.stdout)
+        for operation, entry in output.items():
+            if isinstance(entry, dict) and (entry.get('error') or entry.get('ok') is False):
+                failure('yahoo', operation, reason=entry.get('error') or 'probe failed',
+                        provider_status=entry.get('status'), category=entry.get('category'))
+        return output
+    except (subprocess.TimeoutExpired, ValueError) as exc:
+        failure("yahoo", "isolated_probe", error=exc, started=started)
         return {"revision": REVISION, "error": "probe_timeout_or_invalid_result"}
 
 

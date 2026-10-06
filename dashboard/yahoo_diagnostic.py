@@ -1,4 +1,5 @@
 """Bounded provider diagnostics: public financial values only, no URLs/cookies."""
+from failure_log import failure
 from datetime import datetime, timezone, timedelta
 from urllib.parse import parse_qs, urlsplit
 
@@ -70,5 +71,6 @@ def balance_with_diagnostics(item, output):
     try:
         output["narrow_debt"] = debt_rows(original(url))
     except Exception as exc:
+        failure("yahoo", "narrow_debt_probe", symbol=item.ticker, error=exc)
         output["narrow_error"] = type(exc).__name__
     return frame

@@ -1,4 +1,5 @@
 """Cloud entry point: multi-account WebAuthn and persistent private state."""
+from failure_log import failure
 import json
 import base64
 import hashlib
@@ -34,6 +35,10 @@ ROOT = Path(__file__).resolve().parent
 def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     """Build the cloud service, failing closed if its origin/database are missing."""
     app = Flask(__name__, static_folder=None)
+    # Flask's default traceback includes the raw exception message, which can
+    # carry authenticated provider URLs. Use our sanitized event instead.
+    app.log_exception = lambda info: failure('backend', 'unhandled_exception', error=info[1],
+                                             request_id=getattr(g, 'request_id', ''))
     app.config.update(
         PUBLIC_ORIGIN=os.environ.get("PUBLIC_ORIGIN") or os.environ.get("RENDER_EXTERNAL_URL", ""),
         FRONTEND_ORIGIN=os.environ.get("FRONTEND_ORIGIN", ""),
@@ -102,6 +107,10 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.before_request
     def guard() -> None:
+        g.request_started = time.monotonic()
+        g.request_id = request.headers.get("X-FinFeed-Request-ID", "")
+        if not re.fullmatch(r"[a-f0-9]{16}", g.request_id):
+            g.request_id = secrets.token_hex(8)
         if request.path != "/api/health" and request.host != parsed.netloc:
             abort(403, description="网站域名不匹配")
         if request.method in {"POST", "PUT", "DELETE", "PATCH"}:
@@ -128,6 +137,12 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.after_request
     def response_headers(response):
+        if response.status_code >= 400:
+            failure('backend', request.url_rule.rule if request.url_rule else 'unmatched_route',
+                    reason='HTTP request failed', http_method=request.method,
+                    response_status=response.status_code, request_id=getattr(g, 'request_id', ''),
+                    started=getattr(g, 'request_started', None))
+        response.headers['X-Request-ID'] = getattr(g, 'request_id', '')
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -145,14 +160,46 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.errorhandler(415)
     @app.errorhandler(429)
     def http_error(error):
+        failure('backend', request.url_rule.rule if request.url_rule else 'unmatched_route',
+                reason=error.description, error=error, request_id=getattr(g, 'request_id', ''))
         return jsonify(error=error.description), error.code
 
     @app.errorhandler(psycopg.Error)
     @app.errorhandler(sqlite3.Error)
     def database_error(error):
         # Driver messages can contain connection details. Never log their text.
-        app.logger.warning("Database operation failed: %s", type(error).__name__)
+        failure('database', 'request', reason='Database operation failed', error=error, request_id=getattr(g, 'request_id', ''))
         return jsonify(error="数据库暂不可用，请稍后重试"), 503
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        original = getattr(error, 'original_exception', None) or error
+        failure('backend', 'unhandled_exception', error=original,
+                request_id=getattr(g, 'request_id', ''))
+        return jsonify(error='服务暂不可用，请稍后重试'), 500
+
+    @app.post('/api/auth/client-failure')
+    def client_failure():
+        # Best-effort browser report: enums/numbers only, no response bodies or credentials.
+        body = json_body()
+        path = body.get('path', '')
+        if not isinstance(path, str) or not path.startswith('/api/') or len(path) > 200 or '?' in path or '#' in path:
+            abort(400, description='无效日志路径')
+        category = body.get('category')
+        if category not in {'network_error', 'http_error'}:
+            abort(400, description='无效错误类别')
+        try:
+            endpoint, _ = app.url_map.bind(parsed.netloc).match(path, method=body.get('method', 'GET'))
+            operation = next(rule.rule for rule in app.url_map.iter_rules(endpoint))
+        except Exception:
+            operation = 'unmatched_route'
+        status = body.get('status')
+        elapsed = body.get('elapsed_ms')
+        failure('browser', operation, reason=category,
+                response_status=status if type(status) is int and 400 <= status <= 599 else None,
+                client_elapsed_ms=elapsed if type(elapsed) is int and 0 <= elapsed <= 3600000 else None,
+                failed_request_id=body.get('request_id') if re.fullmatch(r'[a-f0-9]{16}', str(body.get('request_id', ''))) else None)
+        return jsonify(ok=True)
 
     @app.get("/api/health")
     def health():

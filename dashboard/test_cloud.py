@@ -15,6 +15,24 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_browser_failure_report_is_sanitized_and_request_id_is_shared(self):
+        with self.assertLogs('finfeed.failures', level='WARNING') as logs:
+            response = self.client.post('/api/auth/client-failure', json={
+                'path':'/api/security/GOOG', 'method':'GET', 'category':'http_error',
+                'status':504, 'elapsed_ms':30000, 'request_id':'abcdef1234567890',
+                'error':'private-key-never-log', 'cookie':'private-cookie-never-log'}, headers=HEADERS)
+        self.assertEqual(response.status_code, 200)
+        record = json.loads(logs.records[0].message)
+        self.assertIn('<', record['operation'])
+        self.assertEqual(record['response_status'], 504)
+        self.assertEqual(record['failed_request_id'], 'abcdef1234567890')
+        self.assertNotIn('private-key', logs.records[0].message)
+        self.assertNotIn('private-cookie', logs.records[0].message)
+        with self.assertLogs('finfeed.failures', level='WARNING') as logs:
+            response = self.client.get('/api/state', headers={'X-FinFeed-Request-ID':'abcdef1234567890'})
+        self.assertEqual(response.headers['X-Request-ID'], 'abcdef1234567890')
+        self.assertTrue(any(json.loads(r.message).get('request_id') == 'abcdef1234567890' for r in logs.records))
+
     def test_macro_requires_login_and_returns_public_card(self):
         self.assertEqual(self.client.get('/api/macro/jobs').status_code, 401)
         self.enroll()

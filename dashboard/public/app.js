@@ -341,7 +341,9 @@ function addTickers(text){
   if(added.some(t=>! /^[A-Z0-9][A-Z0-9.^=-]{0,19}$/.test(t)))throw new Error("Ticker 格式不正确，可输入 AAPL、BRK-B 或 000660.KS。");
   const fresh=added.filter(t=>!tickers.includes(t));
   if(new Set([...trackedTickers(),...fresh]).size>128)throw new Error("关注列表和持仓合计最多 128 个不同标的，以控制免费源请求量。");
-  tickers.push(...fresh);save();render();load(fresh);return fresh;
+  const before=window.FinFeedMotion?.capture(el("watchlist").querySelectorAll("tbody tr[data-ticker]"));
+  tickers.push(...fresh);save();render();load(fresh);
+  if(before)window.FinFeedMotion.settle(before,el("watchlist").querySelectorAll("tbody tr[data-ticker]"));return fresh;
 }
 function detail(ticker){
   const r=records.get(ticker);if(!r){feedback(`${ticker} 正在读取，请稍后查看。`);return;}
@@ -395,10 +397,10 @@ el("order-list").addEventListener("dragstart",event=>{const row=event.target.clo
 el("order-list").addEventListener("dragover",event=>{const row=event.target.closest("[data-order-ticker]");if(!row||!draggingTicker)return;event.preventDefault();event.dataTransfer.dropEffect="move";clearDropMarks();if(row.dataset.orderTicker!==draggingTicker)row.classList.add(tickers.indexOf(draggingTicker)<tickers.indexOf(row.dataset.orderTicker)?"drop-after":"drop-before");});
 el("order-list").addEventListener("drop",event=>{const row=event.target.closest("[data-order-ticker]");if(!row||!draggingTicker)return;event.preventDefault();moveTicker(draggingTicker,tickers.indexOf(row.dataset.orderTicker));draggingTicker=null;clearDropMarks();});
 el("order-list").addEventListener("dragend",()=>{draggingTicker=null;clearDropMarks();el("order-list").querySelectorAll(".dragging").forEach(row=>row.classList.remove("dragging"));});
-document.querySelectorAll("[data-close]").forEach(button=>button.addEventListener("click",()=>button.closest("dialog").close()));
-document.querySelectorAll("[data-view]").forEach(button=>button.addEventListener("click",()=>{view=button.dataset.view;document.querySelectorAll("[data-view]").forEach(b=>b.setAttribute("aria-pressed",String(b===button)));render();}));
+document.querySelectorAll("[data-close]").forEach(button=>button.addEventListener("click",()=>window.FinFeedMotion.close(button.closest("dialog"))));
+document.querySelectorAll("[data-view]").forEach(button=>button.addEventListener("click",()=>{if(view===button.dataset.view)return;view=button.dataset.view;document.querySelectorAll("[data-view]").forEach(b=>b.setAttribute("aria-pressed",String(b===button)));render();window.FinFeedMotion?.enter(el("watchlist"),{kind:"account"});}));
 el("watchlist").addEventListener("click",event=>{
-  const remove=event.target.closest("[data-remove]");if(remove){if(readOnly)return;const t=remove.dataset.remove;tickers=tickers.filter(x=>x!==t);queue=queue.filter(task=>task.ticker!==t||holdings.some(p=>p.ticker===t));save();render();return;}
+  const remove=event.target.closest("[data-remove]");if(remove){if(readOnly)return;const before=window.FinFeedMotion?.capture(el("watchlist").querySelectorAll("tbody tr[data-ticker]"));window.FinFeedMotion?.removeRow(remove.closest("tr"));const t=remove.dataset.remove;tickers=tickers.filter(x=>x!==t);queue=queue.filter(task=>task.ticker!==t||holdings.some(p=>p.ticker===t));save();render();if(before)window.FinFeedMotion.settle(before,el("watchlist").querySelectorAll("tbody tr[data-ticker]"));return;}
   const sort=event.target.closest("[data-sort]");if(sort){sortAsc=sortKey===sort.dataset.sort?!sortAsc:true;sortKey=sort.dataset.sort;render();return;}
   const row=event.target.closest("tr[data-ticker]");if(row)detail(row.dataset.ticker);
 });
@@ -509,7 +511,7 @@ el("bind-domain-passkey").addEventListener("click",async()=>{
   catch(error){accountFeedback(FinFeedAuth.message(error));if(error.message.includes("重新验证"))el("passkey-reauth").hidden=false;}
   finally{button.disabled=false;}
 });
-el("account-close").addEventListener("click",()=>el("account-dialog").close());
+el("account-close").addEventListener("click",()=>window.FinFeedMotion.close(el("account-dialog")));
 el("logout").addEventListener("click",async()=>{
   try{await FinFeedAuth.post("/api/auth/logout");location.replace("/login?manual=1");}
   catch(e){accountFeedback(FinFeedAuth.message(e));}

@@ -56,9 +56,10 @@ window.FinFeedWhales=(()=>{
   document.querySelectorAll('[data-whale-tab]').forEach(button=>button.addEventListener('click',()=>{if(tab===button.dataset.whaleTab)return;const order=['latest','previous','changes'];const direction=order.indexOf(button.dataset.whaleTab)>order.indexOf(tab)?1:-1;tab=button.dataset.whaleTab;renderDetail();window.FinFeedMotion?.enter(el('whale-detail-content'),{kind:'tab',direction});}));
   el('whale-category-select')?.addEventListener('change',event=>{
     const category=event.target.value;
+    const before=window.FinFeedMotion?.capture(document.querySelectorAll('.whale-group-heading,.whale-card'));
     if(selected)show(null,true,false);
     document.querySelectorAll('.whale-group').forEach(group=>{group.hidden=category!=='all'&&group.getAttribute('aria-labelledby')!=='whale-group-'+category;});
-    window.FinFeedMotion?.enter(document.querySelector('.whales-groups'),{kind:'filter'});
+    if(before)window.FinFeedMotion.settle(before,document.querySelectorAll('.whale-group-heading,.whale-card'));
   });
   el('whale-back').addEventListener('click',()=>{const old=selected;show(null);document.querySelector('[data-whale="'+old+'"]').focus();});
   el('whales-refresh').addEventListener('click',refresh);

@@ -13,21 +13,22 @@ window.FinFeedCache={
 (() => {
   const FinFeedCache=window.FinFeedCache;
   const pending=new Map();
-  FinFeedCache.market=async function(url,consume,{signal,ttl=60000}={}){
+  FinFeedCache.market=async function(url,consume,{signal,ttl=60000,validate=()=>true}={}){
     const key='request:'+url.replace(/[?&]stream=1/g,'').replace(/[?&]refresh=1/g,'');
     const controller=new AbortController();
     const abort=()=>controller.abort(signal?.reason);
     if(signal?.aborted)abort();else signal?.addEventListener('abort',abort,{once:true});
     const timeout=setTimeout(()=>controller.abort(new DOMException('数据请求超过 30 秒','TimeoutError')),30000);
     const run=async()=>{
-      const shared=FinFeedCache.read(key,ttl);
+      const cached=FinFeedCache.read(key,ttl);
+      const shared=cached&&validate(cached.data)?cached:null;
       const sourceTime=shared&&Date.parse(shared.data.retrieved_at||shared.data.fetched_at||'');
       if(shared&&!shared.data.stale&&(!Number.isFinite(sourceTime)||Date.now()-sourceTime<ttl)){consume(shared.data);return shared.data;}
       let latest=shared?.data;
       if(latest)consume(latest);
       const response=await FinFeedAuth.request(url,{signal:controller.signal});
       if(!response.ok)throw new Error(`读取失败 (${response.status})`);
-      const accept=value=>{latest=value;consume(value);if(!value.partial&&!value.refreshing&&!value.stale)FinFeedCache.write(key,value);};
+      const accept=value=>{latest=value;consume(value);if(validate(value)&&!value.partial&&!value.refreshing&&!value.stale)FinFeedCache.write(key,value);};
       if(!response.headers?.get('content-type')?.includes('ndjson')){accept(await response.json());return latest;}
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
       try{while(true){const {value,done}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});

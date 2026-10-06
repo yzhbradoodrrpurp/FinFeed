@@ -10,13 +10,13 @@ const data={schema_version:3,totals_verified:true,report_date:'2026-06-30',filed
 vm.createContext(ctx);vm.runInContext(fs.readFileSync(__dirname+'/public/whales.js','utf8'),ctx);
 (async()=>{
  ctx.window.FinFeedWhales.open();assert.equal(pending.size,10);
- const first=pending.get('/api/whales/berkshire?version=9&stream=1');first.consume(data);first.resolve();
+ const first=pending.get('/api/whales/berkshire?version=10&stream=1');first.consume(data);first.resolve();
  buttons[0].click();assert.equal(nodes.get('whales-list').hidden,true);assert.match(ctx.location.href,/fund=berkshire/);
  assert.match(nodes.get('whale-detail-content').innerHTML,/&lt;APPLE&gt;/);assert.doesNotMatch(nodes.get('whale-detail-content').innerHTML,/成本|implied_price/);
  tabs[1].click();assert.match(nodes.get('whale-detail-content').innerHTML,/2026-03-31/);
  tabs[2].click();assert.match(nodes.get('whale-detail-content').innerHTML,/增持/);assert.match(nodes.get('whale-detail-content').innerHTML,/25.00%/);
  nodes.get('whale-back').click();assert.equal(nodes.get('whale-detail').hidden,true);assert.doesNotMatch(ctx.location.href,/fund=/);
  for(const [url,p] of pending)if(!url.includes('berkshire')){p.consume(data);p.resolve()};await new Promise(setImmediate);
- nodes.get('whales-refresh').click();const failed=pending.get('/api/whales/berkshire?version=9&stream=1');failed.consume({holdings:[],errors:['failure']});failed.resolve();buttons[0].click();assert.match(nodes.get('whale-detail-content').innerHTML,/037833100/);assert.match(nodes.get('whale-detail-summary').textContent,/旧数据/);
+ nodes.get('whales-refresh').click();const failed=pending.get('/api/whales/berkshire?version=10&stream=1');failed.consume({holdings:[],errors:['failure']});failed.resolve();buttons[0].click();assert.match(nodes.get('whale-detail-content').innerHTML,/037833100/);assert.match(nodes.get('whale-detail-summary').textContent,/旧数据/);
  console.log('PASS: parallel requests, immediate display, institution navigation, quarter tabs, changes, no cost calculation and failure cache');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -37,13 +37,13 @@ window.FinFeedWhales=(()=>{
     if(selected){renderDetail();el('whale-detail-title').focus();}
   }
   function accept(kind,data){
-    if(data.schema_version!==2||!data.holdings?.length){data=good.has(kind)?{...good.get(kind),stale:true}:data;}
+    if(data.schema_version!==2||!data.holdings?.length){data=good.has(kind)?{...good.get(kind),stale:true}:{...data,holdings:[],errors:data.errors||['数据格式待更新，请稍后检查更新']};}
     else if(!data.partial&&!data.stale&&!data.refreshing){good.set(kind,data);FinFeedCache.write('whales-v2-'+kind,data);}
     states.set(kind,data);el('whale-summary-'+kind).textContent=summary(data);if(kind===selected)renderDetail();
   }
   async function refresh(){if(busy)return;busy=true;el('whales-refresh').disabled=true;
     await Promise.allSettled(Object.keys(funds).map(async kind=>{try{
-      await FinFeedCache.market('/api/whales/'+kind+'?version=2&stream=1',data=>accept(kind,data),{ttl:21600000});
+      await FinFeedCache.market('/api/whales/'+kind+'?version=3&stream=1',data=>accept(kind,data),{ttl:21600000});
     }catch{accept(kind,good.has(kind)?{...good.get(kind),stale:true}:{errors:['SEC 请求失败，请稍后检查更新']});}}));
     checked=Date.now();busy=false;el('whales-refresh').disabled=false;
   }

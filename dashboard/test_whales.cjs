@@ -2,14 +2,14 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const pending=new Map(),nodes=new Map();
 function node(id,dataset={}){const n={hidden:false,dataset,textContent:'',innerHTML:'',setAttribute(k,v){this[k]=v},focus(){},insertAdjacentHTML(_p,s){this.innerHTML+=s},addEventListener(_e,f){this.click=f}};nodes.set(id,n);return n;}
 ['whales-refresh','whales-surface','whales-list','whale-detail','whale-detail-title','whale-detail-summary','whale-detail-content','whale-back'].forEach(x=>node(x));
-const funds=['berkshire','pershing','duquesne','appaloosa','ark'];const buttons=funds.map(x=>node('button-'+x,{whale:x}));funds.forEach(x=>node('whale-summary-'+x));
+const funds=['berkshire','pershing','duquesne','appaloosa','ark','coatue','altimeter','tiger'];const buttons=funds.map(x=>node('button-'+x,{whale:x}));funds.forEach(x=>node('whale-summary-'+x));
 const tabs=['latest','previous','changes'].map(x=>node('tab-'+x,{whaleTab:x}));
 const ctx={window:{},location:{href:'https://example.com/?surface=whales'},history:{replaceState(_s,_t,u){ctx.location.href=String(u)}},URL,document:{hidden:false,getElementById:id=>nodes.get(id),querySelectorAll:s=>s==='[data-whale]'?buttons:tabs,querySelector:s=>buttons.find(b=>s.includes('"'+b.dataset.whale+'"'))},Intl,Date,Number,Map,Promise,setInterval(){},FinFeedCache:{read:()=>null,write(){},market:(url,consume)=>new Promise(resolve=>pending.set(url,{consume,resolve}))}};
 const row={name:'<APPLE>',class:'COM',cusip:'037833100',shares:10,value:100,weight:100,amount_type:'SH'};
 const data={schema_version:2,report_date:'2026-06-30',filed_at:'2026-08-14',retrieved_at:'2026-10-06T04:00:00Z',total_value:100,holdings:[row],sources:[],previous_status:'available',previous:{report_date:'2026-03-31',filed_at:'2026-05-15',total_value:80,holdings:[{...row,shares:8,value:80}],sources:[]},changes:[{...row,status:'increase',previous_shares:8,current_shares:10,shares_change:2,shares_change_percent:25,previous_value:80,current_value:100,weight_change:0}]};
 vm.createContext(ctx);vm.runInContext(fs.readFileSync(__dirname+'/public/whales.js','utf8'),ctx);
 (async()=>{
- ctx.window.FinFeedWhales.open();assert.equal(pending.size,5);
+ ctx.window.FinFeedWhales.open();assert.equal(pending.size,8);
  const first=pending.get('/api/whales/berkshire?version=4&stream=1');first.consume(data);first.resolve();
  buttons[0].click();assert.equal(nodes.get('whales-list').hidden,true);assert.match(ctx.location.href,/fund=berkshire/);
  assert.match(nodes.get('whale-detail-content').innerHTML,/&lt;APPLE&gt;/);assert.doesNotMatch(nodes.get('whale-detail-content').innerHTML,/成本|implied_price/);

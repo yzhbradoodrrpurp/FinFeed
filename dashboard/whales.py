@@ -14,7 +14,8 @@ from failure_log import failure
 
 FUNDS = {'berkshire': ('1067983', '伯克希尔'), 'pershing': ('1336528', 'Pershing Square'),
          'duquesne': ('1536411', 'Duquesne 家族办公室'), 'appaloosa': ('1656456', 'Appaloosa'),
-         'ark': ('1697748', 'ARK Invest')}
+         'ark': ('1697748', 'ARK Invest'), 'coatue': ('1135730', 'Coatue'),
+         'altimeter': ('1541617', 'Altimeter Capital'), 'tiger': ('1167483', 'Tiger Global')}
 _guard = threading.Lock()
 _last_request = 0.0
 # Public project maintainer contact; override for another deployment/operator.

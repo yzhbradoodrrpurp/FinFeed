@@ -1,6 +1,6 @@
 "use strict";
 window.FinFeedWhales=(()=>{
-  const funds={berkshire:'伯克希尔',pershing:'Pershing Square',duquesne:'Duquesne 家族办公室',appaloosa:'Appaloosa',ark:'ARK Invest'};
+  const funds={berkshire:'伯克希尔',pershing:'Pershing Square',duquesne:'Duquesne 家族办公室',appaloosa:'Appaloosa',ark:'ARK Invest',coatue:'Coatue',altimeter:'Altimeter Capital',tiger:'Tiger Global'};
   const states=new Map(),good=new Map();
   let started=false,busy=false,checked=0,selected=null,tab='latest';
   const el=id=>document.getElementById(id);

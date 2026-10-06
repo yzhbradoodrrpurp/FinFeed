@@ -47,4 +47,26 @@ class HomeCases(unittest.TestCase):
             home.snapshot();home.snapshot()
         self.assertEqual(quote.call_count,3)
 
+    def test_slow_index_does_not_block_other_index_or_calendar(self):
+        from threading import Event
+        from concurrent.futures import ThreadPoolExecutor
+        entered,release=Event(),Event()
+        home._index_cache.clear()
+        def quote(index):
+            if index[0]=='^GSPC':
+                entered.set()
+                release.wait(3)
+            return {'symbol':index[0],'price':1}
+        with patch('market_home.quote',side_effect=quote), ThreadPoolExecutor(max_workers=2) as pool:
+            slow=pool.submit(home.index_snapshot,'^GSPC')
+            try:
+                self.assertTrue(entered.wait(1))
+                fast=pool.submit(home.index_snapshot,'^IXIC')
+                self.assertEqual(fast.result(timeout=1)['index']['symbol'],'^IXIC')
+                self.assertTrue(home.calendar_snapshot()['sessions'])
+                self.assertFalse(slow.done())
+            finally:
+                release.set()
+            slow.result(timeout=1)
+
 if __name__=='__main__':unittest.main()

@@ -70,6 +70,12 @@ def snapshot():
             _cached = {'indices': indices, 'retrieved_at': datetime.now(timezone.utc).isoformat()}
             _expires = time.monotonic()+60
         result = dict(_cached)
+    result.update(calendar_snapshot())
+    return result
+
+
+def calendar_snapshot():
+    result = {}
     now = datetime.now(timezone.utc)
     result['server_time'] = now.isoformat()
     try:
@@ -80,3 +86,19 @@ def snapshot():
         result['calendar_error'] = '交易日历暂不可用'
     result['calendar_source'] = 'https://www.nyse.com/trade/hours-calendars'
     return result
+
+
+_index_locks = {index[0]: threading.Lock() for index in INDICES}
+_index_cache = {}
+
+
+def index_snapshot(symbol):
+    index = next((item for item in INDICES if item[0] == symbol), None)
+    if index is None:
+        raise ValueError('未知指数')
+    with _index_locks[symbol]:
+        cached = _index_cache.get(symbol)
+        if cached is None or time.monotonic() >= cached[0]:
+            result = {'index': quote(index), 'retrieved_at': datetime.now(timezone.utc).isoformat()}
+            _index_cache[symbol] = (time.monotonic()+60, result)
+        return dict(_index_cache[symbol][1])

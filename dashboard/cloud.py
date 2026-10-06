@@ -484,8 +484,14 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/api/home")
     def home_data():
-        from market_home import snapshot
-        return jsonify(snapshot())
+        from market_home import calendar_snapshot, index_snapshot
+        symbol = request.args.get("symbol")
+        if symbol:
+            try:
+                return jsonify(index_snapshot(symbol))
+            except ValueError as error:
+                return jsonify(error=str(error)), 400
+        return jsonify(calendar_snapshot())
 
     @app.get("/api/macro/<kind>")
     def macro_data(kind):

@@ -160,3 +160,5 @@ body.sidebar-collapsed{--sidebar:64px!important}
 .whale-change{padding:4px 8px;border-radius:6px;background:#f3f0eb;color:#837b72;font-size:12px}
 .whale-change.new,.whale-change.increase{background:#e9f5ef;color:#228561}
 .whale-change.exit,.whale-change.decrease{background:#fcedeb;color:#be524a}
+
+.whale-group{margin-bottom:32px}.whale-group-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:8px}.whale-group-heading h2{font-size:20px;font-weight:600;margin:0}.whale-group-heading span{font-size:12px;color:var(--muted);white-space:nowrap}.whale-group-description,.whale-group-note{font-size:12px;line-height:1.8;color:var(--muted);margin:0 0 16px}.whale-group-note{margin-bottom:24px}

@@ -54,7 +54,16 @@
     </section>
     <section id="whales-surface" hidden aria-label="巨鲸持仓视图">
       <div class="whales-intro"><p>机构观察 · 公开披露</p><span class="count">16 家机构</span><button id="whales-refresh" class="secondary">检查更新</button></div>
-      <div class="whales-groups" id="whales-list">
+      <div class="whales-layout" id="whales-list">
+        <nav class="whale-category-nav" id="whale-category-nav" aria-label="机构投资理念分类">
+          <h2>机构分类</h2>
+          <button type="button" data-whale-category="all" aria-pressed="true">全部机构 <span>16</span></button>
+          <button type="button" data-whale-category="quality" aria-pressed="false">长期价值与优质企业 <span>5</span></button>
+          <button type="button" data-whale-category="tech" aria-pressed="false">科技与创新成长 <span>6</span></button>
+          <button type="button" data-whale-category="growth" aria-pressed="false">跨行业成长 <span>4</span></button>
+          <button type="button" data-whale-category="contrarian" aria-pressed="false">逆向与困境投资 <span>1</span></button>
+        </nav>
+        <div class="whales-groups">
         <p class="whale-group-note">按主要投资理念与观察重点分组；风格可能交叉，不代表机构排名或全部策略。</p>
         <section class="whale-group" aria-labelledby="whale-group-quality">
           <div class="whale-group-heading"><h2 id="whale-group-quality">长期价值与优质企业</h2><span>5 家机构</span></div>
@@ -96,6 +105,7 @@
             <article class="whale-card" id="whale-appaloosa"><span class="eyebrow">APPALOOSA</span><h2>阿帕卢萨管理</h2><p class="whale-person">David Tepper · 大卫·泰珀</p><span class="macro-badge">逆向与困境投资</span><p class="whale-description">关注悲观定价中的机会，以及持续加仓和减仓的方向。</p><div class="macro-sources"><a href="https://www.sec.gov/edgar/browse/?CIK=1656456&amp;owner=exclude&amp;type=13F" target="_blank" rel="noreferrer">SEC 持仓披露 ↗</a></div><p class="whale-status" id="whale-summary-appaloosa">正在检查 SEC 披露…</p><button class="secondary whale-enter" data-whale="appaloosa">查看持仓与季度变化 →</button></article>
           </div>
         </section>
+        </div>
       </div>
       <section id="whale-detail" hidden aria-label="机构持仓详情">
         <button id="whale-back" class="secondary">← 返回机构列表</button>

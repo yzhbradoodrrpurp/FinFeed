@@ -108,18 +108,73 @@ window.FinFeedMacro=(()=>{
   }
   let fedBusy=false,fedUpdated=0,fedData=null;
   const fedColors=['#83baff','#416bff','#ee7523','#e5b500','#9871cc'];
+  function fedPoints(series,end){
+    const rows=(series.history||[]).filter(r=>Number.isFinite(r.t)&&Number.isFinite(r.p)).map(r=>({t:r.t,p:r.p}));
+    if(rows.length&&Number.isFinite(series.price))rows.push({t:end,p:series.price});
+    return rows.sort((a,b)=>a.t-b.t);
+  }
+  function nearestPoint(rows,target){
+    let low=0,high=rows.length-1;
+    while(low<high){const middle=(low+high)>>1;if(rows[middle].t<target)low=middle+1;else high=middle;}
+    if(low>0&&target-rows[low-1].t<=rows[low].t-target)low--;
+    return rows[low];
+  }
+  function bindFedChart(card,series,end,first){
+    const figure=card.querySelector('.fed-chart'),svg=figure?.querySelector?.('svg');if(!svg)return;
+    const datasets=series.map(s=>fedPoints(s,end));
+    const timeline=[...new Set(datasets.flatMap(rows=>rows.map(r=>r.t)))].sort((a,b)=>a-b).map(t=>({t}));
+    if(!timeline.length)return;
+    const overlay=svg.querySelector('.fed-crosshair'),line=overlay.querySelector('line');
+    const dots=overlay.querySelectorAll('circle'),tooltip=figure.querySelector('.fed-chart-tooltip');
+    const x=t=>12+(t-first)/(end-first||1)*896,y=p=>242-p*220;
+    let selected=timeline.at(-1).t;
+    function show(target,pointer=null){
+      selected=nearestPoint(timeline,target).t;
+      line.setAttribute('x1',x(selected));line.setAttribute('x2',x(selected));
+      const content=datasets.map((rows,i)=>{
+        if(!rows.length){dots[i].setAttribute('visibility','hidden');return `<div>${escape(series[i].label)}：暂无历史数据</div>`;}
+        const row=nearestPoint(rows,selected);
+        dots[i].setAttribute('cx',x(row.t));dots[i].setAttribute('cy',y(row.p));dots[i].setAttribute('visibility','visible');
+        const stamp=time(new Date(row.t*1000).toISOString(),'Asia/Shanghai');
+        return `<div><i style="background:${fedColors[i%5]}"></i>${escape(series[i].label)} <strong>${number(row.p*100)}%</strong>${row.t!==selected?`<small>采样于 ${stamp} 北京</small>`:''}</div>`;
+      }).join('');
+      tooltip.innerHTML=`<strong>${time(new Date(selected*1000).toISOString(),'Asia/Shanghai')} 北京</strong>${content}`;
+      overlay.setAttribute('visibility','visible');tooltip.hidden=false;
+      const bounds=figure.getBoundingClientRect();
+      let screen=pointer;
+      if(!screen){const matrix=svg.getScreenCTM();if(!matrix)return;const point=svg.createSVGPoint();point.x=x(selected);point.y=22;screen=point.matrixTransform(matrix);}
+      const left=(pointer?screen.clientX:screen.x)-bounds.left,top=(pointer?screen.clientY:screen.y)-bounds.top;
+      tooltip.style.left=`${Math.max(0,Math.min(bounds.width-tooltip.offsetWidth,left+12))}px`;
+      tooltip.style.top=`${Math.max(0,Math.min(bounds.height-tooltip.offsetHeight,top-tooltip.offsetHeight-12))}px`;
+    }
+    function hide(){overlay.setAttribute('visibility','hidden');dots.forEach(dot=>dot.setAttribute('visibility','hidden'));tooltip.hidden=true;}
+    svg.addEventListener('pointermove',event=>{
+      const matrix=svg.getScreenCTM();if(!matrix)return;
+      const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;
+      const local=point.matrixTransform(matrix.inverse());
+      show(first+Math.max(0,Math.min(1,(local.x-12)/896))*(end-first),event);
+    });
+    svg.addEventListener('pointerleave',hide);svg.addEventListener('pointercancel',hide);svg.addEventListener('blur',hide);
+    svg.addEventListener('focus',()=>show(selected));
+    svg.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End','Escape'].includes(event.key))return;
+      event.preventDefault();if(event.key==='Escape'){hide();return;}
+      const index=timeline.findIndex(r=>r.t===selected);
+      show(timeline[event.key==='Home'?0:event.key==='End'?timeline.length-1:Math.max(0,Math.min(timeline.length-1,index+(event.key==='ArrowRight'?1:-1)))].t);
+    });
+  }
   function renderFed(data){
     const card=document.getElementById('macro-fed');fedData=data;
     const series=data.series||[];
-      const rows=series.flatMap(s=>s.history),end=Date.parse(data.retrieved_at)/1000;
+      const end=Date.parse(data.retrieved_at)/1000,rows=series.flatMap(s=>fedPoints(s,end));
       const first=rows.length?Math.min(...rows.map(r=>r.t)):end;
       const x=t=>12+(t-first)/(end-first||1)*896,y=p=>242-p*220;
-      const lines=series.map((s,i)=>s.history.length?`<polyline points="${[...s.history,{t:end,p:s.price}].map(r=>`${x(r.t)},${y(r.p)}`).join(' ')}" fill="none" stroke="${fedColors[i%5]}" stroke-width="2" vector-effect="non-scaling-stroke"/>`:'').join('');
+      const lines=series.map((s,i)=>fedPoints(s,end).length?`<polyline points="${fedPoints(s,end).map(r=>`${x(r.t)},${y(r.p)}`).join(' ')}" fill="none" stroke="${fedColors[i%5]}" stroke-width="2" vector-effect="non-scaling-stroke"/>`:'').join('');
       const ticks=[0,.25,.5,.75,1].map(p=>`<line x1="12" x2="908" y1="${y(p)}" y2="${y(p)}" stroke="#e8e4df" stroke-dasharray="3 4"/><text x="920" y="${y(p)+4}" fill="#8a8177" font-size="12">${p*100}%</text>`).join('');
       card.innerHTML=`<div class="macro-card-heading"><div><span class="eyebrow">POLYMARKET · 市场隐含预期</span><h2>美联储 10 月利率决议</h2></div><span class="macro-badge">${data.closed?'已结束':'每分钟更新'}</span></div>
         <p class="macro-note">2026 年 10 月 27–28 日 FOMC 会议 · 联邦基金利率目标区间上限的变化</p>
         <div class="fed-legend">${series.map((s,i)=>`<span><i style="background:${fedColors[i%5]}"></i>${escape(s.label)} <strong>${number(s.price*100)}%</strong></span>`).join('')}</div>
-        ${rows.length?`<figure class="fed-chart"><svg viewBox="0 0 970 270" role="img" aria-label="美联储10月利率决议各结果的Polymarket历史市场定价">${ticks}${lines}</svg><figcaption><span>${time(new Date(first*1000).toISOString(),'Asia/Shanghai')}</span><span>${time(data.retrieved_at,'Asia/Shanghai')} 北京</span></figcaption></figure>`:''}
+        ${rows.length?`<figure class="fed-chart"><svg viewBox="0 0 970 270" role="img" tabindex="0" aria-label="美联储10月利率决议各结果的Polymarket历史市场定价，可用左右方向键查看采样数值">${ticks}${lines}<g class="fed-crosshair" visibility="hidden" pointer-events="none"><line y1="22" y2="242"/>${series.map((s,i)=>`<circle r="4" fill="${fedColors[i%5]}"/>`).join('')}</g></svg><div class="fed-chart-tooltip" hidden></div><figcaption><span>${time(new Date(first*1000).toISOString(),'Asia/Shanghai')}</span><span>${time(data.retrieved_at,'Asia/Shanghai')} 北京</span></figcaption></figure>`:''}
         ${series.some(s=>s.history_error)?'<p class="macro-error">部分历史曲线暂不可用</p>':''}
         ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
         <p class="macro-note">市场价格近似反映隐含概率，受价差、费用和流动性影响；不是美联储承诺。报价每分钟检查，历史曲线按约 6 小时采样、每小时补全；最新端点随报价更新。</p>
@@ -127,6 +182,7 @@ window.FinFeedMacro=(()=>{
         <div class="macro-sources"><a href="${escape(data.source)}" target="_blank" rel="noreferrer">Polymarket 原始市场 ↗</a><a href="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" target="_blank" rel="noreferrer">FOMC 官方日历 ↗</a></div>
         ${data.rules?`<details class="fed-rules"><summary>结算规则（原文）</summary><p>${escape(data.rules)}</p></details>`:''}
         <p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
+    bindFedChart(card,series,end,first);
   }
   async function refreshFed(){
     if(fedBusy)return;fedBusy=true;

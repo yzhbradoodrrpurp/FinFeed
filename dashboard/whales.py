@@ -12,15 +12,12 @@ from urllib.request import Request, build_opener, ProxyHandler
 from xml.etree import ElementTree as ET
 from failure_log import failure
 
-FUNDS = {'berkshire': ('1067983', '伯克希尔'), 'pershing': ('1336528', 'Pershing Square'),
-         'duquesne': ('1536411', '杜肯家族办公室'), 'appaloosa': ('1656456', '阿帕卢萨管理'),
+FUNDS = {'berkshire': ('1067983', '伯克希尔'), 'pershing': ('1336528', '潘兴广场'),
+         'appaloosa': ('1656456', '阿帕卢萨管理'),
          'ark': ('1697748', '方舟投资'), 'coatue': ('1135730', '蔻图资本'),
-         'altimeter': ('1541617', '阿尔蒂米特资本'), 'tiger': ('1167483', '老虎环球基金')}
-# Only these as-filed reports have been cross-checked against unadjusted
-# NYSE/Nasdaq closing prices (Yahoo) for NTRA, STM and AMZN, retrieved 2026-10-06.
-# Gate by accession AND detail total; a restatement must be verified separately.
-VERIFIED_THOUSAND_VALUES = {'0001536411-26-000006': 5210856,
-                            '0001536411-26-000004': 3376828}
+         'altimeter': ('1541617', '阿尔蒂米特资本'), 'tiger': ('1167483', '老虎环球基金'),
+         'polar': ('1837309', '北极星资本'), 'alkeon': ('1230239', '阿尔基昂资本'),
+         'westfield': ('1177719', '韦斯特菲尔德资本')}
 _guard = threading.Lock()
 _last_request = 0.0
 # Public project maintainer contact; override for another deployment/operator.
@@ -78,26 +75,23 @@ def parse_submission(raw, filed_at, diagnostics=None):
     rows = []
     for row in tables:
         amount, value = Decimal(text(row, 'sshPrnamt')), Decimal(text(row, 'value')) * multiplier
-        if amount < 0 or value < 0 or not amount.is_finite() or not value.is_finite():
+        if not amount.is_finite() or not value.is_finite() or amount < 0 or value < 0 or amount != amount.to_integral_value() or value != value.to_integral_value():
             raise ValueError('SEC 13F 数值无效')
         rows.append({'name': text(row, 'nameOfIssuer'), 'class': text(row, 'titleOfClass'),
                      'cusip': text(row, 'cusip'), 'put_call': text(row, 'putCall'),
                      'amount_type': text(row, 'sshPrnamtType'), 'shares': int(amount), 'value': int(value)})
-    if len(rows) != int(text(cover, 'tableEntryTotal')):
+    if Decimal(text(cover, 'tableEntryTotal')) != len(rows):
         raise ValueError('SEC 13F 持仓条目数量不一致')
     detail_total = sum(row['value'] for row in rows)
-    cover_total = int(Decimal(text(cover, 'tableValueTotal')) * multiplier)
-    difference = detail_total - cover_total
-    if difference:
-        # Summing rounded entries can differ from rounding the whole portfolio.
-        # This is a bounded tolerance, never a guess at units or missing rows.
-        if abs(difference) > (len(rows) + 1) // 2 * multiplier:
-            raise ValueError('SEC 13F 持仓市值合计不一致')
-        message = f'原始申报封面合计与明细合计相差 {abs(difference):,} 美元；此处合计和占比按明细计算。'
-        if diagnostics is not None:
-            diagnostics.append(message)
-        failure('sec_edgar', '13f_total_rounding', reason=message,
-                cover_total=cover_total, detail_total=detail_total, difference=difference)
+    cover_value = Decimal(text(cover, 'tableValueTotal')) * multiplier
+    if not cover_value.is_finite() or cover_value < 0 or cover_value != cover_value.to_integral_value():
+        raise ValueError('SEC 13F 封面市值无效')
+    cover_total = int(cover_value)
+    if detail_total != cover_total:
+        message = f'SEC 13F 持仓市值合计不一致：封面 {cover_total:,}，明细 {detail_total:,}，差额 {detail_total - cover_total:+,} 美元'
+        failure('sec_edgar', '13f_total_mismatch', reason=message,
+                cover_total=cover_total, detail_total=detail_total, difference=detail_total - cover_total)
+        raise ValueError(message)
 
     return rows, text(cover, 'amendmentType')
 
@@ -137,12 +131,6 @@ def quarter(cik, available, report_date, deadline):
         filing_cik = filing.get('cik', cik)
         url = f'https://www.sec.gov/Archives/edgar/data/{int(filing_cik)}/{accession.replace("-", "")}/{accession}.txt'
         rows, amendment = parse_submission(fetch(url, deadline), filing['filed_at'], warnings)
-        if accession in VERIFIED_THOUSAND_VALUES:
-            if sum(row['value'] for row in rows) != VERIFIED_THOUSAND_VALUES[accession]:
-                raise ValueError('已核验报告原始市值变化，须重新核验单位')
-            warnings[:] = [warning.replace('美元', '原始单位（千美元）') for warning in warnings]
-            rows = [{**row, 'raw_value': row['value'], 'value': row['value'] * 1000} for row in rows]
-            warnings.append('本报告原始市值字段经 NTRA、STM、AMZN 季末股数 × 未复权收盘价交叉核验，按千美元换算为美元（2026-10-06 核验）。这不是平均买入成本。')
         if filing['form'] == '13F-HR' or amendment.upper() == 'RESTATEMENT':
             holdings = rows
         elif amendment.upper() == 'NEW HOLDINGS':
@@ -153,7 +141,7 @@ def quarter(cik, available, report_date, deadline):
     rows = aggregate(holdings)
     return {'report_date': report_date, 'filed_at': selected[-1]['filed_at'], 'holdings': rows,
             'total_value': sum(row['value'] for row in rows), 'sources': sources, 'warnings': warnings,
-            'value_unit_verified': all(source['accession'] in VERIFIED_THOUSAND_VALUES for source in sources)}
+            'totals_verified': True}
 
 
 def compare(current, previous):
@@ -189,7 +177,7 @@ def compare(current, previous):
 def snapshot(kind, on_update=None):
     cik, name = FUNDS[kind]
     deadline = time.monotonic() + 30
-    result = {'fund': kind, 'name': name, 'cik': cik, 'schema_version': 2, 'currency': 'USD',
+    result = {'fund': kind, 'name': name, 'cik': cik, 'schema_version': 3, 'currency': 'USD',
               'holdings': [], 'previous': None, 'changes': [], 'previous_status': 'loading',
               'retrieved_at': datetime.now(timezone.utc).isoformat(), 'errors': []}
     try:

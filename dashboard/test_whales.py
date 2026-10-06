@@ -25,13 +25,14 @@ class WhaleCases(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_submission(submission().replace('<tableValueTotal>200', '<tableValueTotal>300'), '2026-08-14')
 
-    def test_bounded_rounding_difference_preserves_as_filed_values(self):
-        warnings = []
-        rows, _ = parse_submission(submission().replace('<tableValueTotal>200', '<tableValueTotal>201'), '2026-08-14', warnings)
-        self.assertEqual(sum(row['value'] for row in rows), 200)
-        self.assertEqual(len(warnings), 1)
+    def test_reject_even_one_dollar_total_difference(self):
+        for total in (199, 201):
+            with self.assertRaisesRegex(ValueError, '合计不一致'):
+                parse_submission(submission().replace('<tableValueTotal>200', f'<tableValueTotal>{total}'), '2026-08-14')
+
+    def test_reject_fractional_values_instead_of_truncating(self):
         with self.assertRaises(ValueError):
-            parse_submission(submission().replace('<tableValueTotal>200', '<tableValueTotal>202'), '2026-08-14')
+            parse_submission(submission().replace('<value>100', '<value>100.5'), '2026-08-14')
 
     def test_restatement_new_holdings_and_latest_report(self):
         recent = {'form':['13F-HR/A','13F-HR/A','13F-HR','13F-HR/A'],
@@ -45,20 +46,6 @@ class WhaleCases(unittest.TestCase):
         self.assertEqual(data['total_value'], 500)
         self.assertEqual(data['holdings'][0]['shares'], 40)
         self.assertEqual(len(data['sources']), 3)
-
-    def test_verified_unit_override_is_scoped_and_preserves_raw_value(self):
-        filing = {'form':'13F-HR', 'report_date':'2026-06-30',
-                  'filed_at':'2026-08-14', 'accepted_at':'2026-08-14',
-                  'accession':'0001536411-26-000006'}
-        row = {'name':'NTRA', 'class':'COM', 'cusip':'632307104',
-               'put_call':'', 'amount_type':'SH', 'shares':3186306, 'value':5210856}
-        with patch('whales.fetch', return_value='raw'), patch('whales.parse_submission', return_value=([row],'')):
-            result = quarter('1536411',[filing],'2026-06-30',0)
-        self.assertEqual(result['total_value'],5210856000)
-        self.assertEqual(result['holdings'][0]['raw_value'],5210856)
-        self.assertTrue(result['value_unit_verified'])
-        with patch('whales.fetch', return_value='raw'), patch('whales.parse_submission', return_value=([{**row,'value':5210857}],'')):
-            with self.assertRaises(ValueError): quarter('1536411',[filing],'2026-06-30',0)
 
     def test_notice_follows_reporting_manager_and_keeps_comparison_scope(self):
         def recent(forms, periods, accessions):

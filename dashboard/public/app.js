@@ -5,7 +5,9 @@ let readOnly=false,currentUser=null;
 const surfaceNames=["home","watchlist","portfolio","macro","whales"];
 const initialSurface=new URLSearchParams(location.search).get("surface");
 let holdings=[],surface=surfaceNames.includes(initialSurface)?initialSurface:"home",editingPosition=null;
-let viewedUserId=null;
+let viewedUserId=null,accountStateVersion=0,accountRequest=null;
+let recordGeneration=0;
+const recordRequests=new Set();
 const surfaceAccounts={watchlist:null,portfolio:null};
 function rememberSurfaceAccount(name,id){
   surfaceAccounts[name]=id;
@@ -179,37 +181,42 @@ function persistState(patch){
 async function storeHoldings(next){
   await persistState({positions:next});holdings=next;
 }
+function cancelRecordLoads(){
+  recordGeneration++;
+  queue=[];fetchingTickers.clear();
+  for(const controller of recordRequests)controller.abort();
+}
 async function changeViewedAccount(name,id){
-  const main=document.querySelector("main");main.inert=true;
-  const previousId=viewedUserId;
+  const version=++accountStateVersion;
+  accountRequest?.abort();accountRequest=new AbortController();
+  const controller=accountRequest;
+  viewedUserId=id;rememberSurfaceAccount(name,id);
+  if(surface===name)el("view-account").value=id;
+  readOnly=true;document.body.classList.toggle("read-only",true);
+  cancelRecordLoads();tickers=[];holdings=[];initialLoading=true;
+  sortKey=null;cellValues.clear();cellFlashes.clear();feedback("");render();
+  if(surface===name)history.replaceState(history.state,"",accountViewURL(name,id));
   try{
     await stateWrites;
-    const response=await FinFeedAuth.request("/api/state?user="+encodeURIComponent(id));
+    if(version!==accountStateVersion)return false;
+    const response=await FinFeedAuth.request("/api/state?user="+encodeURIComponent(id),{signal:controller.signal});
     const data=await response.json();
+    if(version!==accountStateVersion)return false;
     if(!response.ok)throw new Error(data.error||"记录读取失败");
-    let state=data.state;
-    if(!state)state={watchlist:[],positions:[]};
-    viewedUserId=id;readOnly=data.readOnly;
-    document.body.classList.toggle("read-only",readOnly);
-    rememberSurfaceAccount(name,id);el("view-account").value=id;
+    const state=data.state||{watchlist:[],positions:[]};
+    readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
     tickers=state.watchlist;holdings=state.positions;initialLoading=false;
-    for(const task of queue)fetchingTickers.delete(task.ticker);
-    queue=[];sortKey=null;cellValues.clear();cellFlashes.clear();
     for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
-    history.replaceState(history.state,"",accountViewURL(name,id));
-    feedback("");render();
-    load(trackedTickers().filter(t=>!fetchingTickers.has(t)));
+    feedback("");render();load(trackedTickers());
     return true;
   }catch(error){
-    el("view-account").value=previousId;
+    if(version!==accountStateVersion||error.name==="AbortError")return false;
+    viewedUserId=null;initialLoading=false;render();
     feedback(`账户加载失败：${error.message}`);return false;
-  }finally{main.inert=false;}
+  }
 }
 async function switchSurface(next){
   if(!surfaceNames.includes(next))return;
-  if(currentUser&&surfaceAccounts[next]&&surfaceAccounts[next]!==viewedUserId){
-    if(!await changeViewedAccount(next,surfaceAccounts[next]))return;
-  }
   surface=next;
   const viewURL=new URL(location.href);
   if(next==="home")viewURL.searchParams.delete("surface");
@@ -225,6 +232,9 @@ async function switchSurface(next){
   document.querySelectorAll("[data-surface]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.surface===surface)));
   if(next==="home"&&currentUser)FinFeedHome.open(currentUser);
   render();
+  if(currentUser&&surfaceAccounts[next]&&surfaceAccounts[next]!==viewedUserId){
+    changeViewedAccount(next,surfaceAccounts[next]);
+  }
 }
 function feedback(s){el("feedback").textContent=s;el("feedback").hidden=!s;}
 function save(){persistState({watchlist:tickers}).catch(error=>feedback(`关注列表尚未保存：${error.message}。请重试操作。`));}
@@ -284,15 +294,27 @@ function render(){
   renderHoldings();
   if(surface==="watchlist")flashChangedCells();
 }
-async function getRecord(ticker,refresh=false){
-  const response=await FinFeedAuth.request(`/api/security/${encodeURIComponent(ticker)}${refresh?"?refresh=1":""}`);
+async function getRecord(ticker,refresh=false,signal){
+  const response=await FinFeedAuth.request(`/api/security/${encodeURIComponent(ticker)}${refresh?"?refresh=1":""}`,{signal});
   if(!response.ok)throw new Error(`读取失败 (${response.status})`);
   return response.json();
 }
 function pump(){
-  while(running<128&&queue.length){const task=queue.shift();running++;getRecord(task.ticker,task.refresh).then(record=>{if(trackedTickers().includes(task.ticker))records.set(task.ticker,record);}).catch(error=>{if(trackedTickers().includes(task.ticker)){records.set(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});}}).finally(()=>{fetchingTickers.delete(task.ticker);running--;scheduleRender();pump();});}
+  while(running<128&&queue.length){
+    const task=queue.shift(),controller=new AbortController();running++;recordRequests.add(controller);
+    getRecord(task.ticker,task.refresh,controller.signal).then(record=>{
+      if(task.generation===recordGeneration&&trackedTickers().includes(task.ticker))records.set(task.ticker,record);
+    }).catch(error=>{
+      if(task.generation===recordGeneration&&error.name!=="AbortError"&&trackedTickers().includes(task.ticker))records.set(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});
+    }).finally(()=>{
+      recordRequests.delete(controller);
+      if(task.generation===recordGeneration)fetchingTickers.delete(task.ticker);
+      running--;scheduleRender();pump();
+    });
+  }
 }
-function load(tickersToLoad,refresh=false){tickersToLoad.forEach(t=>fetchingTickers.add(t));scheduleRender();queue.push(...tickersToLoad.map(ticker=>({ticker,refresh})));el("refresh").disabled=true;pump();}
+function load(tickersToLoad,refresh=false){tickersToLoad.forEach(t=>fetchingTickers.add(t));scheduleRender();queue.push(...tickersToLoad.map(ticker=>({ticker,refresh,generation:recordGeneration})));el("refresh").disabled=true;pump();}
+
 function refreshWatchlist(){
   const tracked=trackedTickers();
   if(running||queue.length||!tracked.length)return;
@@ -379,7 +401,7 @@ async function initializeState(){
   const main=document.querySelector("main");main.inert=true;
   try{
     const auth=await FinFeedAuth.initialize();
-    currentUser=auth.user;
+    currentUser=auth.user;main.inert=false;
     // Shared views start after authentication, without waiting for private records.
     FinFeedHome.prefetch();
     if(surface==="home")FinFeedHome.open(currentUser);
@@ -407,21 +429,28 @@ async function initializeState(){
       el("view-account").value=viewedUserId;
       el("view-account").disabled=false;
     }).catch(error=>feedback(error.message+"，请稍后刷新。"));
-    const stateTask=FinFeedAuth.request("/api/state"+(requestedUser!==currentUser.id?"?user="+encodeURIComponent(requestedUser):"")).then(async response=>{
+    const stateVersion=++accountStateVersion;
+    accountRequest=new AbortController();
+    readOnly=true;document.body.classList.toggle("read-only",true);
+    const stateTask=FinFeedAuth.request("/api/state"+(requestedUser!==currentUser.id?"?user="+encodeURIComponent(requestedUser):""),{signal:accountRequest.signal}).then(async response=>{
       const data=await response.json();
+      if(stateVersion!==accountStateVersion)return;
       if(!response.ok)throw new Error(data.error||"记录读取失败");
       readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
       let state=data.state;
       if(!state&&readOnly)state={watchlist:[],positions:[]};
       if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
+      if(stateVersion!==accountStateVersion)return;
       initialLoading=false;tickers=state.watchlist;holdings=state.positions;
       for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
       render();load(trackedTickers());
-      setInterval(refreshWatchlist,60_000);
     }).catch(error=>{
+      if(stateVersion!==accountStateVersion||error.name==="AbortError")return;
+      readOnly=true;document.body.classList.toggle("read-only",true);
+      viewedUserId=null;initialLoading=false;render();
       feedback(`记录加载失败：${error.message}。请稍后刷新页面。`);
-      document.querySelectorAll("#watchlist-surface button, #watchlist-surface input, #portfolio-surface button, #portfolio-surface input").forEach(control=>control.disabled=true);
     }).finally(()=>{main.inert=false;});
+    setInterval(refreshWatchlist,60_000);
     await Promise.allSettled([directoryTask,stateTask]);
   }catch(error){
     feedback(`登录检查失败：${error.message}。请稍后刷新页面。`);

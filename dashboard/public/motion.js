@@ -12,7 +12,7 @@ window.FinFeedMotion=(()=>{
       detail:{transform:`translateX(${direction*32}px)`,duration:360},
       tab:{transform:`translateX(${direction*18}px)`,duration:260},
       account:{transform:'translateY(6px)',duration:240},
-      filter:{transform:'scale(.992)',duration:280}
+      filter:{transform:'none',duration:220}
     };
     const preset=presets[kind]||presets.surface;
     const animation=element.animate([

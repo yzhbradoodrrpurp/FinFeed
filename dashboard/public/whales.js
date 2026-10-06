@@ -58,7 +58,7 @@ window.FinFeedWhales=(()=>{
     const category=event.target.value;
     if(selected)show(null);
     document.querySelectorAll('.whale-group').forEach(group=>{group.hidden=category!=='all'&&group.getAttribute('aria-labelledby')!=='whale-group-'+category;});
-    window.FinFeedMotion?.enter(el('whales-list'),{kind:'filter'});
+    window.FinFeedMotion?.enter(document.querySelector('.whales-groups'),{kind:'filter'});
   });
   el('whale-back').addEventListener('click',()=>{const old=selected;show(null);document.querySelector('[data-whale="'+old+'"]').focus();});
   el('whales-refresh').addEventListener('click',refresh);

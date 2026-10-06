@@ -1,6 +1,8 @@
 """SEC as-filed 13F holdings. No third-party estimates or CUSIP guessing."""
 from datetime import datetime, timezone
 from decimal import Decimal
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, timedelta
 import json
 import os
 import re
@@ -10,7 +12,9 @@ from urllib.request import Request, build_opener, ProxyHandler
 from xml.etree import ElementTree as ET
 from failure_log import failure
 
-FUNDS = {'berkshire': ('1067983', '伯克希尔'), 'pershing': ('1336528', 'Pershing Square')}
+FUNDS = {'berkshire': ('1067983', '伯克希尔'), 'pershing': ('1336528', 'Pershing Square'),
+         'duquesne': ('1536411', 'Duquesne 家族办公室'), 'appaloosa': ('1656456', 'Appaloosa'),
+         'ark': ('1697748', 'ARK Invest')}
 _guard = threading.Lock()
 _last_request = 0.0
 # Public project maintainer contact; override for another deployment/operator.
@@ -95,43 +99,112 @@ def aggregate(rows):
             for row in sorted(combined.values(), key=lambda row: row['value'], reverse=True)]
 
 
-def snapshot(kind):
+def previous_quarter(report_date):
+    day = date.fromisoformat(report_date)
+    first_month = (day.month - 1) // 3 * 3 + 1
+    return (date(day.year, first_month, 1) - timedelta(days=1)).isoformat()
+
+
+def quarter(cik, available, report_date, deadline):
+    bases = [row for row in available if row['form'] == '13F-HR' and row['report_date'] == report_date]
+    if not bases:
+        return None
+    latest = max(bases, key=lambda row: (row['accepted_at'], row['accession']))
+    selected = [latest] + sorted([row for row in available if row['form'] == '13F-HR/A'
+        and row['report_date'] == report_date and (row['accepted_at'], row['accession']) > (latest['accepted_at'], latest['accession'])],
+        key=lambda row: (row['accepted_at'], row['accession']))
+    holdings, sources = [], []
+    for filing in selected:
+        accession = filing['accession']
+        url = f'https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession.replace("-", "")}/{accession}.txt'
+        rows, amendment = parse_submission(fetch(url, deadline), filing['filed_at'])
+        if filing['form'] == '13F-HR' or amendment.upper() == 'RESTATEMENT':
+            holdings = rows
+        elif amendment.upper() == 'NEW HOLDINGS':
+            holdings.extend(rows)
+        else:
+            raise ValueError('SEC 13F 修订类型无法确认')
+        sources.append({**filing, 'url': url, 'amendment': amendment})
+    rows = aggregate(holdings)
+    return {'report_date': report_date, 'filed_at': selected[-1]['filed_at'], 'holdings': rows,
+            'total_value': sum(row['value'] for row in rows), 'sources': sources}
+
+
+def compare(current, previous):
+    # CUSIP identifies the security; issuer/class wording can change between filings.
+    # Keep options and principal amounts separate from common stock quantities.
+    def indexed(rows):
+        result = {}
+        for row in rows:
+            key = (row['cusip'].strip().upper(), row['put_call'].upper(), row['amount_type'].upper())
+            if key not in result:
+                result[key] = {**row, 'shares': 0, 'value': 0, 'weight': 0}
+            for field in ('shares', 'value', 'weight'):
+                result[key][field] += row[field]
+        return result
+    now, before = indexed(current['holdings']), indexed(previous['holdings'])
+    changes = []
+    for key in now.keys() | before.keys():
+        new, old = now.get(key), before.get(key)
+        new_amount, old_amount = (new or {}).get('shares', 0), (old or {}).get('shares', 0)
+        delta = new_amount - old_amount
+        status = ('new' if new_amount > 0 and old_amount == 0 else
+                  'exit' if new_amount == 0 and old_amount > 0 else
+                  'increase' if delta > 0 else 'decrease' if delta < 0 else 'unchanged')
+        changes.append({**(new or old), 'status': status, 'current_shares': new_amount,
+            'previous_shares': old_amount, 'shares_change': delta,
+            'shares_change_percent': delta / old_amount * 100 if old_amount else None,
+            'current_value': (new or {}).get('value', 0), 'previous_value': (old or {}).get('value', 0),
+            'current_weight': (new or {}).get('weight', 0), 'previous_weight': (old or {}).get('weight', 0),
+            'weight_change': (new or {}).get('weight', 0) - (old or {}).get('weight', 0)})
+    return sorted(changes, key=lambda row: (-max(row['current_value'], row['previous_value']), row['cusip']))
+
+
+def snapshot(kind, on_update=None):
     cik, name = FUNDS[kind]
     deadline = time.monotonic() + 30
+    result = {'fund': kind, 'name': name, 'cik': cik, 'schema_version': 2, 'currency': 'USD',
+              'holdings': [], 'previous': None, 'changes': [], 'previous_status': 'loading',
+              'retrieved_at': datetime.now(timezone.utc).isoformat(), 'errors': []}
     try:
         data = json.loads(fetch(f'https://data.sec.gov/submissions/CIK{int(cik):010d}.json', deadline))
         available = filings(data)
-        # Small filers can have current 13Fs in an older submissions page.
-        if not available:
-            for page in data.get('filings', {}).get('files', [])[:2]:
-                available.extend(filings(json.loads(fetch('https://data.sec.gov/submissions/' + page['name'], deadline))))
-                if available:
-                    break
-        bases = [row for row in available if row['form'] == '13F-HR']
-        if not bases:
+        for page in data.get('filings', {}).get('files', [])[:2]:
+            if len({row['report_date'] for row in available if row['form'] == '13F-HR'}) >= 2:
+                break
+            available.extend(filings(json.loads(fetch('https://data.sec.gov/submissions/' + page['name'], deadline))))
+        periods = sorted({row['report_date'] for row in available if row['form'] == '13F-HR'}, reverse=True)
+        if not periods:
             raise ValueError('SEC 未找到 13F 持仓报告')
-        latest = max(bases, key=lambda row: (row['report_date'], row['accepted_at'], row['accession']))
-        selected = [latest] + sorted([row for row in available if row['form'] == '13F-HR/A'
-            and row['report_date'] == latest['report_date'] and (row['accepted_at'], row['accession']) > (latest['accepted_at'], latest['accession'])],
-            key=lambda row: (row['accepted_at'], row['accession']))
-        holdings, sources = [], []
-        for filing in selected:
-            accession = filing['accession']
-            url = f'https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession.replace("-", "")}/{accession}.txt'
-            rows, amendment = parse_submission(fetch(url, deadline), filing['filed_at'])
-            if filing['form'] == '13F-HR' or amendment.upper() == 'RESTATEMENT':
-                holdings = rows
-            elif amendment.upper() == 'NEW HOLDINGS':
-                holdings.extend(rows)
-            else:
-                raise ValueError('SEC 13F 修订类型无法确认')
-            sources.append({**filing, 'url': url, 'amendment': amendment})
-        rows = aggregate(holdings)
-        return {'fund': kind, 'name': name, 'cik': cik, 'report_date': latest['report_date'],
-                'filed_at': selected[-1]['filed_at'], 'currency': 'USD', 'holdings': rows,
-                'total_value': sum(row['value'] for row in rows), 'sources': sources,
-                'retrieved_at': datetime.now(timezone.utc).isoformat(), 'errors': []}
+        latest_date, previous_date = periods[0], previous_quarter(periods[0])
+        result['previous_report_date'] = previous_date
+        completed = {}
+        # Each quarter loads independently; do not delay displaying the current quarter.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = {pool.submit(quarter, cik, available, period, deadline): label
+                       for label, period in [('current', latest_date), ('previous', previous_date)]}
+            for future in as_completed(futures):
+                label = futures[future]
+                try:
+                    completed[label] = future.result()
+                except Exception as exc:
+                    failure('sec_edgar', '13f_quarter', symbol=kind, error=exc, report_date=latest_date if label == 'current' else previous_date)
+                    if label == 'current':
+                        raise
+                    completed[label] = None
+                    result['errors'] = ['上季度 SEC 持仓读取失败，暂不计算变化']
+                if completed.get('current'):
+                    result.update(completed['current'])
+                    result['previous'] = completed.get('previous')
+                    result['partial'] = len(completed) < 2
+                    result['previous_status'] = ('loading' if result['partial'] else
+                        'failed' if result['errors'] else 'available' if result['previous'] else 'missing')
+                    result['changes'] = compare(result, result['previous']) if result['previous'] else []
+                    if on_update and result['partial']:
+                        on_update(dict(result))
+        result['retrieved_at'] = datetime.now(timezone.utc).isoformat()
+        return result
     except Exception as exc:
         failure('sec_edgar', '13f_snapshot', symbol=kind, error=exc)
-        return {'fund': kind, 'name': name, 'holdings': [], 'errors': ['SEC 持仓读取失败，保留已取得的数据'],
-                'retrieved_at': datetime.now(timezone.utc).isoformat()}
+        return {**result, 'partial': False, 'previous_status': 'failed',
+                'errors': ['SEC 持仓读取失败，保留已取得的数据']}

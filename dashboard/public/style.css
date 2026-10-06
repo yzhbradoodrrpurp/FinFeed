@@ -151,3 +151,12 @@ body.sidebar-collapsed{--sidebar:64px!important}
 .whale-table th:first-child,.whale-table td:first-child{text-align:left}
 .whale-table td small{display:block;color:#9b9186;font-size:11px;margin-top:4px}
 .whales-intro .count{margin-left:auto}.whales-intro button{margin-left:14px}
+.whale-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}
+.whale-tabs [aria-pressed="true"]{color:#c65316;background:#fff1e6;border-color:#fbc9aa}
+#whale-detail{border:1px solid #e7e3dd;border-radius:16px;padding:24px;margin-bottom:24px}
+#whale-detail-title{margin:22px 0 14px;font-size:26px}
+#whale-detail .whale-table-scroll{max-height:650px}
+.whale-enter{margin-top:8px}.whale-retrieved{margin-top:16px}
+.whale-change{padding:4px 8px;border-radius:6px;background:#f3f0eb;color:#837b72;font-size:12px}
+.whale-change.new,.whale-change.increase{background:#e9f5ef;color:#228561}
+.whale-change.exit,.whale-change.decrease{background:#fcedeb;color:#be524a}

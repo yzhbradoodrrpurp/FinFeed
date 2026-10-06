@@ -24,7 +24,8 @@ class CloudCases(unittest.TestCase):
             self.assertEqual(first.status_code, 200)
             self.assertEqual(first.json['holdings'][0]['name'], 'APPLE')
             self.assertEqual(self.client.get('/api/whales/berkshire', headers=HEADERS).json['holdings'], value['holdings'])
-            loader.assert_called_once_with('berkshire')
+            self.assertEqual(loader.call_args.args, ('berkshire',))
+            self.assertTrue(callable(loader.call_args.kwargs['on_update']))
         self.assertEqual(self.client.get('/api/whales/unknown', headers=HEADERS).status_code, 404)
 
     def test_backend_migration_preserves_sessions_records_and_frontend_rp(self):

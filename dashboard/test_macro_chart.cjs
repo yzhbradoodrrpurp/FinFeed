@@ -18,6 +18,7 @@ handlers.pointermove({clientX:200,clientY:50});
 assert.equal(tooltip.textContent,'2026-10-02 · 102点');
 assert.equal(vertical.attrs.x1,108);assert.equal(horizontal.attrs.y1,50);
 handlers.pointermove({clientX:200,clientY:80});assert.equal(tooltip.textContent,'2026-10-02 · 102点');
+assert.equal(tooltip.style.left,'210px');assert.equal(tooltip.style.top,'46px');
 handlers.pointermove({clientX:500,clientY:50});assert.equal(tooltip.textContent,'2026-10-05 · 104点');
 handlers.pointerleave();assert.equal(tooltip.hidden,true);assert.equal(crosshair.attrs.visibility,'hidden');
 handlers.keydown({key:'Home',preventDefault(){}});assert.equal(tooltip.textContent,'2026-10-01 · 101点');

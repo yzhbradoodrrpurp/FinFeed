@@ -45,7 +45,7 @@ window.FinFeedMacro=(()=>{
     const tooltip=figure.querySelector('.macro-chart-tooltip');
     const first=Date.parse(rows[0].date),span=Date.parse(rows.at(-1).date)-first||1;
     let selected=rows.length-1;
-    function show(index){
+    function show(index,pointer=null){
       selected=Math.max(0,Math.min(rows.length-1,index));
       const row=rows[selected],point=points.getItem(selected);
       vertical.setAttribute('x1',point.x);vertical.setAttribute('x2',point.x);
@@ -54,7 +54,17 @@ window.FinFeedMacro=(()=>{
       crosshair.setAttribute('visibility','visible');
       tooltip.textContent=`${row.date} · ${number(row.value)}${m.unit||''}`;
       tooltip.hidden=false;
-
+      const bounds=figure.getBoundingClientRect();
+      let screen=pointer;
+      if(!screen){
+        const matrix=svg.getScreenCTM();if(!matrix)return;
+        const position=svg.createSVGPoint();position.x=point.x;position.y=point.y;
+        screen=position.matrixTransform(matrix);
+      }
+      const x=(pointer?screen.clientX:screen.x)-bounds.left;
+      const y=(pointer?screen.clientY:screen.y)-bounds.top;
+      tooltip.style.left=`${Math.max(0,Math.min(bounds.width-tooltip.offsetWidth,x+10))}px`;
+      tooltip.style.top=`${Math.max(0,y-tooltip.offsetHeight-10)}px`;
     }
     function hide(){crosshair.setAttribute('visibility','hidden');tooltip.hidden=true;}
     svg.addEventListener('pointermove',event=>{
@@ -66,7 +76,7 @@ window.FinFeedMacro=(()=>{
       let low=0,high=rows.length-1;
       while(low<high){const middle=(low+high)>>1;if(Date.parse(rows[middle].date)<date)low=middle+1;else high=middle;}
       if(low>0&&date-Date.parse(rows[low-1].date)<=Date.parse(rows[low].date)-date)low--;
-      show(low);
+      show(low,event);
     });
     svg.addEventListener('pointerleave',hide);
     svg.addEventListener('pointercancel',hide);

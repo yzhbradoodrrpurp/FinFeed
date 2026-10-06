@@ -53,10 +53,9 @@ window.FinFeedWhales=(()=>{
     if(Date.now()-checked>=21600000&&!busy)refresh();}
   document.querySelectorAll('[data-whale]').forEach(button=>button.addEventListener('click',()=>show(button.dataset.whale)));
   document.querySelectorAll('[data-whale-tab]').forEach(button=>button.addEventListener('click',()=>{tab=button.dataset.whaleTab;renderDetail();}));
-  el('whale-category-nav')?.addEventListener('click',event=>{
-    const button=event.target.closest('[data-whale-category]');if(!button)return;
-    const category=button.dataset.whaleCategory;
-    document.querySelectorAll('[data-whale-category]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+  el('whale-category-select')?.addEventListener('change',event=>{
+    const category=event.target.value;
+    if(selected)show(null);
     document.querySelectorAll('.whale-group').forEach(group=>{group.hidden=category!=='all'&&group.getAttribute('aria-labelledby')!=='whale-group-'+category;});
   });
   el('whale-back').addEventListener('click',()=>{const old=selected;show(null);document.querySelector('[data-whale="'+old+'"]').focus();});

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: finfeed-private
+    name: finfeed-research
     runtime: python
     plan: free
     rootDir: dashboard

@@ -15,6 +15,25 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_backend_migration_preserves_sessions_records_and_frontend_rp(self):
+        self.frontend_setup()
+        self.assertEqual(self.client.put('/api/state', json={
+            'watchlist': ['AAPL'], 'positions': []}, headers=HEADERS).status_code, 200)
+        session = self.client.get_cookie('finfeed_test_session').value
+        expected = self.client.get('/api/state').json
+        new_origin = 'https://finfeed-research.onrender.com'
+        migrated = create_app({'TESTING': True, 'PUBLIC_ORIGIN': new_origin,
+            'FRONTEND_ORIGIN': self.frontend}, Store(sqlite_path=self.path)).test_client()
+        migrated.set_cookie('__Host-finfeed_session', session,
+                            domain='finfeed-research.onrender.com')
+        status = migrated.get('/api/auth/status', base_url=new_origin)
+        self.assertTrue(status.json['authenticated'])
+        self.assertEqual(migrated.get('/api/state', base_url=new_origin).json, expected)
+        options = migrated.post('/api/auth/register/options', json={},
+            base_url=new_origin, headers={**HEADERS, 'Origin': self.frontend})
+        self.assertEqual(options.status_code, 200)
+        self.assertEqual(options.json['rp']['id'], 'finfeed.vercel.app')
+
     def test_browser_failure_report_is_sanitized_and_request_id_is_shared(self):
         with self.assertLogs('finfeed.failures', level='WARNING') as logs:
             response = self.client.post('/api/auth/client-failure', json={

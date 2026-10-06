@@ -2,7 +2,7 @@
 
 唯一运行入口为 Render 上的 `cloud:create_app()`，使用 Supabase PostgreSQL 保存记录及应用缓存，所有账户数据访问和修改要求 Passkey 登录。部署设置见 [DEPLOY.md](DEPLOY.md)。不提供无登录的本机服务或浏览器本地记录模式。
 
-线上入口：<https://finfeed-research.vercel.app>；后端为 <https://finfeed-private.onrender.com>。Vercel 与 Render 跟踪 GitHub `main` 分支，推送后自动部署。
+线上入口：<https://finfeed-research.vercel.app>；后端为 <https://finfeed-research.onrender.com>。Vercel 与 Render 跟踪 GitHub `main` 分支，推送后自动部署。旧后端 `finfeed-private.onrender.com` 仅保留为旧域名 Passkey 登录入口和迁移回退；两者连接同一数据库。
 
 原网址用户可通过登录页的“已有原网址 Passkey”入口验证身份，再在“我的账户 → 新网址 Passkey”绑定到当前账户。绑定要求最近 5 分钟内验证过身份；超时可重新验证原账户。新凭据按网址保存 RP ID，验证挑战绑定发起域名，原凭据继续仅用于原网址。邀请码注册的新用户可直接在 Vercel 保存 Passkey。
 

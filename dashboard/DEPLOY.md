@@ -1,6 +1,8 @@
 # 网站部署：Render + Supabase + Passkey
 
-唯一服务入口为 `cloud:create_app()`。部署需要 HTTPS origin 和 PostgreSQL；不提供本机无登录模式。线上服务为 <https://finfeed-private.onrender.com>，Render 跟踪 `main` 分支。
+唯一服务入口为 `cloud:create_app()`。部署需要 HTTPS origin 和 PostgreSQL；不提供本机无登录模式。线上后端为 <https://finfeed-research.onrender.com>，Render 跟踪 `main` 分支；Vercel 前端将 `/api/*` 转发到该后端。
+
+旧后端 `finfeed-private.onrender.com` 保留为原域名 Passkey 登录入口和迁移回退，服务名称为 `finfeed-research-legacy`。原域名凭据绑定了原 RP ID，不能直接改到新域名。两个后端连接相同的数据库，Vercel 的 Passkey、账户记录、会话和应用缓存继续共用。内部 `finfeed_private` schema 名称保持稳定，不执行数据库重命名。
 
 ## 数据库
 

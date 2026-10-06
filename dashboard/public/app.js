@@ -493,7 +493,7 @@ el("logout").addEventListener("click",async()=>{
 el("export-state").addEventListener("click",()=>{
   const blob=new Blob([JSON.stringify({watchlist:tickers,positions:holdings},null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob),link=document.createElement("a");
-  link.href=url;link.download="finfeed-private-records.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  link.href=url;link.download="finfeed-research-records.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 el("choose-import").addEventListener("click",()=>el("import-state").click());
 el("import-state").addEventListener("change",async()=>{

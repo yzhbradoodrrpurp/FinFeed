@@ -26,7 +26,7 @@ from webauthn.helpers.structs import (
 
 from cloud_store import Store, digest
 from data import security, SCHEMA_VERSION
-from state import SYMBOL
+from state import SYMBOL, validate
 
 ROOT = Path(__file__).resolve().parent
 
@@ -202,10 +202,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def auth_status():
         with database.transaction() as connection:
             setup = not database.credentials(connection)
-        session = logged_in()
-        with database.transaction() as connection:
-            account = database.account(connection, session["user_id"]) if session else None
-            database_owner_id = database.owner(connection)["user_handle"]
+            session = database.session(connection, request.cookies.get(session_cookie, ""))
+            account = database.account(connection, session["user_id"], lock=False) if session else None
+            database_owner_id = database.owner(connection, lock=False)["user_handle"]
             bound = bool(account and frontend and any(key.get("rp_id") == urlsplit(frontend).hostname for key in database.credentials(connection, account["id"])))
         return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=False, invitationRequired=True, isAdmin=bool(session and session["user_id"] == database_owner_id), canInvite=bool(session), cloud=True, authenticated=bool(session), setupRequired=setup,
                        bootstrapAvailable=bool(bootstrap), passkeySupported=True, frontendPasskeyBound=bound)
@@ -463,9 +462,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         viewer_id = logged_in()["user_id"]
         user_id = request.args.get("user") or viewer_id
         try:
-            state = database.read_state(user_id)
             with database.transaction() as connection:
-                account = database.account(connection, user_id)
+                account = database.account(connection, user_id, lock=False)
+                state = validate(json.loads(account["state"])) if account["state"] else None
         except ValueError:
             abort(404, description="账户不存在")
         symbols = list(dict.fromkeys(state["watchlist"] + [p["ticker"] for p in state["positions"]])) if state else []
@@ -525,7 +524,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/<path:filename>")
     def static_file(filename: str):
-        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js"}:
+        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js"}:
             abort(404)
         return send_from_directory(ROOT / "public", filename)
 

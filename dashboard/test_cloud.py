@@ -22,6 +22,16 @@ class CloudCases(unittest.TestCase):
             self.assertEqual(self.client.get('/api/macro/jobs').json['id'], 'jobs')
         self.assertEqual(self.client.get('/api/macro/unknown').status_code, 404)
 
+    def test_auth_status_uses_one_transaction_and_read_state_avoids_write_lock(self):
+        self.enroll()
+        with patch.object(self.store, 'transaction', wraps=self.store.transaction) as transaction:
+            self.assertTrue(self.client.get('/api/auth/status').json['authenticated'])
+            self.assertEqual(transaction.call_count, 1)
+        with patch.object(self.store, 'account', wraps=self.store.account) as account:
+            self.assertEqual(self.client.get('/api/state').status_code, 200)
+            self.assertEqual(account.call_count, 1)
+            self.assertFalse(account.call_args.kwargs['lock'])
+
     def frontend_setup(self):
         self.frontend = "https://finfeed.vercel.app"
         self.app = create_app({"TESTING": True, "PUBLIC_ORIGIN": ORIGIN,

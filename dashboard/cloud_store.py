@@ -134,14 +134,14 @@ class Store:
         """Use bound parameters on both production and test databases."""
         return connection.execute(sql if self.sqlite_path else sql.replace("?", "%s"), parameters)
 
-    def owner(self, connection: Any) -> dict:
+    def owner(self, connection: Any, *, lock=True) -> dict:
         """Lock the owner row to serialize enrollment, signatures and state writes."""
-        suffix = "" if self.sqlite_path else " FOR UPDATE"
+        suffix = "" if self.sqlite_path or not lock else " FOR UPDATE"
         return dict(self.execute(connection, "SELECT * FROM owner WHERE id=1" + suffix).fetchone())
 
-    def account(self, connection, user_id=None):
-        user_id = user_id or self.owner(connection)["user_handle"]
-        suffix = "" if self.sqlite_path else " FOR UPDATE"
+    def account(self, connection, user_id=None, *, lock=True):
+        user_id = user_id or self.owner(connection, lock=lock)["user_handle"]
+        suffix = "" if self.sqlite_path or not lock else " FOR UPDATE"
         row = self.execute(connection, "SELECT * FROM accounts WHERE id=? AND NOT EXISTS (SELECT 1 FROM disabled_accounts d WHERE d.id=accounts.id)" + suffix, (user_id,)).fetchone()
         if not row:
             raise ValueError("账户不存在")
@@ -181,7 +181,7 @@ class Store:
 
     def read_state(self, user_id=None) -> dict | None:
         with self.transaction() as connection:
-            row = self.account(connection, user_id)
+            row = self.account(connection, user_id, lock=False)
             return validate(json.loads(row["state"])) if row["state"] else None
 
     def get_cache(self, key: str) -> tuple[dict, float] | None:

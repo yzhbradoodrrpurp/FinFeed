@@ -215,7 +215,7 @@ async function switchSurface(next){
   if(next==="home")viewURL.searchParams.delete("surface");
   else viewURL.searchParams.set("surface",next);
   history.replaceState(history.state,"",viewURL);
-  if(next==="macro")FinFeedMacro.open();
+  if(next==="macro"&&currentUser)FinFeedMacro.open();
   for(const name of surfaceNames)el(`${name}-surface`).hidden=surface!==name;
   el("page-title").textContent={home:currentUser?"Hi "+currentUser.name:"Hi",watchlist:"关注列表",portfolio:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
   el("page-eyebrow").textContent={home:"HOME",watchlist:"MY WATCHLIST",portfolio:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
@@ -376,50 +376,56 @@ if(document.modelContext?.registerTool){
 }
 async function initializeState(){
   switchSurface(surface);
-  document.querySelector("main").inert=true;
+  const main=document.querySelector("main");main.inert=true;
   try{
-    const requestedId=new URLSearchParams(location.search).get("user");
-    const [auth,directoryResponse,response]=await Promise.all([
-      FinFeedAuth.initialize().then(auth=>{
-        currentUser=auth.user;
-        if(surface==="home")FinFeedHome.open(currentUser);
-        return auth;
-      }),FinFeedAuth.request("/api/accounts"),
-      FinFeedAuth.request("/api/state"+(requestedId?"?user="+encodeURIComponent(requestedId):""))
-    ]);
+    const auth=await FinFeedAuth.initialize();
     currentUser=auth.user;
-    // Start Macro alongside stock data, even when its view is hidden.
+    // Shared views start after authentication, without waiting for private records.
+    FinFeedHome.prefetch();
+    if(surface==="home")FinFeedHome.open(currentUser);
     FinFeedMacro.open();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;
     el("profile-name").textContent=currentUser.name;
     el("invite-controls").hidden=!auth.canInvite;
     el("admin-controls").hidden=!auth.isAdmin;
-    if(!directoryResponse.ok)throw new Error("账户列表读取失败");
-    const directory=await directoryResponse.json();
-    const requestedUser=new URLSearchParams(location.search).get("user")||currentUser.id;
-    el("view-account").innerHTML=directory.accounts.map(a=>`<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}${a.id===currentUser.id?" · 我的账户":""}</option>`).join("");
-    viewedUserId=requestedUser;
-    for(const name of ["watchlist","portfolio"]){
-      let saved=null;try{saved=sessionStorage.getItem(`finfeed-view:${currentUser.id}:${name}`);}catch{}
-      surfaceAccounts[name]=directory.accounts.some(a=>a.id===saved)?saved:currentUser.id;
-    }
-    if(["watchlist","portfolio"].includes(surface))rememberSurfaceAccount(surface,requestedUser);
-    el("view-account").value=requestedUser;
     el("account-button").hidden=false;
-    const data=await response.json();
-    if(!response.ok)throw new Error(data.error||"记录读取失败");
-    readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
-    let state=data.state;
-    if(!state&&readOnly)state={watchlist:[],positions:[]};
-    if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
-    initialLoading=false;tickers=state.watchlist;holdings=state.positions;
-    for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
-    render();load(trackedTickers());
-    document.querySelector("main").inert=false;
-    setInterval(refreshWatchlist,60_000);
+    const requestedUser=new URLSearchParams(location.search).get("user")||currentUser.id;
+    viewedUserId=requestedUser;
+    for(const name of ["watchlist","portfolio"])surfaceAccounts[name]=currentUser.id;
+    if(["watchlist","portfolio"].includes(surface))rememberSurfaceAccount(surface,requestedUser);
+    el("view-account").disabled=true;
+    // Directory and state are independent. Render private records as soon as ready.
+    const directoryTask=FinFeedAuth.request("/api/accounts").then(async response=>{
+      if(!response.ok)throw new Error("账户列表读取失败");
+      const directory=await response.json();
+      el("view-account").innerHTML=directory.accounts.map(a=>`<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}${a.id===currentUser.id?" · 我的账户":""}</option>`).join("");
+      for(const name of ["watchlist","portfolio"]){
+        if(name===surface)continue;
+        let saved=null;try{saved=sessionStorage.getItem(`finfeed-view:${currentUser.id}:${name}`);}catch{}
+        surfaceAccounts[name]=directory.accounts.some(a=>a.id===saved)?saved:currentUser.id;
+      }
+      el("view-account").value=viewedUserId;
+      el("view-account").disabled=false;
+    }).catch(error=>feedback(error.message+"，请稍后刷新。"));
+    const stateTask=FinFeedAuth.request("/api/state"+(requestedUser!==currentUser.id?"?user="+encodeURIComponent(requestedUser):"")).then(async response=>{
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||"记录读取失败");
+      readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
+      let state=data.state;
+      if(!state&&readOnly)state={watchlist:[],positions:[]};
+      if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
+      initialLoading=false;tickers=state.watchlist;holdings=state.positions;
+      for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
+      render();load(trackedTickers());
+      setInterval(refreshWatchlist,60_000);
+    }).catch(error=>{
+      feedback(`记录加载失败：${error.message}。请稍后刷新页面。`);
+      document.querySelectorAll("#watchlist-surface button, #watchlist-surface input, #portfolio-surface button, #portfolio-surface input").forEach(control=>control.disabled=true);
+    }).finally(()=>{main.inert=false;});
+    await Promise.allSettled([directoryTask,stateTask]);
   }catch(error){
-    feedback(`记录加载失败：${error.message}。请稍后刷新页面。`);
-    document.querySelector("main").inert=false;
+    feedback(`登录检查失败：${error.message}。请稍后刷新页面。`);
+    main.inert=false;
     document.querySelectorAll("main button, main input").forEach(control=>control.disabled=true);
   }
 }

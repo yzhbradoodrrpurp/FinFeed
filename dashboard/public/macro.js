@@ -15,6 +15,9 @@ window.FinFeedMacro=(()=>{
     ]
   };
   let started=false,busy=false;
+  const lastGood=new Map();
+  function notice(card,message){let node=card.querySelector('.cache-state');if(!node){node=document.createElement('p');node.className='macro-note cache-state';card.append(node);}node.textContent=message;}
+
   const escape=s=>String(s??"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function time(s,zone){return s?new Intl.DateTimeFormat('zh-CN',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(s)):"暂无日程";}
   function times(s){return s?`${time(s,'Asia/Shanghai')} 北京<br>${time(s,'America/New_York')} 美国东部`:"暂无日程";}
@@ -47,15 +50,11 @@ window.FinFeedMacro=(()=>{
       ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
       <div class="macro-sources">${metrics.map(m=>`<a href="${escape(m.source)}" target="_blank" rel="noreferrer">${escape(m.label)}来源 ↗</a>`).join('')}${data.calendar_source?`<a href="${escape(data.calendar_source)}" target="_blank" rel="noreferrer">官方日历 ↗</a>`:''}${id==='jobs'?'<a href="https://www.bls.gov/news.release/empsit.htm" target="_blank" rel="noreferrer">本次就业报告 ↗</a>':''}${id==='pce'?'<a href="https://www.bea.gov/data/income-saving/personal-income" target="_blank" rel="noreferrer">BEA 发布内容 ↗</a>':''}</div><p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
   }
-  let fedBusy=false,fedUpdated=0;
+  let fedBusy=false,fedUpdated=0,fedData=null;
   const fedColors=['#83baff','#416bff','#ee7523','#e5b500','#9871cc'];
-  async function refreshFed(){
-    if(fedBusy)return;fedBusy=true;
-    const card=document.getElementById('macro-fed');
-    if(!fedUpdated)card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-note">正在获取市场定价…</p>';
-    try{
-      const response=await FinFeedAuth.request('/api/macro/fed');if(!response.ok)throw new Error();
-      const data=await response.json(),series=data.series||[];
+  function renderFed(data){
+    const card=document.getElementById('macro-fed');fedData=data;
+    const series=data.series||[];
       const rows=series.flatMap(s=>s.history),end=Date.parse(data.retrieved_at)/1000;
       const first=rows.length?Math.min(...rows.map(r=>r.t)):end;
       const x=t=>12+(t-first)/(end-first||1)*896,y=p=>242-p*220;
@@ -72,17 +71,34 @@ window.FinFeedMacro=(()=>{
         <div class="macro-sources"><a href="${escape(data.source)}" target="_blank" rel="noreferrer">Polymarket 原始市场 ↗</a><a href="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" target="_blank" rel="noreferrer">FOMC 官方日历 ↗</a></div>
         ${data.rules?`<details class="fed-rules"><summary>结算规则（原文）</summary><p>${escape(data.rules)}</p></details>`:''}
         <p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
+  }
+  async function refreshFed(){
+    if(fedBusy)return;fedBusy=true;
+    const card=document.getElementById('macro-fed');
+    if(!fedData){const saved=FinFeedCache.read('macro-fed',86400000);if(saved)renderFed(saved.data);}
+    if(fedData)notice(card,'缓存 · 正在更新，数据时间见下方');
+    if(!fedData)card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-note">正在获取市场定价…</p>';
+    try{
+      const response=await FinFeedAuth.request('/api/macro/fed');if(!response.ok)throw new Error();
+      const data=await response.json();
+      if(!data.series?.length)throw new Error();
+      renderFed(data);FinFeedCache.write('macro-fed',data);
       fedUpdated=Date.now();
-    }catch{card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-error">数据暂不可用，请稍后刷新</p>';}
+    }catch{if(fedData)notice(card,'旧数据 · 本次更新失败，数据时间见下方');else card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-error">数据暂不可用，请稍后刷新</p>';}
     finally{fedBusy=false;}
   }
   async function refresh(){
     if(busy)return;busy=true;document.getElementById('macro-refresh').disabled=true;
     const grid=document.getElementById('macro-grid');
-    grid.innerHTML=Object.keys(names).map(id=>`<article id="macro-${id}" class="macro-card" aria-busy="true"><span class="eyebrow">${names[id][0]}</span><h2>${names[id][1]}</h2><div class="macro-skeleton"><span></span><span></span><span></span></div><p class="macro-note">正在获取数据…</p></article>`).join('');
-    await Promise.all(Object.keys(names).map(async id=>{
-      try{const r=await FinFeedAuth.request('/api/macro/'+id);if(!r.ok)throw new Error();render(id,await r.json());}
-      catch{render(id,{metrics:[],errors:['数据暂不可用，请稍后刷新'],retrieved_at:new Date().toISOString()});}
+    if(!document.getElementById('macro-jobs'))grid.innerHTML=Object.keys(names).map(id=>`<article id="macro-${id}" class="macro-card" aria-busy="true"><span class="eyebrow">${names[id][0]}</span><h2>${names[id][1]}</h2><div class="macro-skeleton"><span></span><span></span><span></span></div><p class="macro-note">正在获取数据…</p></article>`).join('');
+    await Promise.allSettled(Object.keys(names).map(async id=>{
+      const card=document.getElementById('macro-'+id);
+      if(!lastGood.has(id)){const saved=FinFeedCache.read('macro-'+id);if(saved){lastGood.set(id,saved.data);render(id,saved.data);}}
+      if(lastGood.has(id))notice(card,'缓存 · 正在更新，数据时间见下方');
+      try{const r=await FinFeedAuth.request('/api/macro/'+id);if(!r.ok)throw new Error();const data=await r.json();
+        if(!data.metrics?.some(m=>m.latest))throw new Error();
+        render(id,data);lastGood.set(id,data);FinFeedCache.write('macro-'+id,data);
+      }catch{if(lastGood.has(id))notice(card,'旧数据 · 本次更新失败，数据时间见下方');else render(id,{metrics:[],errors:['数据暂不可用，请稍后刷新'],retrieved_at:new Date().toISOString()});}
     }));busy=false;document.getElementById('macro-refresh').disabled=false;
   }
   document.getElementById('macro-refresh').addEventListener('click',()=>{refresh();refreshFed();});

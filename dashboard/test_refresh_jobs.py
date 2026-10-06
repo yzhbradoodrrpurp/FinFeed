@@ -84,6 +84,17 @@ class RefreshJobCases(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(self.store.get_cache('market:v1:macro:QA')[0]['price'], 100)
 
+    def test_partial_financial_failure_does_not_back_off_healthy_quotes(self):
+        jobs = RefreshJobs(self.store)
+        calls = []
+        def quote(publish):
+            calls.append(1)
+            return {'price': 100, 'errors': ['forecast unavailable']}
+        list(jobs.events('security:QA', quote, 0, self.good, persist=False))
+        list(jobs.events('security:QA', quote, 0, self.good, persist=False))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(jobs.entries['security:QA']['retry'], 0)
+
     def test_batch_quote_read_prewarms_memory_and_returns_copies(self):
         self.store.set_cache('quote:QA', {'metrics': {'price': {'value': 100}}})
         recreated = Store(sqlite_path=self.path)

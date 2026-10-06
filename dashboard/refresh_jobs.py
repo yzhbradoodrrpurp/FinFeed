@@ -51,7 +51,8 @@ class RefreshJobs:
                 def run():
                     try:
                         value = loader(publish)
-                        successful = valid(value) and not value.get('stale') and not value.get('errors')
+                        # A missing finance block must not slow healthy minute quotes.
+                        successful = valid(value) and not value.get('stale') and (key.startswith('security:') or not value.get('errors'))
                         with condition:
                             if successful:
                                 entry['value'] = value

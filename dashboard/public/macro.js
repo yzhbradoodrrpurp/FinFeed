@@ -33,7 +33,7 @@ window.FinFeedMacro=(()=>{
     const warningLine=warningY===null?'':`<line x1="8" x2="392" y1="${warningY}" y2="${warningY}" stroke="#c94a39" stroke-width="1" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
     const firstDate=Date.parse(rows[0].date),dateSpan=Date.parse(rows.at(-1).date)-firstDate||1;
     const points=rows.map(r=>`${8+(Date.parse(r.date)-firstDate)/dateSpan*384},${76-(r.value-min)/span*62}`).join(' ');
-    return `<figure class="macro-chart"><svg viewBox="0 0 400 90" role="img" tabindex="0" aria-label="${escape(m.label)}历史走势，可用左右方向键查看每日数值"><path d="M8 78H392" stroke="#eee8de"/>${warningLine}<polyline points="${points}" fill="none" stroke="#ee7523" stroke-width="2.5" vector-effect="non-scaling-stroke"/><g class="macro-crosshair" visibility="hidden" pointer-events="none"><line class="chart-vertical" y1="8" y2="78"/><line class="chart-horizontal" x1="8" x2="392"/><circle r="3.5"/></g></svg><div class="macro-chart-tooltip" hidden></div><figcaption><span>${escape(rows[0].date)}</span><span>${escape(rows.at(-1).date)}</span></figcaption></figure>`;
+    return `<figure class="macro-chart"><svg viewBox="0 0 400 90" role="img" tabindex="0" aria-label="${escape(m.label)}历史走势，可用左右方向键查看每日数值"><path d="M8 78H392" stroke="#eee8de"/>${warningLine}<polyline points="${points}" fill="none" stroke="#ee7523" stroke-width="2.5" vector-effect="non-scaling-stroke"/><g class="macro-crosshair" visibility="hidden" pointer-events="none"><line class="chart-vertical" y1="8" y2="78"/><line class="chart-horizontal" x1="8" x2="392"/><circle r="4"/></g></svg><div class="macro-chart-tooltip" hidden></div><figcaption><span>${escape(rows[0].date)}</span><span>${escape(rows.at(-1).date)}</span></figcaption></figure>`;
   }
   function bindChart(card,m){
     const figure=card.querySelector('.macro-chart');
@@ -54,13 +54,7 @@ window.FinFeedMacro=(()=>{
       crosshair.setAttribute('visibility','visible');
       tooltip.textContent=`${row.date} · ${number(row.value)}${m.unit||''}`;
       tooltip.hidden=false;
-      // Map SVG coordinates through its actual screen transform, including letterboxing.
-      const matrix=svg.getScreenCTM();if(!matrix)return;
-      const position=svg.createSVGPoint();position.x=point.x;position.y=point.y;
-      const screen=position.matrixTransform(matrix),bounds=figure.getBoundingClientRect();
-      const left=Math.max(0,Math.min(bounds.width-tooltip.offsetWidth,screen.x-bounds.left+10));
-      tooltip.style.left=`${left}px`;
-      tooltip.style.top=`${Math.max(0,screen.y-bounds.top-tooltip.offsetHeight-10)}px`;
+
     }
     function hide(){crosshair.setAttribute('visibility','hidden');tooltip.hidden=true;}
     svg.addEventListener('pointermove',event=>{

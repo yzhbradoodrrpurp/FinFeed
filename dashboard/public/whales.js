@@ -31,12 +31,12 @@ window.FinFeedWhales=(()=>{
     const time=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(data.retrieved_at));
     body.insertAdjacentHTML('beforeend',`<p class="whale-status whale-retrieved">检索于 ${esc(time)} 北京 · 每 6 小时检查申报更新</p>`);
   }
-  function show(kind,writeURL=true){
+  function show(kind,writeURL=true,animate=true){
     selected=Object.hasOwn(funds,kind)?kind:null;tab='latest';
     el('whales-list').hidden=!!selected;el('whale-detail').hidden=!selected;
     if(writeURL){const url=new URL(location.href);if(selected)url.searchParams.set('fund',selected);else url.searchParams.delete('fund');history.replaceState(history.state,'',url);}
     if(selected){renderDetail();el('whale-detail-title').focus();}
-    if(writeURL)window.FinFeedMotion?.enter(el(selected?'whale-detail':'whales-list'),{kind:'detail',direction:selected?1:-1});
+    if(writeURL&&animate)window.FinFeedMotion?.enter(el(selected?'whale-detail':'whales-list'),{kind:'detail',direction:selected?1:-1});
   }
   function accept(kind,data){
     if(data.schema_version!==3||data.totals_verified!==true||!data.holdings?.length){data=good.has(kind)?{...good.get(kind),stale:true}:{...data,holdings:[],errors:data.errors||['数据格式待更新，请稍后检查更新']};}
@@ -56,7 +56,7 @@ window.FinFeedWhales=(()=>{
   document.querySelectorAll('[data-whale-tab]').forEach(button=>button.addEventListener('click',()=>{if(tab===button.dataset.whaleTab)return;const order=['latest','previous','changes'];const direction=order.indexOf(button.dataset.whaleTab)>order.indexOf(tab)?1:-1;tab=button.dataset.whaleTab;renderDetail();window.FinFeedMotion?.enter(el('whale-detail-content'),{kind:'tab',direction});}));
   el('whale-category-select')?.addEventListener('change',event=>{
     const category=event.target.value;
-    if(selected)show(null);
+    if(selected)show(null,true,false);
     document.querySelectorAll('.whale-group').forEach(group=>{group.hidden=category!=='all'&&group.getAttribute('aria-labelledby')!=='whale-group-'+category;});
     window.FinFeedMotion?.enter(document.querySelector('.whales-groups'),{kind:'filter'});
   });

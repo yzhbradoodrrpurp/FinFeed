@@ -79,22 +79,41 @@ def frame_values(frame, labels, currency, source_url):
     return output
 
 
-def growth(series, period):
+def growth(series, period, yearly=False):
     if not period or period not in series:
         return empty_metric("缺少该财季数据", period=period)
-    old = prior_quarter_period(period, series)
+    if yearly:
+        current = datetime.fromisoformat(period)
+        candidates = [p for p in series if 350 <= (current - datetime.fromisoformat(p)).days <= 380]
+        old = min(candidates, key=lambda p: abs((current - datetime.fromisoformat(p)).days - 365), default=None)
+    else:
+        old = prior_quarter_period(period, series)
     a = series[period]
     b = series.get(old, {})
     value, reason = qoq(a["value"], b.get("value"))
+    if yearly and reason:
+        reason = reason.replace("上一财季", "去年同财季")
     cached = [entry for entry in (a, b) if entry.get("historical_cache")]
     return {"value": value, "reason": reason, "period": period, "comparison_period": old,
-            "basis": "季度环比 = 本期 / 上一财季 − 1；上一财季必须大于零", "source": a["source"],
+            "basis": ("季度同比 = 本期 / 去年同财季 − 1；同比财季间隔须为 350–380 天，基期必须大于零" if yearly else "季度环比 = 本期 / 上一财季 − 1；上一财季必须大于零"), "source": a["source"],
             "historical_cache": bool(cached),
             "cache_fetched_at": min((entry["fetched_at"] for entry in cached if entry.get("fetched_at")), default=None),
-            "inputs": {"current": a["value"], "previous_quarter": b.get("value")}}
+            "inputs": {"current": a["value"], "previous_year_quarter" if yearly else "previous_quarter": b.get("value")}}
 
 
-FINANCIAL_KEYS = ("eps_q0", "eps_q1", "forward_eps_q0", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1", "pe_ntm")
+FINANCIAL_KEYS = ("eps_q0", "eps_q1", "forward_eps_q0", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1", "revenue_yoy_q0", "debt_yoy_q0", "fcf_yoy_q0", "pe_ntm")
+
+
+
+def add_yearly_growth(result):
+    for label in ("revenue", "debt", "fcf"):
+        key = f"{label}_yoy_q0"
+        series = result.get("series", {}).get(label)
+        if series is not None:
+            result["metrics"][key] = growth(series, result.get("quarter_0"), yearly=True)
+        elif key not in result["metrics"]:
+            result["metrics"][key] = empty_metric(result["metrics"].get(f"{label}_q0", {}).get("reason") or "缺少同比财季数据")
+    return result
 
 
 def financial_day(timestamp):
@@ -117,6 +136,7 @@ def reuse_financial(result, saved):
     for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at", "reported_shares", "financial_diagnostics", "provider_probe"):
         if key in saved:
             result[key] = deepcopy(saved[key])
+    add_yearly_growth(result)
     result.setdefault("financial_fetched_at", saved.get("fetched_at"))
     if "trailing_eps" not in result:
         result["trailing_eps"] = saved.get("metrics", {}).get("pe_ltm", {}).get("inputs", {}).get("trailing_eps")
@@ -167,6 +187,7 @@ def quarterly_pe(result, eps, forecast=False):
 
 
 def revalue(result, estimate_store=None):
+    add_yearly_growth(result)
     m = result["metrics"]
     shares = result.get("reported_shares", {})
     if m.get("market_cap", {}).get("value") is None and shares.get("value") and m.get("price", {}).get("value"):
@@ -313,7 +334,7 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None):
             m[key] = empty_metric(reason)
         if quote_type == "ETF":
             m["market_cap"] = empty_metric("ETF 公司市值不适用；未用资产规模替代")
-        return result
+        return add_yearly_growth(result)
     if m["market_cap"].get("value") is None:
         # Shares endpoint is independent of quoteSummary; refresh at most daily.
         shares = (saved or {}).get("shares_outstanding") if not financial_due(saved, started) else None
@@ -434,6 +455,8 @@ def security(symbol, refresh=False, store=None, on_update=None):
         if saved and saved.get("schema_version") != SCHEMA_VERSION:
             saved = None
             age = float("inf")
+        if saved:
+            add_yearly_growth(saved)
         # Market requests refresh each minute; same-minute tabs share the cache.
         if saved and not financial_due(saved, now()) and age < TTL:
             return {**saved, "cached": True, "cache_age_seconds": round(age)}

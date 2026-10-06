@@ -20,5 +20,15 @@ vm.createContext(ctx);vm.runInContext(fs.readFileSync(__dirname+'/public/auth-cl
  assert.equal(JSON.parse(calls.at(-1).opts.body).category,'invalid_response');
  const before=calls.length;await assert.rejects(ctx.window.FinFeedAuth.request('/api/state',{signal:{aborted:true}}));
  assert.equal(calls.length,before+1);
+ // Safari may report AbortError even when our deadline caused the abort.
+ let deadline;
+ ctx.setTimeout=callback=>{deadline=callback;return 1;};
+ const originalFetch=ctx.fetch;
+ ctx.fetch=(url,options)=>url==='/api/auth/client-failure'?originalFetch(url,options):new Promise((_,reject)=>{
+   options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('Fetch is aborted'),{name:'AbortError'})));
+ });
+ const timedOut=ctx.window.FinFeedAuth.request('/api/auth/status');deadline();
+ await assert.rejects(timedOut,error=>error.name==='TimeoutError'&&error.message==='API 请求超过 30 秒');
+ assert.equal(JSON.parse(calls.at(-1).opts.body).category,'timeout');
  console.log('API failure reporting tests passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});

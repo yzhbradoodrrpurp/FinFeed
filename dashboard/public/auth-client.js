@@ -27,12 +27,12 @@ window.FinFeedAuth = (() => {
       finish();
       if(controller.signal.reason?.name==='TimeoutError')reportFailure(url, options, 'timeout', null, started, requestId);
       else if(error.name !== 'AbortError')reportFailure(url, options, 'network_error', null, started, requestId);
-      throw error;
+      throw controller.signal.reason?.name==='TimeoutError' ? controller.signal.reason : error;
     }
     const readJSON = response.json?.bind(response);
     if(readJSON)response.json = async () => {
       try { return await readJSON(); }
-      catch(error) { reportFailure(url, options, controller.signal.reason?.name==='TimeoutError'?'timeout':'invalid_response', response.status, started, requestId); throw error; }
+      catch(error) { reportFailure(url, options, controller.signal.reason?.name==='TimeoutError'?'timeout':'invalid_response', response.status, started, requestId); throw controller.signal.reason?.name==='TimeoutError' ? controller.signal.reason : error; }
       finally { finish(); }
     };
     // Stream readers have their own full-body deadline in FinFeedCache.market.

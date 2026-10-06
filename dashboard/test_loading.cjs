@@ -13,12 +13,36 @@ vm.createContext(context);vm.runInContext(init,context);
 (async()=>{
  const done=context.initializeState();assert.deepEqual(calls,[]);
  pending.get('auth')({user:{id:'self',name:'Liam'}});await new Promise(setImmediate);
- assert.deepEqual(calls,['home','macro','whales']);assert.equal(pending.size,3);assert.equal(main.inert,false);
+ assert.deepEqual(calls,['','home','macro','whales']);assert.equal(pending.size,3);assert.equal(main.inert,false);
  pending.get('/api/state')({ok:true,json:async()=>({state:{watchlist:['AAPL'],positions:[{ticker:'AAPL'},{ticker:'MSFT'}]},quotes:{},readOnly:false})});
  await new Promise(setImmediate);
  assert.deepEqual(calls.at(-1),['AAPL','MSFT']);assert.equal(main.inert,false);
  assert.equal(el('view-account').disabled,true); // Directory is still pending.
  pending.get('/api/accounts')({ok:true,json:async()=>({accounts:[{id:'self',name:'Liam'}]})});await done;
  assert.equal(el('view-account').disabled,false);
+ // A failed initial auth check must recover without reloading or duplicating startup.
+ calls.length=0;context.currentUser=null;
+ const enabled={disabled:false},alreadyDisabled={disabled:true};
+ context.document.querySelectorAll=()=>[enabled,alreadyDisabled];
+ let retry;
+ context.setTimeout=(callback,delay)=>{assert.equal(delay,15000);retry=callback;};
+ context.FinFeedAuth.initialize=async()=>{throw new Error('API 请求超过 30 秒');};
+ await context.initializeState();
+ assert.equal(el('startup-status').hidden,false);assert.equal(enabled.disabled,true);
+ assert(!calls.includes('home'));assert(!calls.includes('macro'));assert(!calls.includes('whales'));
+ context.FinFeedAuth.initialize=()=>deferred('auth');
+ retry();assert.equal(enabled.disabled,false);assert.equal(alreadyDisabled.disabled,true);
+ // An overlapping startup invocation must not issue a second auth check.
+ await context.initializeState();
+ pending.get('auth')({user:{id:'self',name:'Liam'}});await new Promise(setImmediate);
+ assert.equal(el('startup-status').hidden,true);
+ assert.equal(calls.filter(call=>call==='home').length,1);
+ assert.equal(calls.filter(call=>call==='macro').length,1);
+ assert.equal(calls.filter(call=>call==='whales').length,1);
+ pending.get('/api/state')({ok:true,json:async()=>({state:{watchlist:['AAPL'],positions:[]},quotes:{},readOnly:false})});
+ pending.get('/api/accounts')({ok:true,json:async()=>({accounts:[{id:'self',name:'Liam'}]})});
+ await new Promise(setImmediate);
+ assert.deepEqual(context.tickers,['AAPL']);assert.equal(context.initializeState.running,false);
  console.log('PASS: shared views start after auth; private rows do not wait for account directory; only one account loads');
+ console.log('PASS: failed auth automatically retries and starts each view once after recovery');
 })().catch(e=>{console.error(e);process.exitCode=1;});

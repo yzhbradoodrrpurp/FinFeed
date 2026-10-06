@@ -406,10 +406,13 @@ if(document.modelContext?.registerTool){
   ]){try{Promise.resolve(document.modelContext.registerTool(tool)).catch(()=>{});}catch{}}
 }
 async function initializeState(){
+  if(initializeState.running)return;
+  initializeState.running=true;
   switchSurface(surface);
   const main=document.querySelector("main");main.inert=true;
   try{
     const auth=await FinFeedAuth.initialize();
+    el("startup-status").hidden=true;feedback("");
     currentUser=auth.user;main.inert=false;
     // Shared views start after authentication, without waiting for private records.
     FinFeedHome.prefetch();
@@ -463,9 +466,21 @@ async function initializeState(){
     setInterval(refreshWatchlist,60_000);
     await Promise.allSettled([directoryTask,stateTask]);
   }catch(error){
-    feedback(`登录检查失败：${error.message}。请稍后刷新页面。`);
+    const message=`登录检查失败：${error.message}。15 秒后自动重试。`;
+    feedback(message);
+    el("startup-status").textContent=message;el("startup-status").hidden=false;
     main.inert=false;
-    document.querySelectorAll("main button, main input").forEach(control=>control.disabled=true);
+    const controls=Array.from(document.querySelectorAll("main button, main input, main select"));
+    const disabled=controls.map(control=>control.disabled);
+    controls.forEach(control=>control.disabled=true);
+    // Retry only startup. No intervals or market requests start before auth succeeds.
+    setTimeout(()=>{
+      controls.forEach((control,index)=>control.disabled=disabled[index]);
+      el("startup-status").textContent="正在重新检查登录状态…";
+      void initializeState();
+    },15000);
+  }finally{
+    initializeState.running=false;
   }
 }
 initializeState();

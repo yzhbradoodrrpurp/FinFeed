@@ -62,7 +62,7 @@ def text(node, name):
     return next((item.text.strip() for item in node.iter() if item.tag.rsplit('}', 1)[-1] == name and item.text), '')
 
 
-def parse_submission(raw, filed_at):
+def parse_submission(raw, filed_at, diagnostics=None):
     documents = [ET.fromstring(part.strip()) for part in re.findall(r'<XML>\s*(.*?)\s*</XML>', raw, re.S | re.I)]
     cover = next((root for root in documents if text(root, 'tableEntryTotal')), None)
     tables = [row for root in documents for row in root.iter() if row.tag.rsplit('}', 1)[-1] == 'infoTable']
@@ -79,8 +79,20 @@ def parse_submission(raw, filed_at):
                      'amount_type': text(row, 'sshPrnamtType'), 'shares': int(amount), 'value': int(value)})
     if len(rows) != int(text(cover, 'tableEntryTotal')):
         raise ValueError('SEC 13F 持仓条目数量不一致')
-    if sum(row['value'] for row in rows) != int(Decimal(text(cover, 'tableValueTotal')) * multiplier):
-        raise ValueError('SEC 13F 持仓市值合计不一致')
+    detail_total = sum(row['value'] for row in rows)
+    cover_total = int(Decimal(text(cover, 'tableValueTotal')) * multiplier)
+    difference = detail_total - cover_total
+    if difference:
+        # Summing rounded entries can differ from rounding the whole portfolio.
+        # This is a bounded tolerance, never a guess at units or missing rows.
+        if abs(difference) > (len(rows) + 1) // 2 * multiplier:
+            raise ValueError('SEC 13F 持仓市值合计不一致')
+        message = f'原始申报封面合计与明细合计相差 {abs(difference):,} 美元；此处合计和占比按明细计算。'
+        if diagnostics is not None:
+            diagnostics.append(message)
+        failure('sec_edgar', '13f_total_rounding', reason=message,
+                cover_total=cover_total, detail_total=detail_total, difference=difference)
+
     return rows, text(cover, 'amendmentType')
 
 
@@ -113,11 +125,11 @@ def quarter(cik, available, report_date, deadline):
     selected = [latest] + sorted([row for row in available if row['form'] == '13F-HR/A'
         and row['report_date'] == report_date and (row['accepted_at'], row['accession']) > (latest['accepted_at'], latest['accession'])],
         key=lambda row: (row['accepted_at'], row['accession']))
-    holdings, sources = [], []
+    holdings, sources, warnings = [], [], []
     for filing in selected:
         accession = filing['accession']
         url = f'https://www.sec.gov/Archives/edgar/data/{int(cik)}/{accession.replace("-", "")}/{accession}.txt'
-        rows, amendment = parse_submission(fetch(url, deadline), filing['filed_at'])
+        rows, amendment = parse_submission(fetch(url, deadline), filing['filed_at'], warnings)
         if filing['form'] == '13F-HR' or amendment.upper() == 'RESTATEMENT':
             holdings = rows
         elif amendment.upper() == 'NEW HOLDINGS':
@@ -127,7 +139,7 @@ def quarter(cik, available, report_date, deadline):
         sources.append({**filing, 'url': url, 'amendment': amendment})
     rows = aggregate(holdings)
     return {'report_date': report_date, 'filed_at': selected[-1]['filed_at'], 'holdings': rows,
-            'total_value': sum(row['value'] for row in rows), 'sources': sources}
+            'total_value': sum(row['value'] for row in rows), 'sources': sources, 'warnings': warnings}
 
 
 def compare(current, previous):
@@ -207,4 +219,4 @@ def snapshot(kind, on_update=None):
     except Exception as exc:
         failure('sec_edgar', '13f_snapshot', symbol=kind, error=exc)
         return {**result, 'partial': False, 'previous_status': 'failed',
-                'errors': ['SEC 持仓读取失败，保留已取得的数据']}
+                'errors': ['SEC 持仓读取失败，保留已取得的数据' if result['holdings'] else 'SEC 持仓读取失败，暂未取得有效数据']}

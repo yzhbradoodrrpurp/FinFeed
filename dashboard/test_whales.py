@@ -25,6 +25,14 @@ class WhaleCases(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_submission(submission().replace('<tableValueTotal>200', '<tableValueTotal>300'), '2026-08-14')
 
+    def test_bounded_rounding_difference_preserves_as_filed_values(self):
+        warnings = []
+        rows, _ = parse_submission(submission().replace('<tableValueTotal>200', '<tableValueTotal>201'), '2026-08-14', warnings)
+        self.assertEqual(sum(row['value'] for row in rows), 200)
+        self.assertEqual(len(warnings), 1)
+        with self.assertRaises(ValueError):
+            parse_submission(submission().replace('<tableValueTotal>200', '<tableValueTotal>202'), '2026-08-14')
+
     def test_restatement_new_holdings_and_latest_report(self):
         recent = {'form':['13F-HR/A','13F-HR/A','13F-HR','13F-HR/A'],
                   'filingDate':['2026-08-16','2026-08-15','2026-08-14','2026-09-01'],

@@ -223,6 +223,7 @@ async function switchSurface(next){
   else viewURL.searchParams.set("surface",next);
   history.replaceState(history.state,"",viewURL);
   if(next==="macro"&&currentUser)FinFeedMacro.open();
+  if(next==="whales"&&currentUser)FinFeedWhales.open();
   for(const name of surfaceNames)el(`${name}-surface`).hidden=surface!==name;
   el("page-title").textContent={home:currentUser?"Hi "+currentUser.name:"Hi",watchlist:"关注列表",portfolio:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
   el("page-eyebrow").textContent={home:"HOME",watchlist:"MY WATCHLIST",portfolio:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
@@ -413,6 +414,7 @@ async function initializeState(){
     FinFeedHome.prefetch();
     if(surface==="home")FinFeedHome.open(currentUser);
     FinFeedMacro.open();
+    FinFeedWhales.open();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;
     el("profile-name").textContent=currentUser.name;
     el("invite-controls").hidden=!auth.canInvite;

@@ -5,7 +5,7 @@
   <meta name="description" content="FinFeed 私人关注列表与持仓：行情、季度财务、成本、市值和未实现盈亏。">
   <title>FinFeed · 市场研究</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f47729'/%3E%3Cpath d='M8 24V8h17M8 15h13' stroke='%23ffffff' stroke-width='4' fill='none'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/style.css"><script src="/auth-client.js" defer></script><script src="/cache.js" defer></script><script src="/positions.js" defer></script><script src="/macro.js" defer></script><script src="/home.js" defer></script><script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/style.css"><script src="/auth-client.js" defer></script><script src="/cache.js" defer></script><script src="/positions.js" defer></script><script src="/macro.js" defer></script><script src="/home.js" defer></script><script src="/whales.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body class="dashboard-page">
   <aside class="sidebar">
@@ -53,15 +53,15 @@
       <p class="macro-footnote">时间同时显示北京时间与美国东部时间；官方发布日程可能调整。图表为历史统计或日线，数据失败时留空。</p>
     </section>
     <section id="whales-surface" hidden aria-label="巨鲸持仓视图">
-      <div class="whales-intro"><p>机构观察 · 公开披露</p><span class="count">5 家机构</span></div>
+      <div class="whales-intro"><p>机构观察 · 公开披露</p><span class="count">5 家机构</span><button id="whales-refresh" class="secondary">检查更新</button></div>
       <div class="whales-grid">
-        <article class="whale-card"><span class="eyebrow">BERKSHIRE HATHAWAY</span><h2>伯克希尔</h2><p class="whale-person">Warren Buffett · 巴菲特长期投资理念</p><span class="macro-badge">长期价值</span><p class="whale-description">关注企业竞争优势、长期盈利与资本配置。</p><div class="macro-sources"><a href="https://www.sec.gov/edgar/browse/?CIK=1067983&amp;owner=exclude&amp;type=13F" target="_blank" rel="noreferrer">SEC 持仓披露 ↗</a><a href="https://www.berkshirehathaway.com/reports.html" target="_blank" rel="noreferrer">官方报告 ↗</a></div></article>
-        <article class="whale-card"><span class="eyebrow">PERSHING SQUARE</span><h2>潘兴广场</h2><p class="whale-person">Bill Ackman · 比尔·阿克曼</p><span class="macro-badge">集中持仓</span><p class="whale-description">深入研究少数核心企业，关注现金流与长期价值。</p><div class="macro-sources"><a href="https://pershingsquareholdings.com/portfolio/" target="_blank" rel="noreferrer">官方组合 ↗</a><a href="https://pershingsquareholdings.com/company-reports/letters-to-shareholders/" target="_blank" rel="noreferrer">投资者报告 ↗</a></div></article>
+        <article class="whale-card whale-connected" id="whale-berkshire"><span class="eyebrow">BERKSHIRE HATHAWAY</span><h2>伯克希尔</h2><p class="whale-person">Warren Buffett · 巴菲特长期投资理念</p><span class="macro-badge">长期价值</span><p class="whale-description">关注企业竞争优势、长期盈利与资本配置。</p><div class="macro-sources"><a href="https://www.sec.gov/edgar/browse/?CIK=1067983&amp;owner=exclude&amp;type=13F" target="_blank" rel="noreferrer">SEC 持仓披露 ↗</a><a href="https://www.berkshirehathaway.com/reports.html" target="_blank" rel="noreferrer">官方报告 ↗</a></div></article>
+        <article class="whale-card whale-connected" id="whale-pershing"><span class="eyebrow">PERSHING SQUARE</span><h2>潘兴广场</h2><p class="whale-person">Bill Ackman · 比尔·阿克曼</p><span class="macro-badge">集中持仓</span><p class="whale-description">深入研究少数核心企业，关注现金流与长期价值。</p><div class="macro-sources"><a href="https://pershingsquareholdings.com/portfolio/" target="_blank" rel="noreferrer">官方组合 ↗</a><a href="https://pershingsquareholdings.com/company-reports/letters-to-shareholders/" target="_blank" rel="noreferrer">投资者报告 ↗</a></div></article>
         <article class="whale-card"><span class="eyebrow">DUQUESNE FAMILY OFFICE</span><h2>Duquesne 家族办公室</h2><p class="whale-person">Stanley Druckenmiller · 斯坦利·德鲁肯米勒</p><span class="macro-badge">宏观与灵活配置</span><p class="whale-description">关注经济和政策变化，以及新建仓、退出与仓位调整。</p><div class="macro-sources"><a href="https://www.sec.gov/edgar/browse/?CIK=1536411&amp;owner=exclude&amp;type=13F" target="_blank" rel="noreferrer">SEC 持仓披露 ↗</a></div></article>
         <article class="whale-card"><span class="eyebrow">APPALOOSA</span><h2>Appaloosa</h2><p class="whale-person">David Tepper · 大卫·泰珀</p><span class="macro-badge">逆向与困境投资</span><p class="whale-description">关注悲观定价中的机会，以及持续加仓和减仓的方向。</p><div class="macro-sources"><a href="https://www.sec.gov/edgar/browse/?CIK=1656456&amp;owner=exclude&amp;type=13F" target="_blank" rel="noreferrer">SEC 持仓披露 ↗</a></div></article>
         <article class="whale-card"><span class="eyebrow">ARK INVEST</span><h2>ARK Invest</h2><p class="whale-person">Cathie Wood · 凯茜·伍德</p><span class="macro-badge">创新与成长</span><p class="whale-description">关注主动管理 ETF 的创新主题配置与每日持仓变化。</p><div class="macro-sources"><a href="https://www.ark-funds.com/funds/arkk" target="_blank" rel="noreferrer">官方基金与持仓 ↗</a><a href="https://www.ark-funds.com/ark-trade-notifications" target="_blank" rel="noreferrer">官方交易通知 ↗</a></div></article>
       </div>
-      <p class="macro-footnote">持仓明细尚未接入，可通过上方官方入口查看。13F 为季度末持仓快照，通常在季末后 45 天内披露，不代表实时完整组合或真实买入成本；ARK 主动管理 ETF 持仓按交易日披露。</p>
+      <p class="macro-footnote">伯克希尔与 Pershing Square 持仓来自 SEC EDGAR 13F；其余机构暂提供官方入口。13F 为季度末持仓快照，通常在季末后 45 天内披露，不代表实时完整组合或真实买入成本；ARK 主动管理 ETF 持仓按交易日披露。</p>
     </section>
     <div class="source-footer"><a href="https://ranaroussi.github.io/yfinance/" target="_blank" rel="noreferrer">数据来源与使用范围</a></div>
     </div>

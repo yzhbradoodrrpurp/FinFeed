@@ -9,7 +9,7 @@ const ctx={URL,Promise,AbortController,encodeURIComponent,surfaceNames:['home','
  location:{href:'https://example.com/?surface=watchlist'},history:{state:null,replaceState(_state,_title,url){ctx.location.href=new URL(url,ctx.location.href).href;}},
  document:{querySelector:selector=>selector==='main'?main:el(selector),querySelectorAll:()=>[],body:{classList:{toggle(){}}}},
  rememberSurfaceAccount(name,id){ctx.surfaceAccounts[name]=id;},accountViewURL:(name,id)=>`/?surface=${name}&user=${id}`,feedback(){},render(){},scheduleRender(){},
- trackedTickers:()=>[...new Set([...ctx.tickers,...ctx.holdings.map(p=>p.ticker)])],FinFeedMacro:{open(){}},FinFeedHome:{open(){}},
+ trackedTickers:()=>[...new Set([...ctx.tickers,...ctx.holdings.map(p=>p.ticker)])],FinFeedMacro:{open(){}},FinFeedWhales:{open(){}},FinFeedHome:{open(){}},
  // Intentionally ignore abort: also verify protection when stale responses arrive anyway.
  FinFeedAuth:{request:(url,options)=>new Promise(resolve=>pending.push({url,options,resolve}))}};
 ctx.FinFeedCache={market:async(url,consume,{signal}={})=>{const response=await ctx.FinFeedAuth.request(url,{signal});if(!response.ok)throw new Error('request failed');const value=await response.json();consume(value);return value;}};

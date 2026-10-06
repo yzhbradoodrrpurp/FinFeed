@@ -15,6 +15,18 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_whale_holdings_require_login_and_share_cached_sec_snapshot(self):
+        self.assertEqual(self.client.get('/api/whales/berkshire', headers=HEADERS).status_code, 401)
+        self.frontend_setup()
+        value = {'fund':'berkshire', 'holdings':[{'name':'APPLE', 'value':100}], 'errors':[]}
+        with patch('whales.snapshot', return_value=value) as loader:
+            first = self.client.get('/api/whales/berkshire', headers=HEADERS)
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(first.json['holdings'][0]['name'], 'APPLE')
+            self.assertEqual(self.client.get('/api/whales/berkshire', headers=HEADERS).json['holdings'], value['holdings'])
+            loader.assert_called_once_with('berkshire')
+        self.assertEqual(self.client.get('/api/whales/unknown', headers=HEADERS).status_code, 404)
+
     def test_backend_migration_preserves_sessions_records_and_frontend_rp(self):
         self.frontend_setup()
         self.assertEqual(self.client.put('/api/state', json={

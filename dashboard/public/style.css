@@ -139,3 +139,15 @@ body.sidebar-collapsed{--sidebar:64px!important}
 .fed-chart{position:relative}.fed-chart svg{cursor:crosshair;outline-offset:3px}.fed-crosshair line{stroke:#91867b;stroke-width:1.4;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}.fed-crosshair circle{stroke:#fff;stroke-width:1.8;vector-effect:non-scaling-stroke}.fed-chart-tooltip{position:absolute;z-index:2;pointer-events:none;max-width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--line);border-radius:7px;background:#fffffff5;box-shadow:0 2px 8px #00000012;color:#746d65;font-size:12px;line-height:1.8;font-variant-numeric:tabular-nums}.fed-chart-tooltip strong{color:#302c28}.fed-chart-tooltip i{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%}.fed-chart-tooltip small{display:block;font-size:10px}.fed-tooltip-time{margin-top:6px;padding-top:5px;border-top:1px solid var(--line)}.fed-chart-tooltip[hidden]{display:none}
 
 .whales-intro{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}.whales-intro p{font-size:12px;color:var(--muted)}.whales-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.whale-card{border:1px solid var(--line);border-radius:14px;padding:25px;background:#fff;min-width:0}.whale-card h2{font-size:21px;font-weight:600;margin:10px 0}.whale-person{font-size:12px;color:#746d65;line-height:1.8;margin:0 0 16px}.whale-card .macro-badge{display:inline-block}.whale-description{font-size:12px;line-height:1.8;color:#91867b;margin-top:16px}.whale-card .macro-sources a{font-size:11px}@media(max-width:900px){.whales-grid{grid-template-columns:1fr}}
+
+.whale-connected{grid-column:1/-1}
+.whale-data{margin-top:20px;border-top:1px solid var(--line,#e7e3dd);padding-top:16px}
+.whale-status{font-size:12px;color:#8d847a;line-height:1.8;margin:0 0 14px}
+.whale-table-scroll{overflow:auto;max-height:490px;border:1px solid #e7e3dd;border-radius:10px}
+.whale-table{width:100%;border-collapse:collapse;font-size:13px}
+.whale-table caption{text-align:left;padding:12px;color:#8d847a;font-size:12px}
+.whale-table th{position:sticky;top:0;background:#f6f3ef;z-index:1;font-size:12px}
+.whale-table th,.whale-table td{padding:12px 14px;border-bottom:1px solid #eee9e3;text-align:right;white-space:nowrap}
+.whale-table th:first-child,.whale-table td:first-child{text-align:left}
+.whale-table td small{display:block;color:#9b9186;font-size:11px;margin-top:4px}
+.whales-intro .count{margin-left:auto}.whales-intro button{margin-left:14px}

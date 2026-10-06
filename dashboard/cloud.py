@@ -560,6 +560,15 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             3600, lambda value: any(metric.get('latest') for metric in value.get('metrics', [])),
             stream=request.args.get('stream') == '1')
 
+    @app.get("/api/whales/<kind>")
+    def whale_data(kind):
+        from whales import FUNDS, snapshot
+        if kind not in FUNDS:
+            abort(404)
+        return refresh_jobs.response('whales:' + kind, lambda publish: snapshot(kind),
+            21600, lambda value: bool(value.get('holdings')),
+            stream=request.args.get('stream') == '1')
+
     @app.get("/api/security/<symbol>")
     def quote(symbol: str):
         symbol = symbol.upper()
@@ -586,7 +595,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/<path:filename>")
     def static_file(filename: str):
-        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js"}:
+        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js"}:
             abort(404)
         return send_from_directory(ROOT / "public", filename)
 

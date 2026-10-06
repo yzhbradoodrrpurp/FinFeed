@@ -40,14 +40,18 @@ def quote(index):
         from data import LIMIT
         with LIMIT:
             ticker = yf.Ticker(symbol)
-            ticker.history(period='1d', interval='1m', auto_adjust=False, timeout=20, raise_errors=True)
+            frame = ticker.history(period='5d', interval='1d', auto_adjust=False, timeout=8, raise_errors=True)
             metadata = ticker.get_history_metadata()
         price = finite(metadata.get('regularMarketPrice'))
-        previous = finite(metadata.get('previousClose', metadata.get('chartPreviousClose')))
+        previous = finite(metadata.get('previousClose'))
         raw_time = metadata.get('regularMarketTime')
         timestamp = raw_time.timestamp() if isinstance(raw_time, datetime) else finite(raw_time)
         if price is None or timestamp is None:
             raise ValueError('Quote missing')
+        if previous is None and len(frame) >= 2:
+            quote_day = datetime.fromtimestamp(timestamp, ZoneInfo('America/New_York')).date()
+            offset = -2 if frame.index[-1].date() == quote_day else -1
+            previous = finite(frame['Close'].iloc[offset])
         result.update(price=price, previous_close=previous,
                       quoted_at=datetime.fromtimestamp(timestamp, timezone.utc).isoformat())
         if previous is not None and previous > 0:

@@ -17,13 +17,23 @@ class HomeCases(unittest.TestCase):
 
     def test_quote_change_and_provenance(self):
         ticker=MagicMock()
-        ticker.get_history_metadata.return_value={'regularMarketPrice':105,'chartPreviousClose':100,'regularMarketTime':datetime.fromisoformat('2026-10-05T14:00:00+00:00')}
+        ticker.get_history_metadata.return_value={'regularMarketPrice':105,'previousClose':100,'regularMarketTime':datetime.fromisoformat('2026-10-05T14:00:00+00:00')}
         with patch('yfinance.Ticker',return_value=ticker):
             result=home.quote(home.INDICES[0])
         self.assertEqual(result['change'],5)
         self.assertAlmostEqual(result['change_percent'],5)
         self.assertIsNotNone(result['quoted_at'])
         self.assertIsNone(result['error'])
+
+    def test_daily_history_uses_previous_session_not_range_start(self):
+        import pandas as pd
+        ticker=MagicMock()
+        ticker.history.return_value=pd.DataFrame({'Close':[90,100,105]},index=pd.to_datetime(['2026-10-01','2026-10-02','2026-10-05']))
+        ticker.get_history_metadata.return_value={'regularMarketPrice':105,'chartPreviousClose':80,'regularMarketTime':datetime.fromisoformat('2026-10-05T14:00:00+00:00')}
+        with patch('yfinance.Ticker',return_value=ticker):
+            result=home.quote(home.INDICES[0])
+        self.assertEqual(result['previous_close'],100)
+        self.assertEqual(result['change'],5)
 
     def test_quote_failure_leaves_missing_value(self):
         with patch('yfinance.Ticker',side_effect=RuntimeError('secret-in-url')):

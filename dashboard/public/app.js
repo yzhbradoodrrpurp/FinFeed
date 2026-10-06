@@ -380,11 +380,14 @@ async function initializeState(){
   try{
     const requestedId=new URLSearchParams(location.search).get("user");
     const [auth,directoryResponse,response]=await Promise.all([
-      FinFeedAuth.initialize(),FinFeedAuth.request("/api/accounts"),
+      FinFeedAuth.initialize().then(auth=>{
+        currentUser=auth.user;
+        if(surface==="home")FinFeedHome.open(currentUser);
+        return auth;
+      }),FinFeedAuth.request("/api/accounts"),
       FinFeedAuth.request("/api/state"+(requestedId?"?user="+encodeURIComponent(requestedId):""))
     ]);
     currentUser=auth.user;
-    if(surface==="home")FinFeedHome.open(currentUser);
     // Start Macro alongside stock data, even when its view is hidden.
     FinFeedMacro.open();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;

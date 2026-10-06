@@ -95,9 +95,11 @@ window.FinFeedMacro=(()=>{
       const card=document.getElementById('macro-'+id);
       if(!lastGood.has(id)){const saved=FinFeedCache.read('macro-'+id);if(saved){lastGood.set(id,saved.data);render(id,saved.data);}}
       if(lastGood.has(id))notice(card,'缓存 · 正在更新，数据时间见下方');
-      try{const r=await FinFeedAuth.request('/api/macro/'+id);if(!r.ok)throw new Error();const data=await r.json();
+      try{await FinFeedCache.market('/api/macro/'+id+'?stream=1',data=>{
         if(!data.metrics?.some(m=>m.latest))throw new Error();
         render(id,data);lastGood.set(id,data);FinFeedCache.write('macro-'+id,data);
+        if(data.stale)notice(card,'旧数据 · 正在更新，数据时间见下方');
+        },{ttl:3600000});
       }catch{if(lastGood.has(id))notice(card,'旧数据 · 本次更新失败，数据时间见下方');else render(id,{metrics:[],errors:['数据暂不可用，请稍后刷新'],retrieved_at:new Date().toISOString()});}
     }));busy=false;document.getElementById('macro-refresh').disabled=false;
   }

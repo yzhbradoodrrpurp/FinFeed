@@ -1,6 +1,6 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const calls=[];
-const ctx={window:{},URL,Uint8Array,crypto:require('node:crypto').webcrypto,
+const ctx={window:{},URL,Uint8Array,AbortController,DOMException,setTimeout,clearTimeout,crypto:require('node:crypto').webcrypto,
  performance:{now:()=>123},location:{origin:'https://example.com',replace(){}},
  fetch:async(url,opts)=>{calls.push({url,opts}); if(url==='/api/auth/client-failure')return {ok:true};
  if(url.includes('invalid'))return {ok:true,status:200,json:async()=>{throw new SyntaxError('bad body contains secret');}};

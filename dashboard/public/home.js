@@ -33,15 +33,16 @@ window.FinFeedHome=(()=>{
     if(busy)return;busy=true;document.getElementById('home-refresh').disabled=true;
     if(!document.getElementById('home-index-0'))document.getElementById('home-indices').innerHTML=indices.map((index,slot)=>`<article class="home-index" id="home-index-${slot}"><span class="eyebrow">${esc(index[1])}</span><h2>${esc(index[2])}</h2><strong class="home-index-price">—</strong><p class="home-quote-time">正在加载…</p></article>`).join('');
     const calendar=fetchData('/api/home').then(data=>{market=data;serverNow=Date.parse(data.server_time);syncedAt=performance.now();clock();FinFeedCache.write('home-calendar',data);}).catch(()=>{
-      market=null;document.getElementById('home-market-status').textContent='状态暂不可用';document.getElementById('home-countdown').textContent='—';document.getElementById('home-session-time').textContent='';
+      if(market)return;document.getElementById('home-market-status').textContent='状态暂不可用';document.getElementById('home-countdown').textContent='—';document.getElementById('home-session-time').textContent='';
     });
     const quotes=indices.map(async(index,slot)=>{
       try{
-        const data=await fetchData('/api/home?symbol='+encodeURIComponent(index[0]));
+        await FinFeedCache.market('/api/home?symbol='+encodeURIComponent(index[0])+'&stream=1',data=>{
         if(data.index.price==null&&lastGood.has(slot))throw new Error();
-        renderIndex(data.index,slot);
+        renderIndex(data.index,slot,data.stale?'缓存 · 正在更新':'');
         if(data.index.price!=null){lastGood.set(slot,data.index);FinFeedCache.write('home-'+index[0],data);}
         document.getElementById('home-update-status').textContent=`检索于 ${date(data.retrieved_at,'Asia/Shanghai')} 北京 · 每分钟检查更新，行情可能延迟；涨跌相对前收盘价。`;
+        });
       }catch{
         if(lastGood.has(slot)){renderIndex(lastGood.get(slot),slot,'旧数据 · 更新失败');return;}
         renderIndex({name:index[1],label:index[2],source:'https://finance.yahoo.com/quote/'+encodeURIComponent(index[0])+'/',error:'行情请求失败，请稍后刷新'},slot);

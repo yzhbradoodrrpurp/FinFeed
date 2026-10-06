@@ -12,6 +12,7 @@ const ctx={URL,Promise,AbortController,encodeURIComponent,surfaceNames:['home','
  trackedTickers:()=>[...new Set([...ctx.tickers,...ctx.holdings.map(p=>p.ticker)])],FinFeedMacro:{open(){}},FinFeedHome:{open(){}},
  // Intentionally ignore abort: also verify protection when stale responses arrive anyway.
  FinFeedAuth:{request:(url,options)=>new Promise(resolve=>pending.push({url,options,resolve}))}};
+ctx.FinFeedCache={market:async(url,consume,{signal}={})=>{const response=await ctx.FinFeedAuth.request(url,{signal});if(!response.ok)throw new Error('request failed');const value=await response.json();consume(value);return value;}};
 vm.createContext(ctx);vm.runInContext(functions+pump,ctx);
 const flush=()=>new Promise(setImmediate);
 const response=data=>({ok:true,json:async()=>data});
@@ -31,9 +32,9 @@ const response=data=>({ok:true,json:async()=>data});
  assert.equal(new URL(ctx.location.href).searchParams.get('surface'),'macro');
  firstState.resolve(response({state:{watchlist:['WRONG'],positions:[]},readOnly:false,quotes:{}}));await first;
  assert.deepEqual(Array.from(ctx.tickers),['AAPL','MSFT']);assert.equal(ctx.readOnly,true);
- const newAapl=pending.filter(p=>p.url==='/api/security/AAPL').at(-1);
+ const newAapl=pending.filter(p=>p.url.startsWith('/api/security/AAPL?')).at(-1);
  newAapl.resolve(response({ticker:'AAPL',name:'new account'}));await flush();
- const newQuote=pending.find(p=>p.url==='/api/security/MSFT');
+ const newQuote=pending.find(p=>p.url.startsWith('/api/security/MSFT?'));
  newQuote.resolve(response({ticker:'MSFT',name:'new'}));await flush();
  oldQuote.resolve(response({ticker:'AAPL',name:'stale'}));await flush();
  assert.equal(ctx.records.get('AAPL').name,'new account');assert.equal(ctx.records.get('MSFT').name,'new');assert.equal(ctx.running,0);

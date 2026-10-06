@@ -6,6 +6,9 @@ import json
 import secrets
 import sqlite3
 import time
+import threading
+from copy import deepcopy
+from collections import OrderedDict
 from typing import Any, Iterator
 
 import psycopg
@@ -69,6 +72,8 @@ class Store:
     def __init__(self, database_url: str | None = None, *, sqlite_path: str | None = None):
         if not sqlite_path and not (database_url or "").startswith(("postgres://", "postgresql://")):
             raise ValueError("DATABASE_URL 必须为 PostgreSQL 连接地址")
+        self._hot_cache = OrderedDict()
+        self._hot_guard = threading.Lock()
         self.database_url = database_url
         self.sqlite_path = sqlite_path
         self.pool = None if sqlite_path else ConnectionPool(
@@ -190,14 +195,32 @@ class Store:
 
     def get_cache(self, key: str) -> tuple[dict, float] | None:
         """Keep daily financial snapshots and quota counters across cloud restarts."""
+        with self._hot_guard:
+            item = self._hot_cache.get(key)
+            if item and time.monotonic() - item[2] < 60:
+                self._hot_cache.move_to_end(key)
+                return deepcopy(item[:2])
         with self.transaction() as connection:
             row = self.execute(connection, "SELECT payload,updated FROM cache WHERE id=?", (key,)).fetchone()
-            return (json.loads(row["payload"]), row["updated"]) if row else None
+        if row:
+            value = (json.loads(row["payload"]), row["updated"])
+            self._remember_cache(key, *value)
+            return value
+        return None
+
+    def _remember_cache(self, key, payload, updated):
+        with self._hot_guard:
+            self._hot_cache[key] = (deepcopy(payload), updated, time.monotonic())
+            self._hot_cache.move_to_end(key)
+            while len(self._hot_cache) > 1024:
+                self._hot_cache.popitem(last=False)
 
     def set_cache(self, key: str, payload: dict) -> None:
+        updated = time.time()
         with self.transaction() as connection:
             self.execute(connection, "INSERT INTO cache VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated=excluded.updated",
-                         (key, json.dumps(payload, ensure_ascii=False, allow_nan=False), time.time()))
+                         (key, json.dumps(payload, ensure_ascii=False, allow_nan=False), updated))
+        self._remember_cache(key, payload, updated)
 
     def get_cached_quotes(self, symbols: list[str]) -> dict:
         """Read tracked snapshots in one database round trip, without a provider call."""
@@ -206,6 +229,8 @@ class Store:
         keys = ["quote:" + symbol for symbol in symbols]
         with self.transaction() as connection:
             rows = self.execute(connection, "SELECT id,payload,updated FROM cache WHERE id IN (" + ",".join("?" for _ in keys) + ")", keys).fetchall()
+        for row in rows:
+            self._remember_cache(row["id"], json.loads(row["payload"]), row["updated"])
         return {row["id"][6:]: {**json.loads(row["payload"]), "cached": True,
                                 "cache_age_seconds": round(max(0, time.time() - row["updated"]))}
                 for row in rows}

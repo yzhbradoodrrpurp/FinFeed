@@ -5,6 +5,7 @@ const functions=source.slice(source.indexOf('async function getRecord('),source.
 const pending=[];
 const saved={ticker:'AAPL',name:'Apple',fetched_at:'2026-10-05T20:00:00Z',quote_date:'2026-10-05',currency:'USD',metrics:{price:{value:100},eps_q0:{value:2}},sources:{quote:'https://finance.yahoo.com/quote/AAPL/'}};
 const ctx={AbortController,Date,Set,Promise,encodeURIComponent,records:new Map([['AAPL',saved]]),recordRequests:new Set(),recordGeneration:0,queue:[],running:0,fetchingTickers:new Set(),trackedTickers:()=>['AAPL'],scheduleRender(){},el:()=>({disabled:false}),FinFeedAuth:{request:()=>new Promise((resolve,reject)=>pending.push({resolve,reject}))}};
+ctx.FinFeedCache={market:async(url,consume,{signal}={})=>{const response=await ctx.FinFeedAuth.request(url,{signal});if(!response.ok)throw new Error('request failed');const value=await response.json();consume(value);return value;}};
 vm.createContext(ctx);vm.runInContext(functions,ctx);
 const flush=()=>new Promise(setImmediate);
 (async()=>{

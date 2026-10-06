@@ -294,22 +294,22 @@ function render(){
   renderHoldings();
   if(surface==="watchlist")flashChangedCells();
 }
-async function getRecord(ticker,refresh=false,signal){
-  const response=await FinFeedAuth.request(`/api/security/${encodeURIComponent(ticker)}${refresh?"?refresh=1":""}`,{signal});
-  if(!response.ok)throw new Error(`读取失败 (${response.status})`);
-  return response.json();
+async function getRecord(ticker,refresh=false,signal,onUpdate=()=>{}){
+  return FinFeedCache.market(`/api/security/${encodeURIComponent(ticker)}?stream=1${refresh?"&refresh=1":""}`,onUpdate,{signal});
 }
 function acceptRecord(ticker,incoming){
   const saved=records.get(ticker);
   if(incoming?.metrics?.price?.value==null&&saved?.metrics?.price?.value!=null){
     records.set(ticker,{...saved,stale:true,refresh_checked_at:new Date().toISOString(),
       errors:[...new Set([...(saved.errors||[]),...(incoming.errors||[]),'行情刷新失败，保留上次成功快照'])]});
-  }else records.set(ticker,incoming);
+  }else records.set(ticker,incoming.partial&&saved?{...saved,...incoming,metrics:{...saved.metrics,...incoming.metrics}}:incoming);
 }
 function pump(){
   while(running<128&&queue.length){
     const task=queue.shift(),controller=new AbortController();running++;recordRequests.add(controller);
-    getRecord(task.ticker,task.refresh,controller.signal).then(record=>{
+    getRecord(task.ticker,task.refresh,controller.signal,record=>{
+      if(task.generation===recordGeneration&&trackedTickers().includes(task.ticker)){acceptRecord(task.ticker,record);scheduleRender();}
+    }).then(record=>{
       if(task.generation===recordGeneration&&trackedTickers().includes(task.ticker))acceptRecord(task.ticker,record);
     }).catch(error=>{
       if(task.generation===recordGeneration&&error.name!=="AbortError"&&trackedTickers().includes(task.ticker))acceptRecord(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});

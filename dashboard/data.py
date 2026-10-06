@@ -181,7 +181,7 @@ def revalue(result, estimate_store=None):
     return result
 
 
-def fetch_security(symbol, saved=None, estimate_store=None):
+def fetch_security(symbol, saved=None, estimate_store=None, on_update=None):
     started = now()
     session_status = yahoo_session.initialize()
     item = yf.Ticker(symbol)
@@ -212,8 +212,22 @@ def fetch_security(symbol, saved=None, estimate_store=None):
                 info.pop(key, None)
         else:
             info_task = pool.submit(load, "证券信息", item.get_info, {})
-            info = info_task.result() or {}
         history = history_task.result()
+        if on_update and history is not None and not history.empty:
+            metadata_preview = load("交易时段", history_item.get_history_metadata, {}) or {}
+            preview_price = number(metadata_preview.get("regularMarketPrice"))
+            if preview_price is None:
+                preview_price = number(history.iloc[-1]["Close"])
+            preview_date = history.index[-1].date().isoformat()
+            preview = deepcopy(saved) if saved else {"ticker": symbol, "name": symbol,
+                "metrics": {}, "sources": {}, "currency": metadata_preview.get("currency")}
+            preview.update(partial=True, fetched_at=started, quote_date=preview_date, stale=False)
+            preview["metrics"]["price"] = field(preview_price, preview_date,
+                "常规交易时段最近成交价", f"https://finance.yahoo.com/quote/{quote(symbol, safe='')}/",
+                currency=metadata_preview.get("currency") or preview.get("currency"))
+            on_update(preview)
+        if not reuse_info:
+            info = info_task.result() or {}
     security_info = deepcopy(info)
     # quoteSummary can return {} after logging HTTP 401 without raising.
     # Chart metadata uses an independent endpoint and still identifies securities.
@@ -286,6 +300,12 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     else:
         m["avg_volume_10"] = empty_metric("无法取得报价对应交易日")
         m["relative_volume_10"] = empty_metric("无法取得报价对应交易日")
+    if on_update and price is not None:
+        preview = deepcopy(result)
+        if saved:
+            reuse_financial(preview, saved)
+        preview["partial"] = True
+        on_update(preview)
     equity = quote_type == "EQUITY"
     if not equity:
         reason = "该证券不是公司股票，财务与 EPS 指标不适用" if quote_type != "UNKNOWN" else "证券未识别或数据源暂不可用"
@@ -398,7 +418,7 @@ def fetch_security(symbol, saved=None, estimate_store=None):
     return revalue(result, estimate_store)
 
 
-def security(symbol, refresh=False, store=None):
+def security(symbol, refresh=False, store=None, on_update=None):
     with LOCK_GUARD:
         lock = LOCKS.setdefault(symbol, threading.Lock())
     with lock:
@@ -428,7 +448,8 @@ def security(symbol, refresh=False, store=None):
         stage = "fetch_security"
         try:
             with LIMIT:
-                result = fetch_security(symbol, saved, estimate_store=store)
+                result = (fetch_security(symbol, saved, estimate_store=store, on_update=on_update)
+                          if on_update else fetch_security(symbol, saved, estimate_store=store))
             if result.get("metrics", {}).get("price", {}).get("value") is None:
                 failure("yahoo", "quote_refresh", symbol=symbol, reason="; ".join(result.get("errors", [])) or "price missing / empty response", started=fetch_started, fallback_available=bool(saved and saved.get("metrics", {}).get("price", {}).get("value") is not None))
                 fallback = failed_snapshot(result.get("errors", []) + ["行情刷新失败，保留上次成功快照"])
@@ -436,6 +457,13 @@ def security(symbol, refresh=False, store=None):
                     return fallback
                 # Do not persist an unavailable response as a successful snapshot.
                 return {**result, "cached": False}
+            if saved and result.get("errors"):
+                # Failed blocks cannot erase successful, dated financial fields.
+                for key, previous in saved.get("metrics", {}).items():
+                    incoming = result.get("metrics", {}).get(key, {})
+                    if previous.get("value") is not None and incoming.get("value") is None:
+                        result["metrics"][key] = {**deepcopy(previous), "stale": True}
+                result["financial_checked_at"] = saved.get("financial_checked_at")
             stage = "quote_cache_write"
             store.set_cache("quote:" + symbol, result)
             return {**result, "cached": False}

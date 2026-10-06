@@ -61,6 +61,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     if bootstrap and len(bootstrap) < 32:
         raise ValueError("首次绑定码至少需要 32 个字符，请在部署平台生成高强度随机值")
     database = store or Store(app.config["DATABASE_URL"])
+    from refresh_jobs import RefreshJobs
+    refresh_jobs = RefreshJobs(database)
     app.extensions["finfeed_store"] = database
     secure = not local_test
     session_cookie = "__Host-finfeed_session" if secure else "finfeed_test_session"
@@ -537,7 +539,11 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         symbol = request.args.get("symbol")
         if symbol:
             try:
-                return jsonify(index_snapshot(symbol))
+                if symbol not in {'^GSPC', '^IXIC', '^DJI'}:
+                    raise ValueError('未知指数')
+                return refresh_jobs.response('home:' + symbol, lambda publish: index_snapshot(symbol),
+                    60, lambda value: value.get('index', {}).get('price') is not None,
+                    stream=request.args.get('stream') == '1')
             except ValueError as error:
                 return jsonify(error=str(error)), 400
         return jsonify(calendar_snapshot())
@@ -550,14 +556,20 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         from macro import snapshot
         if kind not in {"jobs", "pce", "dxy", "treasury"}:
             abort(404)
-        return jsonify(snapshot(kind))
+        return refresh_jobs.response('macro:' + kind, lambda publish: snapshot(kind),
+            3600, lambda value: any(metric.get('latest') for metric in value.get('metrics', [])),
+            stream=request.args.get('stream') == '1')
 
     @app.get("/api/security/<symbol>")
     def quote(symbol: str):
         symbol = symbol.upper()
         if not SYMBOL.fullmatch(symbol):
             abort(400, description="无效 ticker")
-        return jsonify(security(symbol, request.args.get("refresh") == "1", store=database))
+        refresh = request.args.get("refresh") == "1"
+        return refresh_jobs.response('security:' + symbol,
+            lambda publish: security(symbol, refresh, store=database, on_update=publish),
+            60, lambda value: value.get('metrics', {}).get('price', {}).get('value') is not None,
+            persist=False, stream=request.args.get('stream') == '1')
 
     @app.get("/")
     @app.get("/index.html")

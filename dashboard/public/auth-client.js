@@ -15,21 +15,31 @@ window.FinFeedAuth = (() => {
   async function request(url, options={}) {
     const started=performance.now();
     const requestId=Array.from(crypto.getRandomValues(new Uint8Array(8)), b=>b.toString(16).padStart(2,'0')).join('');
+    const controller=new AbortController();
+    const abort=()=>controller.abort(options.signal?.reason);
+    if(options.signal?.aborted)abort();else options.signal?.addEventListener?.('abort',abort,{once:true});
+    const timer=setTimeout(()=>controller.abort(new DOMException('API 请求超过 30 秒','TimeoutError')),30000);
+    const finish=()=>{clearTimeout(timer);options.signal?.removeEventListener?.('abort',abort);};
     let response;
     try {
-      response = await fetch(url, {...options, credentials:"same-origin", headers:{...options.headers,"X-FinFeed-Client":"1","X-FinFeed-Request-ID":requestId}});
+      response = await fetch(url, {...options, signal:controller.signal, credentials:"same-origin", headers:{...options.headers,"X-FinFeed-Client":"1","X-FinFeed-Request-ID":requestId}});
     } catch(error) {
-      if(error.name !== 'AbortError')reportFailure(url, options, 'network_error', null, started, requestId);
+      finish();
+      if(controller.signal.reason?.name==='TimeoutError')reportFailure(url, options, 'timeout', null, started, requestId);
+      else if(error.name !== 'AbortError')reportFailure(url, options, 'network_error', null, started, requestId);
       throw error;
     }
     const readJSON = response.json?.bind(response);
     if(readJSON)response.json = async () => {
       try { return await readJSON(); }
-      catch(error) { reportFailure(url, options, 'invalid_response', response.status, started, requestId); throw error; }
+      catch(error) { reportFailure(url, options, controller.signal.reason?.name==='TimeoutError'?'timeout':'invalid_response', response.status, started, requestId); throw error; }
+      finally { finish(); }
     };
+    // Stream readers have their own full-body deadline in FinFeedCache.market.
+    if(!readJSON||response.headers?.get('content-type')?.includes('ndjson'))finish();
     if(!response.ok)reportFailure(url, options, 'http_error', response.status, started, requestId);
     if(response.status===401 && !url.startsWith("/api/auth/")) {
-      location.replace("/login");throw new Error("登录已过期，请重新验证");
+      finish();location.replace("/login");throw new Error("登录已过期，请重新验证");
     }
     return response;
   }

@@ -21,7 +21,8 @@ window.FinFeedCache={
     const timeout=setTimeout(()=>controller.abort(new DOMException('数据请求超过 30 秒','TimeoutError')),30000);
     const run=async()=>{
       const shared=FinFeedCache.read(key,ttl);
-      if(shared&&!shared.data.stale){consume(shared.data);return shared.data;}
+      const sourceTime=shared&&Date.parse(shared.data.retrieved_at||shared.data.fetched_at||'');
+      if(shared&&!shared.data.stale&&(!Number.isFinite(sourceTime)||Date.now()-sourceTime<ttl)){consume(shared.data);return shared.data;}
       let latest=shared?.data;
       if(latest)consume(latest);
       const response=await FinFeedAuth.request(url,{signal:controller.signal});

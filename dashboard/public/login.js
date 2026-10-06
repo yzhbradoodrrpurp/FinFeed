@@ -34,7 +34,6 @@ async function authenticate(){
   finally{if(controller===active){controller=null;button.disabled=false;}}
 }
 (async()=>{
-  if(new URLSearchParams(location.search).has("legacy"))return;
   try{
     const response=await FinFeedAuth.request("/api/auth/status");
     if(!response.ok)throw new Error("无法连接验证服务，请稍后刷新");

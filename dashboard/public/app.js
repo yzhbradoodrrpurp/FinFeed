@@ -195,6 +195,7 @@ async function changeViewedAccount(name,id){
   readOnly=true;document.body.classList.toggle("read-only",true);
   cancelRecordLoads();tickers=[];holdings=[];initialLoading=true;
   sortKey=null;cellValues.clear();cellFlashes.clear();feedback("");render();
+  if(surface===name)window.FinFeedMotion?.enter(el(`${name}-surface`));
   if(surface===name)history.replaceState(history.state,"",accountViewURL(name,id));
   try{
     await stateWrites;
@@ -208,6 +209,7 @@ async function changeViewedAccount(name,id){
     tickers=state.watchlist;holdings=state.positions;initialLoading=false;
     for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
     feedback("");render();load(trackedTickers());
+    if(surface===name)window.FinFeedMotion?.enter(el(`${name}-surface`));
     return true;
   }catch(error){
     if(version!==accountStateVersion||error.name==="AbortError")return false;
@@ -217,6 +219,7 @@ async function changeViewedAccount(name,id){
 }
 async function switchSurface(next){
   if(!surfaceNames.includes(next))return;
+  const changed=surface!==next;
   surface=next;
   const viewURL=new URL(location.href);
   if(next==="home")viewURL.searchParams.delete("surface");
@@ -234,6 +237,7 @@ async function switchSurface(next){
   document.querySelectorAll("[data-surface]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.surface===surface)));
   if(next==="home"&&currentUser)FinFeedHome.open(currentUser);
   render();
+  if(changed)window.FinFeedMotion?.enter(el(`${next}-surface`));
   if(currentUser&&surfaceAccounts[next]&&surfaceAccounts[next]!==viewedUserId){
     changeViewedAccount(next,surfaceAccounts[next]);
   }

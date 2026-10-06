@@ -299,13 +299,20 @@ async function getRecord(ticker,refresh=false,signal){
   if(!response.ok)throw new Error(`读取失败 (${response.status})`);
   return response.json();
 }
+function acceptRecord(ticker,incoming){
+  const saved=records.get(ticker);
+  if(incoming?.metrics?.price?.value==null&&saved?.metrics?.price?.value!=null){
+    records.set(ticker,{...saved,stale:true,refresh_checked_at:new Date().toISOString(),
+      errors:[...new Set([...(saved.errors||[]),...(incoming.errors||[]),'行情刷新失败，保留上次成功快照'])]});
+  }else records.set(ticker,incoming);
+}
 function pump(){
   while(running<128&&queue.length){
     const task=queue.shift(),controller=new AbortController();running++;recordRequests.add(controller);
     getRecord(task.ticker,task.refresh,controller.signal).then(record=>{
-      if(task.generation===recordGeneration&&trackedTickers().includes(task.ticker))records.set(task.ticker,record);
+      if(task.generation===recordGeneration&&trackedTickers().includes(task.ticker))acceptRecord(task.ticker,record);
     }).catch(error=>{
-      if(task.generation===recordGeneration&&error.name!=="AbortError"&&trackedTickers().includes(task.ticker))records.set(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});
+      if(task.generation===recordGeneration&&error.name!=="AbortError"&&trackedTickers().includes(task.ticker))acceptRecord(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});
     }).finally(()=>{
       recordRequests.delete(controller);
       if(task.generation===recordGeneration)fetchingTickers.delete(task.ticker);
@@ -333,7 +340,7 @@ function detail(ticker){
   const r=records.get(ticker);if(!r){feedback(`${ticker} 正在读取，请稍后查看。`);return;}
   el("detail-title").textContent=`${ticker} · ${r.name}`;
   const sourceNames={quote:"行情来源",financials:"利润表",balance:"资产负债表",cashflow:"现金流",estimates:"Yahoo 分析师预期",estimates_alpha:"Alpha Vantage 盈利预测",sec:"SEC 披露查询"};
-  el("detail-content").innerHTML=`<div class="meta-row">最近披露财季：${escapeHTML(r.quarter_0||"未提供")}　上财季：${escapeHTML(r.quarter_1||"未提供")}<br>行情检索：${timestamp(r.fetched_at)}${r.cached?" · 缓存":""}${r.stale?" · 刷新失败，保留旧快照":""}<br>财务与预测检索：${timestamp(r.financial_fetched_at)}${r.financial_stale?" · 日度更新失败，使用旧财务数据":""}<br>Alpha Vantage 预测检索：${timestamp(r.estimates_fetched_at)}<br>财务日度检查：${timestamp(r.financial_checked_at)}<br>报价时间：${timestamp(r.quote_at)}　交易所：${escapeHTML(r.exchange||"未提供")} (${escapeHTML(r.exchange_timezone||"未提供")})<br>报价币种：${escapeHTML(r.currency||"未提供")}　财报币种：${escapeHTML(r.financial_currency||"未提供")}　延迟：${r.delay_minutes==null?"供应商未明确提供":escapeHTML(r.delay_minutes)+" 分钟（供应商标记）"}<br>申报日：未由免费聚合源提供，请到 SEC 核对。${r.errors?.length?`<br>${escapeHTML(r.errors.join("；"))}`:""}</div><nav class="source-links">${Object.entries(r.sources||{}).map(([k,url])=>`<a href="${escapeHTML(url)}" target="_blank" rel="noreferrer">${sourceNames[k]||k}</a>`).join("")}</nav>${allColumns.map(([key,title,sub,type])=>{
+  el("detail-content").innerHTML=`<div class="meta-row">最近披露财季：${escapeHTML(r.quarter_0||"未提供")}　上财季：${escapeHTML(r.quarter_1||"未提供")}<br>行情检索：${timestamp(r.fetched_at)}${r.cached?" · 缓存":""}${r.stale?" · 刷新失败，保留旧快照":""}${r.refresh_checked_at?`<br>本次刷新检查：${timestamp(r.refresh_checked_at)}`:""}<br>财务与预测检索：${timestamp(r.financial_fetched_at)}${r.financial_stale?" · 日度更新失败，使用旧财务数据":""}<br>Alpha Vantage 预测检索：${timestamp(r.estimates_fetched_at)}<br>财务日度检查：${timestamp(r.financial_checked_at)}<br>报价时间：${timestamp(r.quote_at)}　交易所：${escapeHTML(r.exchange||"未提供")} (${escapeHTML(r.exchange_timezone||"未提供")})<br>报价币种：${escapeHTML(r.currency||"未提供")}　财报币种：${escapeHTML(r.financial_currency||"未提供")}　延迟：${r.delay_minutes==null?"供应商未明确提供":escapeHTML(r.delay_minutes)+" 分钟（供应商标记）"}<br>申报日：未由免费聚合源提供，请到 SEC 核对。${r.errors?.length?`<br>${escapeHTML(r.errors.join("；"))}`:""}</div><nav class="source-links">${Object.entries(r.sources||{}).map(([k,url])=>`<a href="${escapeHTML(url)}" target="_blank" rel="noreferrer">${sourceNames[k]||k}</a>`).join("")}</nav>${allColumns.map(([key,title,sub,type])=>{
     const m=r.metrics?.[key];return `<section class="metric-detail"><h3>${title}<br><span style="font-weight:400;color:#81909c">${sub}</span></h3><div><div class="value">${format(m,type)} ${escapeHTML(m?.currency||"")}</div>${m?.reason?`<p>${escapeHTML(m.reason)}</p>`:""}${m?.estimate_stale?"<p>预测更新失败，使用旧预测。</p>":""}${m?.historical_cache?`<p>包含历史缓存：Yahoo 本次未返回部分财季；缓存原始检索时间 ${timestamp(m.cache_fetched_at||m.fetched_at)}。后续修订尚待数据源核验。</p>`:""}<p>数据期：${escapeHTML(m?.period||m?.estimate_label||"未提供")}${m?.comparison_period?" · 比较期："+escapeHTML(m.comparison_period):""}</p><p>${escapeHTML(m?.basis||"未提供口径")}</p>${m?.analysts!=null?`<p>覆盖分析师：${m.analysts}</p>`:""}${m?.inputs?`<p>计算输入：${escapeHTML(JSON.stringify(m.inputs))}</p>`:""}${m?.source?`<a href="${escapeHTML(m.source)}" target="_blank" rel="noreferrer">查看来源</a>`:""}</div></section>`;
   }).join("")}`;
   el("detail-dialog").showModal();

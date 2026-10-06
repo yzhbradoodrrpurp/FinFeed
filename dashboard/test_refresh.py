@@ -190,13 +190,46 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(second['metrics']['debt_q0']['value'], 60)
         self.assertIsNone(second['metrics']['debt_qoq_q0']['value'])
 
-    def test_request_exception_returns_empty_metrics_instead_of_old_quote(self):
+    def test_request_exception_preserves_old_quote_and_does_not_write_cache(self):
         store = MagicMock()
         store.get_cache.return_value = ({'schema_version': data.SCHEMA_VERSION, 'metrics': {'price': {'value': 100}}}, 0)
         with patch.object(data, 'fetch_security', side_effect=RuntimeError('offline')):
             result = data.security('QA', refresh=True, store=store)
-        self.assertEqual(result['metrics'], {})
+        self.assertEqual(result['metrics']['price']['value'], 100)
+        self.assertTrue(result['stale'])
+        self.assertTrue(result['refresh_checked_at'])
         self.assertTrue(result['errors'])
+        store.set_cache.assert_not_called()
+
+    def test_empty_provider_response_cannot_poison_successful_cache(self):
+        saved={'schema_version':data.SCHEMA_VERSION,'name':'Test Company',
+               'fetched_at':'2026-10-04T01:00:00+00:00','quote_date':'2026-10-02',
+               'metrics':{'price':{'value':100},'eps_q0':{'value':2}}}
+        store=MagicMock();store.get_cache.return_value=(saved,0)
+        empty={'ticker':'QA','metrics':{'price':{'value':None}},'errors':['provider failed']}
+        with patch.object(data,'fetch_security',return_value=empty):
+            result=data.security('QA',refresh=True,store=store)
+        self.assertEqual(result['metrics'],saved['metrics'])
+        self.assertEqual(result['fetched_at'],saved['fetched_at'])
+        self.assertEqual(result['quote_date'],saved['quote_date'])
+        self.assertTrue(result['stale'])
+        store.set_cache.assert_not_called()
+        self.assertNotIn('stale',saved)
+        # Next successful retry replaces the old snapshot and removes stale status.
+        fresh={**saved,'metrics':{'price':{'value':110}},'fetched_at':data.now()}
+        with patch.object(data,'fetch_security',return_value=fresh):
+            result=data.security('QA',refresh=True,store=store)
+        self.assertEqual(result['metrics']['price']['value'],110)
+        self.assertFalse(result.get('stale',False))
+        store.set_cache.assert_called_once()
+
+    def test_first_failed_quote_has_no_fabricated_cache(self):
+        store=MagicMock();store.get_cache.return_value=None
+        with patch.object(data,'fetch_security',return_value={'metrics':{},'errors':['offline']}):
+            result=data.security('NEW',store=store)
+        self.assertEqual(result['metrics'],{})
+        self.assertFalse(result.get('stale',False))
+        store.set_cache.assert_not_called()
 
     def test_yahoo_forecast_preferred_and_alpha_only_fills_gaps(self):
         record = self.fetch('2026-10-04T02:00:00+00:00')

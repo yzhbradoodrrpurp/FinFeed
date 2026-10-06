@@ -407,10 +407,27 @@ def security(symbol, refresh=False, store=None):
         # Market requests refresh each minute; same-minute tabs share the cache.
         if saved and not financial_due(saved, now()) and age < TTL:
             return {**saved, "cached": True, "cache_age_seconds": round(age)}
+        def failed_snapshot(errors):
+            if saved and saved.get("metrics", {}).get("price", {}).get("value") is not None:
+                return {**deepcopy(saved), "cached": True, "stale": True,
+                        "refresh_checked_at": now(), "cache_age_seconds": round(age),
+                        "errors": list(dict.fromkeys([*saved.get("errors", []), *errors]))}
+            return None
+
         try:
             with LIMIT:
                 result = fetch_security(symbol, saved, estimate_store=store)
+            if result.get("metrics", {}).get("price", {}).get("value") is None:
+                fallback = failed_snapshot(result.get("errors", []) + ["行情刷新失败，保留上次成功快照"])
+                if fallback:
+                    return fallback
+                # Do not persist an unavailable response as a successful snapshot.
+                return {**result, "cached": False}
             store.set_cache("quote:" + symbol, result)
             return {**result, "cached": False}
         except Exception as exc:
-            return {"ticker": symbol, "name": symbol, "fetched_at": now(), "metrics": {}, "errors": [f"数据暂不可用：{type(exc).__name__}"], "sources": {}}
+            errors = [f"数据暂不可用：{type(exc).__name__}"]
+            fallback = failed_snapshot(errors)
+            if fallback:
+                return fallback
+            return {"ticker": symbol, "name": symbol, "fetched_at": now(), "metrics": {}, "errors": errors, "sources": {}}

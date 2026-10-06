@@ -23,6 +23,9 @@ window.FinFeedDropdowns = (() => {
         signature=next;menu.replaceChildren();
         options.forEach(option=>{
           const button=document.createElement('button');button.type='button';button.className='dropdown-option';button.dataset.value=option.value;button.textContent=option.textContent;button.disabled=option.disabled;button.setAttribute('role','option');
+          // Safari can blur a focused option to the page before dispatching click.
+          // Keep focus inside the menu until the selection has been committed.
+          button.addEventListener('pointerdown',event=>{if(event.button===0)event.preventDefault();});
           button.addEventListener('click',()=>{select.value=option.value;sync();close();trigger.focus();select.dispatchEvent(new Event('change',{bubbles:true}));});menu.append(button);
         });
         if(!options.length){const empty=document.createElement('p');empty.className='dropdown-empty';empty.textContent='正在读取账户…';menu.append(empty);}
@@ -34,13 +37,14 @@ window.FinFeedDropdowns = (() => {
     trigger.addEventListener('click',()=>menu.hidden?open():close());
     trigger.addEventListener('keydown',event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();open();}});
     root.addEventListener('keydown',event=>{
+      if(event.key==='Tab')setTimeout(()=>{if(!root.contains(document.activeElement))close();},0);
       if(event.key==='Escape'){event.preventDefault();close();trigger.focus();}
       if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)&&!menu.hidden){
         event.preventDefault();const items=Array.from(menu.querySelectorAll('button:not(:disabled)'));if(!items.length)return;
         const index=items.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;items[next].focus();
       }
     });
-    root.addEventListener('focusout',event=>{if(!root.contains(event.relatedTarget))close();});
+    root.addEventListener('focusout',event=>{if(event.relatedTarget&&!root.contains(event.relatedTarget))close();});
     document.addEventListener('pointerdown',event=>{if(!root.contains(event.target))close();});
     select.addEventListener('change',sync);
     new MutationObserver(sync).observe(select,{childList:true,subtree:true,characterData:true,attributes:true});

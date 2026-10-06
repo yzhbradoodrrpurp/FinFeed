@@ -7,9 +7,9 @@ window.FinFeedMotion=(()=>{
     running.get(element)?.cancel();
     if(window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
     const animation=element.animate([
-      {opacity:0.65,transform:'translateY(5px)'},
+      {opacity:0,transform:'translateY(18px)'},
       {opacity:1,transform:'translateY(0)'}
-    ],{duration:180,easing:'cubic-bezier(.2,.7,.2,1)'});
+    ],{duration:320,easing:'cubic-bezier(.16,1,.3,1)'});
     running.set(element,animation);
     animation.onfinish=()=>{if(running.get(element)===animation)running.delete(element);};
   }

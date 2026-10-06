@@ -167,11 +167,12 @@ body.sidebar-collapsed{--sidebar:64px!important}
 .whale-category-control{margin-left:auto}.whale-category-control select{width:280px;max-width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:9px;background:#fff;color:#746d65;font:inherit;font-size:13px;cursor:pointer}.whale-category-control select:focus-visible{outline:2px solid #ee7523;outline-offset:2px}.whales-groups{min-width:0}@media(max-width:640px){.whale-category-control select{width:180px}.whale-group-heading{align-items:start;flex-direction:column;gap:4px}}
 
 /* Short compositor-only entrance motion keeps navigation immediately usable. */
-@keyframes finfeed-dialog-enter{from{opacity:0;transform:translateY(8px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes finfeed-dialog-enter{from{opacity:0;transform:translateY(24px) scale(.975)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes finfeed-menu-enter{from{opacity:0;transform:translateY(-6px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes finfeed-fade-enter{from{opacity:0}to{opacity:1}}
-dialog[open]{animation:finfeed-dialog-enter 180ms cubic-bezier(.2,.7,.2,1)}
-dialog[open]::backdrop{animation:finfeed-fade-enter 160ms ease-out}
-.dropdown-menu:not([hidden]){animation:finfeed-dialog-enter 140ms cubic-bezier(.2,.7,.2,1);transform-origin:top center}
+dialog[open]{animation:finfeed-dialog-enter 320ms cubic-bezier(.16,1,.3,1)}
+dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
+.dropdown-menu:not([hidden]){animation:finfeed-menu-enter 220ms cubic-bezier(.16,1,.3,1);transform-origin:top center}
 @media(prefers-reduced-motion:reduce){dialog[open],dialog[open]::backdrop,.dropdown-menu:not([hidden]){animation:none}}
 
 /* Site-styled selectors remain interactive during background data refreshes. */

@@ -48,7 +48,7 @@ window.FinFeedWhales=(()=>{
   }
   async function refresh(){if(busy)return;busy=true;el('whales-refresh').disabled=true;
     await Promise.allSettled(Object.keys(funds).map(async kind=>{try{
-      await FinFeedCache.market('/api/whales/'+kind+'?version=7&stream=1',data=>accept(kind,data),{ttl:21600000});
+      await FinFeedCache.market('/api/whales/'+kind+'?version=8&stream=1',data=>accept(kind,data),{ttl:21600000});
     }catch{accept(kind,good.has(kind)?{...good.get(kind),stale:true}:{errors:['SEC 请求失败，请稍后检查更新']});}}));
     checked=Date.now();busy=false;el('whales-refresh').disabled=false;
   }

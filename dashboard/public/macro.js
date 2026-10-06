@@ -22,8 +22,9 @@ window.FinFeedMacro=(()=>{
   function time(s,zone){return s?new Intl.DateTimeFormat('zh-CN',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(s)):"暂无日程";}
   function times(s){return s?`${time(s,'Asia/Shanghai')} 北京<br>${time(s,'America/New_York')} 美国东部`:"暂无日程";}
   function number(v){return Number(v).toLocaleString('zh-CN',{maximumFractionDigits:2});}
+  function chartRows(m){return (m.history||[]).filter(r=>Number.isFinite(r.value)&&Number.isFinite(Date.parse(r.date)));}
   function chart(m,threshold=null){
-    const rows=m.history||[];if(rows.length<2)return '';
+    const rows=chartRows(m);if(rows.length<2)return '';
     let min=Math.min(...rows.map(r=>r.value)),max=Math.max(...rows.map(r=>r.value));
     if(threshold!==null){min=Math.min(min,threshold);max=Math.max(max,threshold);}
     const padding=(max-min||1)*0.12;min-=padding;max+=padding;
@@ -32,7 +33,57 @@ window.FinFeedMacro=(()=>{
     const warningLine=warningY===null?'':`<line x1="8" x2="392" y1="${warningY}" y2="${warningY}" stroke="#c94a39" stroke-width="1" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>`;
     const firstDate=Date.parse(rows[0].date),dateSpan=Date.parse(rows.at(-1).date)-firstDate||1;
     const points=rows.map(r=>`${8+(Date.parse(r.date)-firstDate)/dateSpan*384},${76-(r.value-min)/span*62}`).join(' ');
-    return `<figure class="macro-chart"><svg viewBox="0 0 400 90" role="img" aria-label="${escape(m.label)}历史走势"><path d="M8 78H392" stroke="#eee8de"/>${warningLine}<polyline points="${points}" fill="none" stroke="#ee7523" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg><figcaption><span>${escape(rows[0].date)}</span><span>${escape(rows.at(-1).date)}</span></figcaption></figure>`;
+    return `<figure class="macro-chart"><svg viewBox="0 0 400 90" role="img" tabindex="0" aria-label="${escape(m.label)}历史走势，可用左右方向键查看每日数值"><path d="M8 78H392" stroke="#eee8de"/>${warningLine}<polyline points="${points}" fill="none" stroke="#ee7523" stroke-width="2.5" vector-effect="non-scaling-stroke"/><g class="macro-crosshair" visibility="hidden" pointer-events="none"><line class="chart-vertical" y1="8" y2="78"/><line class="chart-horizontal" x1="8" x2="392"/><circle r="3.5"/></g></svg><div class="macro-chart-tooltip" hidden></div><figcaption><span>${escape(rows[0].date)}</span><span>${escape(rows.at(-1).date)}</span></figcaption></figure>`;
+  }
+  function bindChart(card,m){
+    const figure=card.querySelector('.macro-chart');
+    const svg=figure?.querySelector?.('svg');
+    const rows=chartRows(m);if(!svg||rows.length<2)return;
+    const points=svg.querySelector('polyline').points;
+    const crosshair=svg.querySelector('.macro-crosshair');
+    const vertical=crosshair.querySelector('.chart-vertical'),horizontal=crosshair.querySelector('.chart-horizontal'),dot=crosshair.querySelector('circle');
+    const tooltip=figure.querySelector('.macro-chart-tooltip');
+    const first=Date.parse(rows[0].date),span=Date.parse(rows.at(-1).date)-first||1;
+    let selected=rows.length-1;
+    function show(index){
+      selected=Math.max(0,Math.min(rows.length-1,index));
+      const row=rows[selected],point=points.getItem(selected);
+      vertical.setAttribute('x1',point.x);vertical.setAttribute('x2',point.x);
+      horizontal.setAttribute('y1',point.y);horizontal.setAttribute('y2',point.y);
+      dot.setAttribute('cx',point.x);dot.setAttribute('cy',point.y);
+      crosshair.setAttribute('visibility','visible');
+      tooltip.textContent=`${row.date} · ${number(row.value)}${m.unit||''}`;
+      tooltip.hidden=false;
+      // Map SVG coordinates through its actual screen transform, including letterboxing.
+      const matrix=svg.getScreenCTM();if(!matrix)return;
+      const position=svg.createSVGPoint();position.x=point.x;position.y=point.y;
+      const screen=position.matrixTransform(matrix),bounds=figure.getBoundingClientRect();
+      const left=Math.max(0,Math.min(bounds.width-tooltip.offsetWidth,screen.x-bounds.left+10));
+      tooltip.style.left=`${left}px`;
+      tooltip.style.top=`${Math.max(0,screen.y-bounds.top-tooltip.offsetHeight-10)}px`;
+    }
+    function hide(){crosshair.setAttribute('visibility','hidden');tooltip.hidden=true;}
+    svg.addEventListener('pointermove',event=>{
+      const matrix=svg.getScreenCTM();if(!matrix)return;
+      const position=svg.createSVGPoint();position.x=event.clientX;position.y=event.clientY;
+      const local=position.matrixTransform(matrix.inverse());
+      const date=first+Math.max(0,Math.min(1,(local.x-8)/384))*span;
+      // Snap to a real observation; weekends and missing dates are never interpolated.
+      let low=0,high=rows.length-1;
+      while(low<high){const middle=(low+high)>>1;if(Date.parse(rows[middle].date)<date)low=middle+1;else high=middle;}
+      if(low>0&&date-Date.parse(rows[low-1].date)<=Date.parse(rows[low].date)-date)low--;
+      show(low);
+    });
+    svg.addEventListener('pointerleave',hide);
+    svg.addEventListener('pointercancel',hide);
+    svg.addEventListener('blur',hide);
+    svg.addEventListener('focus',()=>show(selected));
+    svg.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End','Escape'].includes(event.key))return;
+      event.preventDefault();
+      if(event.key==='Escape'){hide();return;}
+      show(event.key==='Home'?0:event.key==='End'?rows.length-1:selected+(event.key==='ArrowRight'?1:-1));
+    });
   }
   function metricValue(id,m){
     const value=`<strong>${m.latest?number(m.latest.value):'—'}<small>${escape(m.unit)}</small></strong>`;
@@ -49,6 +100,7 @@ window.FinFeedMacro=(()=>{
       <p class="macro-note">${escape((data.note||'').replace('5.05%','5.1%'))}</p>
       ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
       <div class="macro-sources">${metrics.map(m=>`<a href="${escape(m.source)}" target="_blank" rel="noreferrer">${escape(m.label)}来源 ↗</a>`).join('')}${data.calendar_source?`<a href="${escape(data.calendar_source)}" target="_blank" rel="noreferrer">官方日历 ↗</a>`:''}${id==='jobs'?'<a href="https://www.bls.gov/news.release/empsit.htm" target="_blank" rel="noreferrer">本次就业报告 ↗</a>':''}${id==='pce'?'<a href="https://www.bea.gov/data/income-saving/personal-income" target="_blank" rel="noreferrer">BEA 发布内容 ↗</a>':''}</div><p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
+    if(metrics[0]&&(id==='dxy'||id==='treasury'))bindChart(card,metrics[0]);
   }
   let fedBusy=false,fedUpdated=0,fedData=null;
   const fedColors=['#83baff','#416bff','#ee7523','#e5b500','#9871cc'];

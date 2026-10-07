@@ -348,8 +348,18 @@ class Store:
                     found[key] = deepcopy(item[:2])
         missing = [key for key in keys if key not in found]
         if missing:
-            with self.transaction(cache=True) as connection:
-                rows = self.execute(connection, "SELECT id,payload,updated FROM cache WHERE id IN (" + ",".join("?" for _ in missing) + ")", missing).fetchall()
+            try:
+                with self.transaction(cache=True) as connection:
+                    rows = self.execute(connection, "SELECT id,payload,updated FROM cache WHERE id IN (" + ",".join("?" for _ in missing) + ")", missing).fetchall()
+            except Exception as exc:
+                failure('database', 'snapshot_batch_read', error=exc)
+                rows = []
+            # Even a failed database read must not discard successful in-memory
+            # snapshots. Their original timestamps still govern freshness.
+            with self._hot_guard:
+                for key in missing:
+                    if key in self._hot_cache:
+                        found[key] = deepcopy(self._hot_cache[key][:2])
             for row in rows:
                 self._remember_cache(row['id'], json.loads(row['payload']), row['updated'])
                 with self._hot_guard:

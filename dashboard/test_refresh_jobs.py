@@ -158,6 +158,7 @@ class RefreshJobCases(unittest.TestCase):
         with patch.object(self.store, 'transaction', side_effect=RuntimeError('offline')):
             self.assertEqual(self.store.get_cache('quote:A')[0]['price'], 101)
             self.assertFalse(self.store.flush_snapshots())
+            self.assertEqual(self.store.get_cached_quotes(['A', 'missing'])['A']['price'], 101)
         self.assertEqual(len(self.store._snapshot_pending), 2)
         self.assertTrue(self.store.flush_snapshots())
         self.assertFalse(self.store._snapshot_pending)

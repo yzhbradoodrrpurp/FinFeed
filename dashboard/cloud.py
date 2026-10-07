@@ -595,7 +595,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/<path:filename>")
     def static_file(filename: str):
-        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js"}:
+        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js", "ticker-search.js", "symbol-directory.json"}:
             abort(404)
         return send_from_directory(ROOT / "public", filename)
 

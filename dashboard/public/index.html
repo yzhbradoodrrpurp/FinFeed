@@ -5,7 +5,7 @@
   <meta name="description" content="FinFeed 私人关注列表与持仓：行情、季度财务、成本、市值和未实现盈亏。">
   <title>FinFeed · 市场研究</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f47729'/%3E%3Cpath d='M8 24V8h17M8 15h13' stroke='%23ffffff' stroke-width='4' fill='none'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/style.css"><script src="/motion.js" defer></script><script src="/auth-client.js" defer></script><script src="/cache.js" defer></script><script src="/positions.js" defer></script><script src="/macro.js" defer></script><script src="/home.js" defer></script><script src="/whale-analysis.js" defer></script><script src="/whales.js" defer></script><script src="/dropdowns.js" defer></script><script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/style.css"><script src="/motion.js" defer></script><script src="/auth-client.js" defer></script><script src="/cache.js" defer></script><script src="/positions.js" defer></script><script src="/macro.js" defer></script><script src="/home.js" defer></script><script src="/whale-analysis.js" defer></script><script src="/whales.js" defer></script><script src="/dropdowns.js" defer></script><script src="/ticker-search.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body class="dashboard-page">
   <aside class="sidebar">
@@ -33,7 +33,7 @@
       <div id="home-indices" class="home-indices" aria-live="polite"><p class="macro-note">正在获取三大指数…</p></div><p id="home-update-status" class="macro-retrieved"></p>
     </section>
     <section id="watchlist-surface" hidden aria-label="关注列表视图">
-    <div class="control-row"><form id="add-form"><label class="sr-only" for="ticker-input">添加 ticker</label><input id="ticker-input" autocomplete="off" spellcheck="false" placeholder="添加 Ticker，如 AAPL / VOO" maxlength="150"><button type="submit" class="secondary">添加</button></form><span id="count" class="count"></span></div>
+    <div class="control-row"><form id="add-form"><label class="sr-only" for="ticker-input">添加 ticker</label><div class="ticker-search"><input role="combobox" aria-autocomplete="list" aria-controls="ticker-suggestions" aria-expanded="false" id="ticker-input" autocomplete="off" spellcheck="false" placeholder="添加 Ticker，如 AAPL / VOO" maxlength="150"><div id="ticker-suggestions" class="ticker-suggestions" role="listbox" aria-label="证券待选项" hidden></div></div><button type="submit" class="secondary">添加</button></form><span id="count" class="count"></span></div>
     <div class="order-toolbar"><button id="order-button" class="secondary">手动排序</button><div class="views" aria-label="指标视图"><button data-view="all" aria-pressed="true">全部指标</button><button data-view="market" aria-pressed="false">行情与估值</button><button data-view="financial" aria-pressed="false">季度财务</button></div></div>
     <span id="load-status" hidden></span>
     <div id="feedback" role="alert" hidden></div>

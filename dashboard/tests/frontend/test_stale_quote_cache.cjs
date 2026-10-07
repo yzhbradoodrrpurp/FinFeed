@@ -1,0 +1,21 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+(async()=>{
+ let now=2000000000,calls=0,finish,unlock;
+ const storage=new Map(),seen=[];
+ const saved={ticker:'AAPL',schema_version:8,fetched_at:new Date(now-3600000).toISOString(),metrics:{price:{value:100}}};
+ storage.set('finfeed-market:v1:request:/api/security/AAPL',JSON.stringify({savedAt:now-3600000,data:saved}));
+ const gate=new Promise(r=>unlock=r);
+ const context={window:{},navigator:{locks:{request:async(k,o,run)=>{await gate;return run();}}},Date:class extends Date{static now(){return now;}},AbortController,DOMException,TextDecoder,Uint8Array,setTimeout,clearTimeout,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},FinFeedAuth:{request:()=>{calls++;return new Promise(r=>finish=r);}}};
+ vm.runInNewContext(fs.readFileSync('dashboard/frontend/js/core/cache.js','utf8'),context);
+ const job=context.window.FinFeedCache.market('/api/security/AAPL?stream=1',v=>seen.push(v),{staleTtl:7*86400000,validate:v=>v.schema_version===8});
+ assert.equal(seen[0].metrics.price.value,100,'old value must display immediately before lock');assert.equal(seen[0].refreshing,true);assert.equal(calls,0);
+ unlock();await new Promise(setImmediate);assert.equal(calls,1,'old cache must still refresh');
+ finish({ok:true,headers:{get:()=> 'application/json'},json:async()=>({...saved,fetched_at:new Date(now).toISOString(),metrics:{price:{value:110}}})});await job;
+ assert.equal(seen.at(-1).metrics.price.value,110);
+ await context.window.FinFeedCache.market('/api/security/AAPL?stream=1',()=>{},{staleTtl:7*86400000,validate:v=>v.schema_version===8});assert.equal(calls,1,'fresh value avoids duplicate network');
+ const forced=context.window.FinFeedCache.market('/api/security/AAPL?stream=1&refresh=1',v=>seen.push(v),{refresh:true,staleTtl:7*86400000,validate:v=>v.schema_version===8});
+ await new Promise(setImmediate);assert.equal(calls,2,'scheduled refresh must bypass even fresh browser cache');
+ finish({ok:true,headers:{get:()=> 'application/json'},json:async()=>({...saved,fetched_at:new Date(now+1000).toISOString(),metrics:{price:{value:120}}})});await forced;
+ assert.equal(seen.at(-1).metrics.price.value,120,'new response replaces prior cache');
+ console.log('PASS: old quote displays before cross-tab lock, refreshes in background, fresh result reused');
+})().catch(e=>{console.error(e);process.exitCode=1;});

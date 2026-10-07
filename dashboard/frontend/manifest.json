@@ -1,0 +1,19 @@
+{
+  "whales.js": "js/views/whales.js",
+  "index.html": "pages/index.html",
+  "positions.js": "js/views/positions.js",
+  "cache.js": "js/core/cache.js",
+  "ticker-search.js": "js/components/ticker-search.js",
+  "auth-client.js": "js/core/auth-client.js",
+  "login.html": "pages/login.html",
+  "symbol-directory.json": "assets/symbol-directory.json",
+  "home.js": "js/views/home.js",
+  "whale-analysis.js": "js/views/whale-analysis.js",
+  "login.js": "js/core/login.js",
+  "style.css": "styles/style.css",
+  "dropdowns.js": "js/components/dropdowns.js",
+  "news.js": "js/views/news.js",
+  "macro.js": "js/views/macro.js",
+  "motion.js": "js/components/motion.js",
+  "app.js": "js/core/app.js"
+}

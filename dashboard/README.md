@@ -1,3 +1,5 @@
+> 目录已于 2026-10-08 整理。当前结构和统一验证命令见 [架构说明](docs/architecture.md)，部署见 [部署说明](docs/deployment.md)。下方带历史日期的记录仅供追溯；当前刷新和并发设置以代码为准。
+
 # FinFeed 自选股与持仓网站
 
 唯一运行入口为 Render 上的 `cloud:create_app()`，使用 Supabase PostgreSQL 保存记录及应用缓存，所有账户数据访问和修改要求 Passkey 登录。部署设置见 [DEPLOY.md](DEPLOY.md)。不提供无登录的本机服务或浏览器本地记录模式。
@@ -64,15 +66,15 @@ Yahoo 日线请求 `auto_adjust=False`，不做股息总回报调整，拆股处
 
 ```sh
 cd dashboard
-.venv/bin/python -m unittest test_metrics.py
-node --check public/app.js
+.venv/bin/python tests/run.py
+node --check frontend/js/core/app.js
 ```
 
-- `cloud.py`：网站服务、Passkey 登录及接口权限检查。
-- `cloud_store.py`：私人数据库、历史记录和缓存。
-- `data.py`：数据源适配、日期与币种、逐项来源、缓存和失败恢复。
-- `metrics.py`：季度环比、上一财季匹配、P/E 和完整日量比。
-- `public/`：原生网页，不依赖前端构建。
+- `backend/app.py`：网站服务、Passkey 登录及接口权限检查。
+- `backend/storage/store.py`：私人数据库、历史记录和缓存。
+- `backend/services/securities.py`：数据源适配、日期与币种、逐项来源、缓存和失败恢复。
+- `backend/domain/metrics.py`：季度环比、上一财季匹配、P/E 和完整日量比。
+- `frontend/`：原生网页，不依赖前端构建。
 
 后续可接 SEC 财务解析或有授权的四季预测 API。公开部署之前需要重新核对数据许可、服务器访问控制和缓存范围；当前版本的个人研究数据不作为公共网站数据接口。
 

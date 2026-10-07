@@ -1,0 +1,26 @@
+const assert=require("node:assert/strict");
+require("../../frontend/js/views/positions.js");
+const {validate,evaluate,summarize}=globalThis.FinFeedPositions;
+const position=(currency="USD",quantity=10,averageCost=100)=>({ticker:"AAPL",currency,quantity,averageCost});
+const quote=(price=120,currency="USD")=>({currency,metrics:{price:{value:price}}});
+
+const gain=evaluate(position(),quote());
+assert.equal(gain.cost,1000);assert.equal(gain.marketValue,1200);assert.equal(gain.pnl,200);assert.equal(gain.returnRate,.2);
+const loss=evaluate(position("USD",.5,100),quote(80));
+assert.equal(loss.cost,50);assert.equal(loss.pnl,-10);assert.equal(loss.returnRate,-.2);
+const zero=evaluate(position("USD",1,0),quote());
+assert.equal(zero.pnl,120);assert.equal(zero.returnRate,null);
+const missing=evaluate(position(),null);
+assert.equal(missing.marketValue,null);assert.equal(missing.pnl,null);
+const mismatch=evaluate(position("EUR"),quote());
+assert.equal(mismatch.pnl,null);assert.match(mismatch.reason,/未作汇率转换/);
+const groups=summarize([gain,missing,evaluate(position("EUR"),quote(110,"EUR"))]);
+assert.equal(groups.length,2);
+const usd=groups.find(g=>g.currency==="USD");
+assert.equal(usd.cost,2000);assert.equal(usd.marketValue,1200);assert.equal(usd.pricedCount,1);assert.equal(usd.returnRate,.2);
+assert.equal(summarize([missing])[0].marketValue,null);
+assert.throws(()=>validate(position("USD",-1)),/大于零/);
+assert.throws(()=>validate(position("USD",1,-1)),/零或正数/);
+assert.throws(()=>validate(position("USD",NaN)),/大于零/);
+assert.throws(()=>validate({...position(),ticker:"BAD/TICKER"}),/有效 Ticker/);
+console.log("PASS: gains, losses, fractional units, zero cost, missing quotes, currency separation, partial valuation and input validation");

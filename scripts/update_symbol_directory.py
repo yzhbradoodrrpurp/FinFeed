@@ -22,6 +22,6 @@ for filename, field in [('nasdaqlisted.txt', 'Symbol'), ('otherlisted.txt', 'NAS
         rows[symbol] = [symbol, row['Security Name'], row.get('ETF') == 'Y']
 assert len(rows) > 5000, 'Incomplete directory; keep the previous snapshot'
 data = {'retrieved_at': datetime.now(timezone.utc).isoformat(), 'sources': sources, 'securities': sorted(rows.values())}
-path = Path(__file__).resolve().parents[1] / 'dashboard/public/symbol-directory.json'
+path = Path(__file__).resolve().parents[1] / 'dashboard/frontend/assets/symbol-directory.json'
 path.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n')
 print(f'Saved {len(rows)} symbols; {path.stat().st_size} bytes')

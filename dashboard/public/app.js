@@ -2,7 +2,7 @@
 let initialLoading=true;
 const fetchingTickers=new Set();
 let readOnly=true,currentUser=null;
-const surfaceNames=["home","watchlist","portfolio","macro","whales"];
+const surfaceNames=["home","watchlist","portfolio","macro","whales","news"];
 const initialSurface=new URLSearchParams(location.search).get("surface");
 let holdings=[],surface=surfaceNames.includes(initialSurface)?initialSurface:"home",editingPosition=null;
 let viewedUserId=null,accountStateVersion=0,accountRequest=null;
@@ -228,9 +228,10 @@ async function switchSurface(next){
   history.replaceState(history.state,"",viewURL);
   if(next==="macro"&&currentUser)FinFeedMacro.open();
   if(next==="whales"&&currentUser)FinFeedWhales.open();
+  if(next==="news"&&currentUser)FinFeedNews.open();
   for(const name of surfaceNames)el(`${name}-surface`).hidden=surface!==name;
-  el("page-title").textContent={home:currentUser?"Hi "+currentUser.name:"Hi",watchlist:"关注列表",portfolio:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
-  el("page-eyebrow").textContent={home:"HOME",watchlist:"MY WATCHLIST",portfolio:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
+  el("page-title").textContent={home:currentUser?"Hi "+currentUser.name:"Hi",watchlist:"关注列表",portfolio:"持仓",macro:"宏观动向",whales:"巨鲸持仓",news:"新闻"}[surface];
+  el("page-eyebrow").textContent={home:"HOME",watchlist:"MY WATCHLIST",portfolio:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS",news:"MY WATCHLIST NEWS"}[surface];
   document.querySelector(".account-browser").hidden=!["watchlist","portfolio"].includes(surface);
   if(el("whale-category-control"))el("whale-category-control").hidden=surface!=="whales";
   document.querySelector(".title-actions").hidden=!["watchlist","portfolio"].includes(surface);
@@ -426,6 +427,7 @@ async function initializeState(){
     // Shared views start after authentication, without waiting for private records.
     FinFeedHome.prefetch();
     if(surface==="home")FinFeedHome.open(currentUser);
+    if(surface==="news")FinFeedNews.open();
     FinFeedMacro.open();
     FinFeedWhales.open();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;

@@ -28,6 +28,18 @@ class CloudCases(unittest.TestCase):
             self.assertTrue(callable(loader.call_args.kwargs['on_update']))
         self.assertEqual(self.client.get('/api/whales/unknown', headers=HEADERS).status_code, 404)
 
+    def test_news_only_reads_own_watchlist_and_caches_each_source(self):
+        self.assertEqual(self.client.get('/api/news').status_code, 401)
+        self.frontend_setup()
+        self.client.put('/api/state', json={'watchlist':['AAPL'], 'positions':[]}, headers=HEADERS)
+        self.assertEqual(self.client.get('/api/news?user=someone-else').json['tickers'], ['AAPL'])
+        self.assertEqual(self.client.get('/api/news/MSFT/press').status_code, 403)
+        self.assertEqual(self.client.get('/api/news/AAPL/all').status_code, 404)
+        with patch('news.snapshot', return_value={'ticker':'AAPL','kind':'press','items':[], 'errors':[]}) as loader:
+            self.assertEqual(self.client.get('/api/news/AAPL/press').status_code, 200)
+            self.assertEqual(self.client.get('/api/news/AAPL/press').status_code, 200)
+            self.assertEqual(loader.call_count, 1)
+
     def test_backend_migration_preserves_sessions_records_and_frontend_rp(self):
         self.frontend_setup()
         self.assertEqual(self.client.put('/api/state', json={

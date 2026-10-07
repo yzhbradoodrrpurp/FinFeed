@@ -569,6 +569,29 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             21600, lambda value: value.get('totals_verified') is True and bool(value.get('holdings')) and value.get('previous_status') != 'failed',
             stream=request.args.get('stream') == '1')
 
+    def own_news_symbols():
+        with database.transaction() as connection:
+            account = database.account(connection, logged_in()["user_id"], lock=False)
+            state = validate(json.loads(account["state"])) if account["state"] else None
+        return state["watchlist"] if state else []
+
+    @app.get("/api/news")
+    def news_list():
+        return jsonify(tickers=own_news_symbols())
+
+    @app.get("/api/news/<symbol>/<kind>")
+    def news_data(symbol, kind):
+        symbol = symbol.upper()
+        if kind not in {"press", "sec"} or not SYMBOL.fullmatch(symbol):
+            abort(404)
+        if symbol not in own_news_symbols():
+            abort(403, description="仅支持自己的观察列表")
+        from news import snapshot
+        return refresh_jobs.response('news:v1:' + kind + ':' + symbol,
+            lambda publish: snapshot(symbol, kind), 1800,
+            lambda value: isinstance(value.get('items'), list) and not value.get('errors'),
+            stream=request.args.get('stream') == '1')
+
     @app.get("/api/security/<symbol>")
     def quote(symbol: str):
         symbol = symbol.upper()
@@ -595,7 +618,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/<path:filename>")
     def static_file(filename: str):
-        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js", "ticker-search.js", "symbol-directory.json"}:
+        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js", "ticker-search.js", "symbol-directory.json", "news.js"}:
             abort(404)
         return send_from_directory(ROOT / "public", filename)
 

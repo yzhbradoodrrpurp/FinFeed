@@ -174,6 +174,7 @@ function persistState(patch){
     const response=await FinFeedAuth.request("/api/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:payload});
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||"记录保存失败");
+    if(viewedUserId===currentUser?.id)window.FinFeedNews?.setWatchlist(data.state.watchlist);
     return data.state;
   });
   stateWrites=write.catch(()=>{});return write;
@@ -440,7 +441,7 @@ async function initializeState(){
     // Shared views start after authentication, without waiting for private records.
     FinFeedHome.prefetch();
     if(surface==="home")FinFeedHome.open(currentUser);
-    FinFeedNews.open();
+    FinFeedNews.initialize(currentUser);
     FinFeedMacro.open();
     FinFeedWhales.open();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;
@@ -479,6 +480,7 @@ async function initializeState(){
       if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
       if(stateVersion!==accountStateVersion)return;
       initialLoading=false;tickers=state.watchlist;holdings=state.positions;
+      if(viewedUserId===currentUser.id)window.FinFeedNews?.setWatchlist(tickers);
       seedQuoteSnapshots(data.quotes);
       render();load(trackedTickers());
     }).catch(error=>{
@@ -559,7 +561,8 @@ el("confirm-import").addEventListener("click",async()=>{
   if(!pendingImport)return;el("confirm-import").disabled=true;
   try{
     const state=await persistState(pendingImport);
-    initialLoading=false;tickers=state.watchlist;holdings=state.positions;pendingImport=null;
+    initialLoading=false;tickers=state.watchlist;holdings=state.positions;
+      if(viewedUserId===currentUser.id)window.FinFeedNews?.setWatchlist(tickers);pendingImport=null;
     el("import-preview").hidden=true;sortKey=null;queue=[];records.clear();cellValues.clear();cellFlashes.clear();
     render();load(trackedTickers());accountFeedback("关注列表与持仓已保存到云端。");
   }catch(e){accountFeedback(e.message);}

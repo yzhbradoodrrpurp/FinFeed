@@ -578,7 +578,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/api/news")
     def news_list():
-        return jsonify(tickers=own_news_symbols())
+        symbols = own_news_symbols()
+        snapshots = database.get_cached_news(symbols) if request.args.get('cached') == '1' else {}
+        return jsonify(tickers=symbols, snapshots=snapshots)
 
     @app.get("/api/news/<symbol>/<kind>")
     def news_data(symbol, kind):

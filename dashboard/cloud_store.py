@@ -235,6 +235,17 @@ class Store:
                                 "cache_age_seconds": round(max(0, time.time() - row["updated"]))}
                 for row in rows}
 
+    def get_cached_news(self, symbols: list[str]) -> dict:
+        if not symbols:
+            return {}
+        keys = ['market:v1:news:v1:' + kind + ':' + symbol
+                for symbol in symbols for kind in ('press', 'calls', 'sec')]
+        with self.transaction() as connection:
+            rows = self.execute(connection, 'SELECT id,payload,updated FROM cache WHERE id IN (' + ','.join('?' for _ in keys) + ')', keys).fetchall()
+        return {row['id']: {**json.loads(row['payload']), 'cached': True,
+                           'cache_age_seconds': round(max(0, time.time() - row['updated']))}
+                for row in rows if time.time() - row['updated'] <= 7 * 86400}
+
     def update_state(self, patch: dict, *, require_empty: bool = False, user_id=None) -> dict:
         if not isinstance(patch, dict) or set(patch) - {"watchlist", "positions", "initialize"}:
             raise ValueError("无效保存字段")

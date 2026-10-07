@@ -28,6 +28,19 @@ class CloudCases(unittest.TestCase):
             self.assertTrue(callable(loader.call_args.kwargs['on_update']))
         self.assertEqual(self.client.get('/api/whales/unknown', headers=HEADERS).status_code, 404)
 
+    def test_news_bootstrap_batches_only_own_cached_sources(self):
+        self.frontend_setup()
+        self.client.put('/api/state', json={'watchlist':['AAPL'], 'positions':[]}, headers=HEADERS)
+        for ticker in ('AAPL', 'MSFT'):
+            self.store.set_cache('market:v1:news:v1:press:' + ticker,
+                                 {'ticker':ticker, 'kind':'press', 'items':[{'title':ticker}], 'errors':[]})
+        with patch('news.snapshot') as provider:
+            result = self.client.get('/api/news?cached=1&user=someone-else').json
+            provider.assert_not_called()
+        self.assertEqual(result['tickers'], ['AAPL'])
+        self.assertEqual([value['ticker'] for value in result['snapshots'].values()], ['AAPL'])
+        self.assertTrue(next(iter(result['snapshots'].values()))['cached'])
+
     def test_news_only_reads_own_watchlist_and_caches_each_source(self):
         self.assertEqual(self.client.get('/api/news').status_code, 401)
         self.frontend_setup()

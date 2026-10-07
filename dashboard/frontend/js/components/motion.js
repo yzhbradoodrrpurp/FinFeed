@@ -18,9 +18,12 @@ window.FinFeedMotion=(()=>{
   function settle(before,elements){
     Array.from(elements).filter(e=>e.getClientRects().length).forEach(element=>{
       const rect=element.getBoundingClientRect(),old=before.get(element);
-      if(rect.bottom<0||rect.top>window.innerHeight)return;
-      if(old){const x=old.left-rect.left,y=old.top-rect.top;if(x||y)play(element,[{transform:`translate(${x}px,${y}px)`},{transform:'none'}],360);}
-      else play(element,[{opacity:0,transform:'translateY(10px)'},{opacity:1,transform:'none'}],320);
+      const clip=element.closest('.table-shell')?.getBoundingClientRect();
+      if(rect.bottom<Math.max(0,clip?.top||0)||rect.top>Math.min(window.innerHeight,clip?.bottom||window.innerHeight))return;
+      // Animate table cells individually: Safari retains sticky cell positioning.
+      const targets=element.matches('tr')?Array.from(element.cells):[element];
+      if(old){const x=old.left-rect.left,y=old.top-rect.top;if(x||y)targets.forEach(target=>play(target,[{transform:`translate(${x}px,${y}px)`},{transform:'none'}],360));}
+      else targets.forEach(target=>play(target,[{opacity:0,transform:'translateY(12px)'},{opacity:1,transform:'none'}],360));
     });
   }
   const closing=new WeakSet();
@@ -49,9 +52,11 @@ window.FinFeedMotion=(()=>{
     const shell=document.createElement('div'),table=document.createElement('table'),body=document.createElement('tbody'),copy=row.cloneNode(true);
     shell.className='motion-row-exit';shell.setAttribute('aria-hidden','true');shell.inert=true;
     Object.assign(shell.style,{top:rect.top+'px',left:rect.left+'px',width:rect.width+'px',height:rect.height+'px'});
+    const clip=row.closest('.table-shell')?.getBoundingClientRect();
+    if(clip)shell.style.clipPath=`inset(${Math.max(0,clip.top-rect.top)}px ${Math.max(0,rect.right-clip.right)}px ${Math.max(0,rect.bottom-clip.bottom)}px ${Math.max(0,clip.left-rect.left)}px)`;
     Array.from(copy.cells).forEach((cell,i)=>{const width=row.cells[i].getBoundingClientRect().width;Object.assign(cell.style,{width:width+'px',minWidth:width+'px',maxWidth:width+'px',position:'static'});});
     body.append(copy);table.append(body);shell.append(table);document.body.append(shell);
-    const animation=play(shell,[{opacity:1,transform:'none'},{opacity:0,transform:'translateX(-16px)'}],180);
+    const animation=play(shell,[{opacity:1,transform:'none'},{opacity:0,transform:'translateX(-24px)'}],240);
     if(animation)animation.finished.catch(()=>{}).then(()=>shell.remove());else shell.remove();
   }
   function enter(element,{kind='surface',direction=1}={}){

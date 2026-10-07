@@ -17,6 +17,24 @@ from psycopg_pool import ConnectionPool
 
 from state import validate
 
+
+class BoundedConnection(psycopg.Connection):
+    """Do not let a silent socket retain a pool slot indefinitely.
+
+    Pool checkout/connect timeouts do not bound reads on an established socket.
+    SQL timeouts also cannot protect the checkout probe or a lost response.
+    Close an uncertain connection instead of replaying a possibly committed write.
+    """
+    response_timeout = 8.0
+
+    def wait(self, gen, interval=0.1, timeout=None):
+        limit = self.response_timeout if timeout is None else min(timeout, self.response_timeout)
+        try:
+            return super().wait(gen, interval=interval, timeout=limit)
+        except psycopg.OperationalError:
+            self.close()
+            raise
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS owner (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -78,7 +96,8 @@ class Store:
         self.sqlite_path = sqlite_path
         self.pool = self.cache_pool = None
         if not sqlite_path:
-            pool_options = dict(kwargs={"row_factory":dict_row,"connect_timeout":8,
+            pool_options = dict(connection_class=BoundedConnection,
+                kwargs={"row_factory":dict_row,"connect_timeout":8,
                 "sslmode":"require","prepare_threshold":None,"keepalives":1,
                 "keepalives_idle":10,"keepalives_interval":3,"keepalives_count":2,
                 "tcp_user_timeout":10000}, timeout=8, open=True,

@@ -159,7 +159,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.errorhandler(psycopg.OperationalError)
     def database_unavailable(error):
         failure('database', 'request_unavailable', error=error,
-                request_id=getattr(g, 'request_id', ''))
+                request_id=getattr(g, 'request_id', ''),
+                pools={name: pool.get_stats() for name in ('pool', 'cache_pool')
+                       if (pool := getattr(database, name, None)) is not None})
         response = jsonify(error="数据库连接暂时不可用，正在重试，请稍后再试")
         response.status_code = 503
         response.headers['Retry-After'] = '15'

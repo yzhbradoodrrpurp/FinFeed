@@ -13,7 +13,7 @@ window.FinFeedCache={
 (() => {
   const FinFeedCache=window.FinFeedCache;
   const pending=new Map();
-  FinFeedCache.market=async function(url,consume,{signal,ttl=60000,staleTtl=ttl,validate=()=>true}={}){
+  FinFeedCache.market=async function(url,consume,{signal,ttl=60000,staleTtl=ttl,refresh=false,validate=()=>true}={}){
     const key='request:'+url.replace(/[?&]stream=1/g,'').replace(/[?&]refresh=1/g,'');
     const controller=new AbortController();
     const abort=()=>controller.abort(signal?.reason);
@@ -23,7 +23,7 @@ window.FinFeedCache={
       const cached=FinFeedCache.read(key,staleTtl);
       const shared=cached&&validate(cached.data)?cached:null;
       const sourceTime=shared&&Date.parse(shared.data.retrieved_at||shared.data.fetched_at||'');
-      if(shared&&Date.now()-shared.savedAt<ttl&&!shared.data.stale&&(!Number.isFinite(sourceTime)||Date.now()-sourceTime<ttl)){consume(shared.data);return shared.data;}
+      if(!refresh&&shared&&Date.now()-shared.savedAt<ttl&&!shared.data.stale&&(!Number.isFinite(sourceTime)||Date.now()-sourceTime<ttl)){consume(shared.data);return shared.data;}
       let latest=shared?.data;
       if(latest)consume({...latest,cached:true,refreshing:true});
       const response=await FinFeedAuth.request(url,{signal:controller.signal});

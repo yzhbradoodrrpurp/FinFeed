@@ -18,7 +18,7 @@ class RefreshJobs:
         self.entries = {}
         self.capacity = threading.BoundedSemaphore(1024)
 
-    def events(self, key, loader, ttl, valid, persist=True):
+    def events(self, key, loader, ttl, valid, persist=True, force=False):
         started = time.monotonic()
         with self.guard:
             if key not in self.entries and len(self.entries) >= 1024:
@@ -41,6 +41,9 @@ class RefreshJobs:
                 except Exception as exc:
                     failure('database', 'market_cache_read', symbol=key, error=exc)
             fresh = entry['value'] is not None and time.monotonic() < entry['expires']
+            # Concurrent tabs share a just-completed refresh; scheduled cycles bypass older caches.
+            if force and time.monotonic() - entry.get('completed', float('-inf')) >= 5:
+                fresh = False
             if not fresh and not entry['running'] and time.monotonic() >= entry['retry'] and self.capacity.acquire(blocking=False):
                 entry['running'] = True
                 def publish(value):
@@ -57,6 +60,7 @@ class RefreshJobs:
                             if successful:
                                 entry['value'] = value
                                 entry['expires'] = time.monotonic() + ttl
+                                entry['completed'] = time.monotonic()
                                 entry['failures'] = 0
                                 entry['retry'] = 0
                             else:
@@ -114,8 +118,8 @@ class RefreshJobs:
         if initial is None:
             yield {'errors': ['数据暂不可用，稍后重试'], 'stale': True}
 
-    def response(self, key, loader, ttl, valid, persist=True, stream=False):
-        events = self.events(key, loader, ttl, valid, persist)
+    def response(self, key, loader, ttl, valid, persist=True, stream=False, force=False):
+        events = self.events(key, loader, ttl, valid, persist, force)
         if stream:
             from flask import Response
             return Response((json.dumps(value, ensure_ascii=False, allow_nan=False) + '\n' for value in events),

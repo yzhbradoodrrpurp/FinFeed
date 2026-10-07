@@ -181,14 +181,14 @@ def load(kind):
     return card
 
 
-def snapshot(kind):
+def snapshot(kind, force=False):
     if kind not in {'jobs', 'pce', 'dxy', 'treasury'}:
         raise ValueError('Unknown macro indicator')
     # Separate per-indicator locks allow the four cards to load independently.
     with _guard:
         entry = _cache.setdefault(kind, {'lock': threading.Lock(), 'expires': 0})
     with entry['lock']:
-        if time.monotonic() < entry['expires']:
+        if not force and time.monotonic() < entry['expires']:
             return entry['value']
         value = load(kind)
         entry['value'] = value

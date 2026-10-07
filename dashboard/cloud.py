@@ -554,11 +554,12 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             from polymarket import snapshot as fed_snapshot
             return jsonify(fed_snapshot())
         from macro import snapshot
+        refresh = request.args.get('refresh') == '1'
         if kind not in {"jobs", "pce", "dxy", "treasury"}:
             abort(404)
-        return refresh_jobs.response('macro:' + kind, lambda publish: snapshot(kind),
+        return refresh_jobs.response('macro:' + kind, lambda publish: snapshot(kind, force=refresh),
             3600, lambda value: any(metric.get('latest') for metric in value.get('metrics', [])),
-            stream=request.args.get('stream') == '1')
+            stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
 
     @app.get("/api/whales/<kind>")
     def whale_data(kind):
@@ -566,8 +567,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if kind not in FUNDS:
             abort(404)
         return refresh_jobs.response('whales:v5:' + kind, lambda publish: snapshot(kind, on_update=publish),
-            21600, lambda value: value.get('totals_verified') is True and bool(value.get('holdings')) and value.get('previous_status') != 'failed',
-            stream=request.args.get('stream') == '1')
+            3600, lambda value: value.get('totals_verified') is True and bool(value.get('holdings')) and value.get('previous_status') != 'failed',
+            stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
 
     def own_news_symbols():
         with database.transaction() as connection:
@@ -588,9 +589,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(403, description="仅支持自己的观察列表")
         from news import snapshot
         return refresh_jobs.response('news:v1:' + kind + ':' + symbol,
-            lambda publish: snapshot(symbol, kind), 1800,
+            lambda publish: snapshot(symbol, kind), 3600,
             lambda value: isinstance(value.get('items'), list) and not value.get('errors'),
-            stream=request.args.get('stream') == '1')
+            stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
 
     @app.get("/api/security/<symbol>")
     def quote(symbol: str):
@@ -601,7 +602,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         return refresh_jobs.response('security:' + symbol,
             lambda publish: security(symbol, refresh, store=database, on_update=publish),
             60, lambda value: value.get('metrics', {}).get('price', {}).get('value') is not None,
-            persist=False, stream=request.args.get('stream') == '1')
+            persist=False, stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
 
     @app.get("/")
     @app.get("/index.html")

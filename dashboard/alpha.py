@@ -1,4 +1,4 @@
-"""Daily consensus estimate cache. Credentials never enter returned provenance."""
+"""Minute consensus estimate checks with a daily quota guard. Credentials never enter returned provenance."""
 from failure_log import failure
 import time
 import json
@@ -26,7 +26,7 @@ def estimate_data(symbol, timestamp, store=None):
         saved = stored[0] if stored else {}
         day = datetime.fromisoformat(timestamp).astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()
         budget_day = timestamp[:10]  # Provider quota guard uses UTC; response limits are also handled.
-        if saved.get('checked_day') == day:
+        if saved.get('checked_at') and 0 <= (datetime.fromisoformat(timestamp) - datetime.fromisoformat(saved['checked_at'])).total_seconds() < 60:
             return saved
         budget_saved = store.get_cache('alpha:usage')
         budget = budget_saved[0] if budget_saved else {}
@@ -56,7 +56,7 @@ def estimate_data(symbol, timestamp, store=None):
                 error = f'Alpha Vantage 读取失败：{type(exc).__name__}'
         if error:
             failure('alpha_vantage', 'earnings_estimates', symbol=symbol, reason=error, started=started)
-        result = {'checked_day': day, 'fetched_at': timestamp if payload is not None else saved.get('fetched_at'),
+        result = {'checked_at': timestamp, 'checked_day': day, 'fetched_at': timestamp if payload is not None else saved.get('fetched_at'),
                   'data': payload if payload is not None else saved.get('data'), 'error': error}
         store.set_cache('alpha:' + symbol, result)
         return result

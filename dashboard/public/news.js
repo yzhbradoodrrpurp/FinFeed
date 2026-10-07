@@ -4,7 +4,7 @@ window.FinFeedNews=(()=>{
   let busy=false,kind=null,selectedTicker=null,listError='',states=new Map(),symbols=[],done=0,total=0;
   const sourceLink=(ticker,kind)=>`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/${{press:'press-releases',sec:'sec-filings',calls:'earnings-calls'}[kind]}/`;
   const kinds=['press','calls','sec'];
-  const refreshInterval=30*60*1000;
+  const refreshInterval=60*60*1000;
   let lastCheck=null;
   const label=k=>({press:'新闻稿',sec:'SEC 披露',calls:'财报电话会'}[k]||k);
   function date(s){if(!s)return '日期未提供';if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s+' · 申报日';const value=new Date(s);return Number.isNaN(value.getTime())?'日期未提供':new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',dateStyle:'medium',timeStyle:'short',hour12:false}).format(value)+' 北京';}
@@ -15,7 +15,7 @@ window.FinFeedNews=(()=>{
     const entries=new Map();
     for(const [key,value] of states){if(value.ticker!==selectedTicker)continue;for(const item of value.items||[]){if(item.kind!==kind)continue;const id=item.kind+':'+item.url;const entry=entries.get(id)||{...item,tickers:new Set()};entry.tickers.add(value.ticker);entries.set(id,entry);}}
     const items=[...entries.values()].sort((a,b)=>(Date.parse(b.published_at)||0)-(Date.parse(a.published_at)||0));
-    el('news-status').textContent=listError?'观察列表读取失败，请重试':!symbols.length?(busy?'正在读取自己的观察列表…':'自己的观察列表暂无标的，可先在 Watchlist 添加。'):!selectedTicker?'请先选择一个 Ticker。':!kind?`${selectedTicker} · 请选择新闻类型。`:`${selectedTicker} · ${label(kind)} · ${items.length} 条${busy?' · 正在并发更新':' · 每 30 分钟自动检查'}`;
+    el('news-status').textContent=listError?'观察列表读取失败，请重试':!symbols.length?(busy?'正在读取自己的观察列表…':'自己的观察列表暂无标的，可先在 Watchlist 添加。'):!selectedTicker?'请先选择一个 Ticker。':!kind?`${selectedTicker} · 请选择新闻类型。`:`${selectedTicker} · ${label(kind)} · ${items.length} 条${busy?' · 正在并发更新':' · 每小时自动检查'}`;
     el('news-feed').innerHTML=items.map(item=>`<article class="news-card"><div class="news-meta"><span class="news-badge">${label(item.kind)}</span><strong>${[...item.tickers].map(escape).join(' · ')}</strong><time>${escape(date(item.published_at))}</time></div><a href="${escape(item.url)}" target="_blank" rel="noopener noreferrer">${escape(item.title)} ↗</a><p>${escape(item.source)}${item.kind==='sec'?' · 索引经 Yahoo 获取':item.classification==='newswire'?' · 按新闻稿发布渠道筛选':''}</p></article>`).join('')||(selectedTicker&&kind&&!busy?`<p class="news-empty">${[...states.values()].some(v=>v.ticker===selectedTicker&&kind===v.kind&&v.errors?.length)?'部分来源获取失败，暂时没有可展示的动态。':'该来源暂无可展示的动态。'}</p>`:'');
     el('news-errors').innerHTML=(listError?`<p class="macro-note">${escape(listError)}</p>`:'')+[...states.values()].filter(value=>value.ticker===selectedTicker&&value.kind===kind&&(value.errors?.length||value.stale)).map(value=>`<p class="macro-note">${escape(value.ticker)} · ${label(value.kind)}：${escape(value.errors?.join('；')||'暂显示缓存，等待更新')} · <a href="${escape(sourceLink(value.ticker,value.kind))}" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></p>`).join('');
     el('news-refresh').disabled=busy;
@@ -34,7 +34,7 @@ window.FinFeedNews=(()=>{
       const tasks=symbols.flatMap(ticker=>kinds.map(kind=>({ticker,kind})));let next=0;
       async function worker(){while(next<tasks.length){const task=tasks[next++],key=task.ticker+':'+task.kind;try{
         const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),35000);
-        try{const response=await FinFeedAuth.request(`/api/news/${encodeURIComponent(task.ticker)}/${task.kind}?stream=1`,{signal:controller.signal});if(!response.ok)throw new Error('请求失败');
+        try{const response=await FinFeedAuth.request(`/api/news/${encodeURIComponent(task.ticker)}/${task.kind}?stream=1&refresh=1`,{signal:controller.signal});if(!response.ok)throw new Error('请求失败');
           if(response.headers.get('content-type')?.includes('ndjson')){const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';try{while(true){const {value,done}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});const lines=buffer.split('\n');buffer=lines.pop();for(const line of lines)if(line.trim()){states.set(key,{...task,...JSON.parse(line)});render();}if(done){if(buffer.trim())states.set(key,{...task,...JSON.parse(buffer)});break;}}}finally{reader.releaseLock();}}
           else states.set(key,{...task,...await response.json()});
         }finally{clearTimeout(timeout);}

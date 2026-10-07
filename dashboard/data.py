@@ -123,10 +123,18 @@ def financial_day(timestamp):
         return None
 
 
+def _financial_age(saved, timestamp):
+    try:
+        return (datetime.fromisoformat(timestamp) - datetime.fromisoformat(
+            saved.get("financial_checked_at") or saved.get("fetched_at"))).total_seconds()
+    except (ValueError, TypeError):
+        return float("inf")
+
+
 def financial_due(saved, timestamp):
     return (not saved or saved.get("yahoo_session", {}).get("mode", "anonymous") != yahoo_session.mode()
             or saved.get("yahoo_session", {}).get("proxy_enabled", False) != yahoo_session.proxy_enabled()
-            or financial_day(saved.get("financial_checked_at") or saved.get("fetched_at")) != financial_day(timestamp))
+            or _financial_age(saved, timestamp) >= TTL)
 
 
 def reuse_financial(result, saved):
@@ -202,7 +210,7 @@ def revalue(result, estimate_store=None):
     return result
 
 
-def fetch_security(symbol, saved=None, estimate_store=None, on_update=None):
+def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, force=False):
     started = now()
     session_status = yahoo_session.initialize()
     item = yf.Ticker(symbol)
@@ -223,7 +231,7 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None):
                           + (f" ({category})" if category else ""))
             return default
     info_day = financial_day(started)
-    reuse_info = saved and not financial_due(saved, started) and saved.get("info_checked_day") == info_day
+    reuse_info = not force and saved and not financial_due(saved, started) and saved.get("info_checked_day") == info_day
     with ThreadPoolExecutor(max_workers=2) as pool:
         history_task = pool.submit(load, "日线", lambda: history_item.history(
             period="1mo", auto_adjust=False, actions=True, raise_errors=True, timeout=30), None)
@@ -336,14 +344,14 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None):
             m["market_cap"] = empty_metric("ETF 公司市值不适用；未用资产规模替代")
         return add_yearly_growth(result)
     if m["market_cap"].get("value") is None:
-        # Shares endpoint is independent of quoteSummary; refresh at most daily.
-        shares = (saved or {}).get("shares_outstanding") if not financial_due(saved, started) else None
+        # Shares endpoint is independent of quoteSummary; refresh with each minute cycle.
+        shares = (saved or {}).get("shares_outstanding") if not force and not financial_due(saved, started) else None
         shares_period = (saved or {}).get("shares_period") if shares is not None else None
         result["shares_outstanding"], result["shares_period"] = shares, shares_period
         if shares and price:
             m["market_cap"] = field(price * shares, quote_date, "市值 = 最近价格 × Yahoo 最近披露在外股数；股数可能滞后", quote_url,
                                     currency=currency, inputs={"price": price, "shares": shares, "shares_period": shares_period})
-    if not financial_due(saved, started):
+    if not force and not financial_due(saved, started):
         reuse_financial(result, saved)
         result["financial_checked_at"] = saved.get("financial_checked_at") or saved.get("fetched_at")
         return revalue(result, estimate_store)
@@ -458,7 +466,7 @@ def security(symbol, refresh=False, store=None, on_update=None):
         if saved:
             add_yearly_growth(saved)
         # Market requests refresh each minute; same-minute tabs share the cache.
-        if saved and not financial_due(saved, now()) and age < TTL:
+        if not refresh and saved and not financial_due(saved, now()) and age < TTL:
             return {**saved, "cached": True, "cache_age_seconds": round(age)}
         def failed_snapshot(errors):
             if saved and saved.get("metrics", {}).get("price", {}).get("value") is not None:
@@ -471,8 +479,8 @@ def security(symbol, refresh=False, store=None, on_update=None):
         stage = "fetch_security"
         try:
             with LIMIT:
-                result = (fetch_security(symbol, saved, estimate_store=store, on_update=on_update)
-                          if on_update else fetch_security(symbol, saved, estimate_store=store))
+                result = (fetch_security(symbol, saved, estimate_store=store, on_update=on_update, force=refresh)
+                          if on_update else fetch_security(symbol, saved, estimate_store=store, force=refresh))
             if result.get("metrics", {}).get("price", {}).get("value") is None:
                 failure("yahoo", "quote_refresh", symbol=symbol, reason="; ".join(result.get("errors", [])) or "price missing / empty response", started=fetch_started, fallback_available=bool(saved and saved.get("metrics", {}).get("price", {}).get("value") is not None))
                 fallback = failed_snapshot(result.get("errors", []) + ["行情刷新失败，保留上次成功快照"])

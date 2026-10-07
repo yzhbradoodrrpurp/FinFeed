@@ -15,6 +15,20 @@ class RefreshJobCases(unittest.TestCase):
         self.store = Store(sqlite_path=self.path)
         self.good = lambda value: value.get('price') is not None
 
+    def test_scheduled_refresh_bypasses_cache_but_coalesces_recent_completion(self):
+        jobs = RefreshJobs(self.store)
+        key = 'macro:forced'
+        self.store.set_cache('market:v1:' + key, {'price': 100})
+        calls = []
+        def loader(publish):
+            calls.append(1)
+            return {'price': 101}
+        self.assertEqual(list(jobs.events(key, loader, 3600, self.good))[-1]['price'], 100)
+        self.assertFalse(calls)
+        self.assertEqual(list(jobs.events(key, loader, 3600, self.good, force=True))[-1]['price'], 101)
+        self.assertEqual(list(jobs.events(key, loader, 3600, self.good, force=True))[-1]['price'], 101)
+        self.assertEqual(len(calls), 1)
+
     def test_stages_arrive_before_completion_and_subscribers_share_one_job(self):
         jobs = RefreshJobs(self.store, deadline=1)
         release = threading.Event()

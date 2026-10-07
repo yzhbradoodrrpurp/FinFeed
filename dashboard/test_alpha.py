@@ -19,7 +19,7 @@ class EstimateCases(unittest.TestCase):
         rows[2]['date'] = '2027-02-01'
         self.assertIsNone(alpha.next_four_eps({'estimates': rows}, '2026-10-04T00:00:00+00:00')[0])
 
-    def test_daily_cache_and_failure_preserve_forecast_without_exposing_key(self):
+    def test_minute_cache_and_failure_preserve_forecast_without_exposing_key(self):
         with TemporaryDirectory() as directory:
             store=Store(sqlite_path=str(Path(directory)/'cache.db'))
             response=MagicMock();response.__enter__.return_value.read.return_value=json.dumps({'symbol':'QA','estimates':[]}).encode()
@@ -32,6 +32,6 @@ class EstimateCases(unittest.TestCase):
                 self.assertEqual(failed['data'],first['data'])
                 self.assertNotIn('private-test-key',json.dumps(failed))
                 alpha.estimate_data('QA','2026-10-04T16:01:00+00:00',store=store)
-                self.assertEqual(request.call_count,2)
+                self.assertEqual(request.call_count,3)
 
 if __name__=='__main__':unittest.main()

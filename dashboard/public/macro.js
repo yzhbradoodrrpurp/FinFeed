@@ -206,18 +206,18 @@ window.FinFeedMacro=(()=>{
       const card=document.getElementById('macro-'+id);
       if(!lastGood.has(id)){const saved=FinFeedCache.read('macro-'+id);if(saved){lastGood.set(id,saved.data);render(id,saved.data);}}
       if(lastGood.has(id))notice(card,'缓存 · 正在更新，数据时间见下方');
-      try{await FinFeedCache.market('/api/macro/'+id+'?stream=1',data=>{
+      try{await FinFeedCache.market('/api/macro/'+id+'?stream=1&refresh=1',data=>{
         if(!data.metrics?.some(m=>m.latest))throw new Error();
         render(id,data);lastGood.set(id,data);FinFeedCache.write('macro-'+id,data);
         if(data.refreshing)notice(card,'缓存 · 正在更新，数据时间见下方');
         else if(data.stale)notice(card,'旧数据 · 本次更新失败，数据时间见下方');
-        },{ttl:3600000});
+        },{ttl:3600000,refresh:true});
       }catch{if(lastGood.has(id))notice(card,'旧数据 · 本次更新失败，数据时间见下方');else render(id,{metrics:[],errors:['数据暂不可用，请稍后刷新'],retrieved_at:new Date().toISOString()});}
     }));updated=Date.now();busy=false;document.getElementById('macro-refresh').disabled=false;
   }
   document.getElementById('macro-refresh').addEventListener('click',()=>{refresh();refreshFed();});
   setInterval(()=>{if(started)refresh();},3600000);
-  setInterval(()=>{if(started)refreshFed();},60000);
-  document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=60000)refreshFed();}});
-  return {open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=60000)refreshFed();}};
+  setInterval(()=>{if(started)refreshFed();},3600000);
+  document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=3600000)refreshFed();}});
+  return {open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=3600000)refreshFed();}};
 })();

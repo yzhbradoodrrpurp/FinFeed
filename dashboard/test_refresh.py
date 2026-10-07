@@ -1,4 +1,4 @@
-"""Refresh cadence and valuation must not silently refetch daily fundamentals."""
+"""Minute refreshes update quotes, valuations, and financial statements together."""
 import unittest
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -31,7 +31,7 @@ class RefreshCases(unittest.TestCase):
         peak = 0
         calls = 0
 
-        def fetch(symbol, saved, estimate_store):
+        def fetch(symbol, saved, estimate_store, force=False):
             nonlocal active, peak, calls
             with guard:
                 active += 1
@@ -57,13 +57,13 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(peak, 3)
         self.assertEqual(calls, 4)
 
-    def test_forced_refresh_reuses_fresh_snapshot_across_users(self):
+    def test_forced_refresh_bypasses_snapshot(self):
         saved={"schema_version":data.SCHEMA_VERSION,"financial_checked_at":data.now(),"metrics":{"price":{"value":100}}}
         store=MagicMock();store.get_cache.return_value=(saved,data.time.time()-20)
-        with patch.object(data,"financial_due",return_value=False),patch.object(data,"fetch_security") as fetch:
+        with patch.object(data,"financial_due",return_value=False),patch.object(data,"fetch_security",return_value=saved) as fetch:
             results=[data.security("SHARED",refresh=True,store=store) for _ in range(3)]
-            fetch.assert_not_called()
-        self.assertTrue(all(r["cached"] for r in results))
+            self.assertEqual(fetch.call_count,3)
+        self.assertTrue(all(not r["cached"] for r in results))
         store.get_cache.return_value=(saved,data.time.time()-61)
         with patch.object(data,"financial_due",return_value=False),patch.object(data,"fetch_security",return_value=saved) as fetch:
             data.security("SHARED",refresh=True,store=store)
@@ -107,18 +107,18 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(record['metrics']['eps_q0']['value'], 2)
         self.assertFalse(any('BrokenBarrierError' in error for error in record['errors']))
 
-    def test_same_day_only_market_updates_and_pe_uses_daily_eps(self):
+    def test_next_minute_updates_all_financial_blocks(self):
         first = self.fetch('2026-10-04T02:00:00+00:00')
         self.item.get_info.return_value.update(regularMarketPrice=120, trailingEps=99)
         self.item.get_history_metadata.return_value = {'regularMarketPrice': 120}
         second = self.fetch('2026-10-04T02:01:00+00:00', first)
-        self.assertEqual(self.item.get_income_stmt.call_count, 1)
-        self.assertEqual(self.item.get_balance_sheet.call_count, 1)
-        self.assertEqual(self.item.get_cashflow.call_count, 1)
-        self.assertEqual(self.item.get_earnings_estimate.call_count, 1)
-        self.assertEqual(self.item.get_info.call_count, 1)
+        self.assertEqual(self.item.get_income_stmt.call_count, 2)
+        self.assertEqual(self.item.get_balance_sheet.call_count, 2)
+        self.assertEqual(self.item.get_cashflow.call_count, 2)
+        self.assertEqual(self.item.get_earnings_estimate.call_count, 2)
+        self.assertEqual(self.item.get_info.call_count, 2)
         self.assertEqual(second['metrics']['pe_quarter']['value'], 15)
-        self.assertEqual(second['financial_fetched_at'], first['financial_fetched_at'])
+        self.assertEqual(second['financial_fetched_at'], '2026-10-04T02:01:00+00:00')
         self.assertEqual(self.item.history.call_args.kwargs['period'], '1mo')
 
     def test_empty_info_uses_chart_metadata_and_still_fetches_financials(self):
@@ -260,7 +260,7 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(self.item.get_income_stmt.call_count, 2)
         self.assertEqual(second['financial_fetched_at'], '2026-10-04T16:00:00+00:00')
 
-    def test_failed_daily_fetch_keeps_gaps_without_minute_retries(self):
+    def test_failed_financial_fetch_retries_next_minute(self):
         first = self.fetch('2026-10-04T15:59:00+00:00')
         self.item.get_income_stmt.side_effect = RuntimeError('source offline')
         failed = self.fetch('2026-10-04T16:00:00+00:00', first)
@@ -268,7 +268,7 @@ class RefreshCases(unittest.TestCase):
         self.assertIsNone(failed['metrics']['eps_q0']['value'])
         self.assertEqual(failed['financial_fetched_at'], '2026-10-04T16:00:00+00:00')
         again = self.fetch('2026-10-04T16:01:00+00:00', failed)
-        self.assertEqual(self.item.get_income_stmt.call_count, 2)
+        self.assertEqual(self.item.get_income_stmt.call_count, 3)
         self.assertIsNone(again['metrics']['eps_q0']['value'])
 
 

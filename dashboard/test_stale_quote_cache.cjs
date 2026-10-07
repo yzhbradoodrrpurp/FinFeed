@@ -13,5 +13,9 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  finish({ok:true,headers:{get:()=> 'application/json'},json:async()=>({...saved,fetched_at:new Date(now).toISOString(),metrics:{price:{value:110}}})});await job;
  assert.equal(seen.at(-1).metrics.price.value,110);
  await context.window.FinFeedCache.market('/api/security/AAPL?stream=1',()=>{},{staleTtl:7*86400000,validate:v=>v.schema_version===8});assert.equal(calls,1,'fresh value avoids duplicate network');
+ const forced=context.window.FinFeedCache.market('/api/security/AAPL?stream=1&refresh=1',v=>seen.push(v),{refresh:true,staleTtl:7*86400000,validate:v=>v.schema_version===8});
+ await new Promise(setImmediate);assert.equal(calls,2,'scheduled refresh must bypass even fresh browser cache');
+ finish({ok:true,headers:{get:()=> 'application/json'},json:async()=>({...saved,fetched_at:new Date(now+1000).toISOString(),metrics:{price:{value:120}}})});await forced;
+ assert.equal(seen.at(-1).metrics.price.value,120,'new response replaces prior cache');
  console.log('PASS: old quote displays before cross-tab lock, refreshes in background, fresh result reused');
 })().catch(e=>{console.error(e);process.exitCode=1;});

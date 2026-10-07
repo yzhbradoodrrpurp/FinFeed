@@ -78,13 +78,13 @@ window.FinFeedWhales=(()=>{
   }
   async function refresh(){if(busy)return;busy=true;el('whales-refresh').disabled=true;
     await Promise.allSettled(Object.keys(funds).map(async kind=>{try{
-      await FinFeedCache.market('/api/whales/'+kind+'?version=10&stream=1',data=>accept(kind,data),{ttl:21600000,validate:data=>data.schema_version===3&&data.totals_verified===true&&!!data.holdings?.length});
+      await FinFeedCache.market('/api/whales/'+kind+'?version=10&stream=1&refresh=1',data=>accept(kind,data),{ttl:3600000,refresh:true,validate:data=>data.schema_version===3&&data.totals_verified===true&&!!data.holdings?.length});
     }catch{accept(kind,good.has(kind)?{...good.get(kind),stale:true}:{errors:['SEC 请求失败，请稍后检查更新']});}}));
     checked=Date.now();busy=false;el('whales-refresh').disabled=false;
   }
   function open(){if(!started){started=true;Object.keys(funds).forEach(kind=>{const saved=FinFeedCache.read('whales-v3-'+kind,90*86400000);if(saved?.data.schema_version===3&&saved.data.totals_verified===true){good.set(kind,saved.data);accept(kind,{...saved.data,refreshing:true});}});refresh();}
     show(new URL(location.href).searchParams.get('fund'),false);
-    if(Date.now()-checked>=21600000&&!busy)refresh();}
+    if(Date.now()-checked>=3600000&&!busy)refresh();}
   document.querySelectorAll('[data-whale]').forEach(button=>button.addEventListener('click',()=>show(button.dataset.whale)));
   document.querySelectorAll('[data-whale-mode]').forEach(button=>button.addEventListener('click',()=>{if(mode===button.dataset.whaleMode)return;const direction=button.dataset.whaleMode==='stock'?1:-1;setMode(button.dataset.whaleMode);window.FinFeedMotion?.enter(mode==='stock'?el('whale-stock-analysis'):document.querySelector('.whales-groups'),{kind:'tab',direction});}));
   el('whale-stock-search').addEventListener('input',()=>{searchActive=true;if(!el('whale-stock-search').value.trim())stockCusip=null;renderStockAnalysis();window.FinFeedMotion?.enter(el('whale-stock-results'),{kind:'search'});});
@@ -116,7 +116,7 @@ window.FinFeedWhales=(()=>{
   });
   el('whale-back').addEventListener('click',()=>{const old=selected;show(null);document.querySelector('[data-whale="'+old+'"]').focus();});
   el('whales-refresh').addEventListener('click',refresh);
-  function checkDue(){if(started&&Date.now()-checked>=21600000)refresh();}
+  function checkDue(){if(started&&Date.now()-checked>=3600000)refresh();}
   setInterval(checkDue,60000);
   document.addEventListener('visibilitychange',checkDue);
   window.addEventListener('focus',checkDue);

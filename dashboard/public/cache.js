@@ -6,7 +6,18 @@ window.FinFeedCache={
       return value&&value.data&&Number.isFinite(value.savedAt)&&Date.now()-value.savedAt>=0&&Date.now()-value.savedAt<=maxAge?value:null;
     }catch{return null;}
   },
-  write(key,data){try{localStorage.setItem('finfeed-market:v1:'+key,JSON.stringify({data,savedAt:Date.now()}));}catch{}}
+  write(key,data){
+    // Never replace a completed snapshot with an in-progress or failed response.
+    if(!data||data.stale||data.partial||data.refreshing||(data.errors?.length&&data.metrics?.price?.value==null))return false;
+    try{
+      const storageKey='finfeed-market:v1:'+key;
+      const previous=JSON.parse(localStorage.getItem(storageKey)||'null')?.data;
+      const before=Date.parse(previous?.fetched_at||previous?.retrieved_at||'');
+      const incoming=Date.parse(data.fetched_at||data.retrieved_at||'');
+      if(Number.isFinite(before)&&Number.isFinite(incoming)&&incoming<before)return false;
+      localStorage.setItem(storageKey,JSON.stringify({data,savedAt:Date.now()}));return true;
+    }catch{return false;}
+  }
 };
 
 // Locks coordinate public market fetches across tabs. No account IDs or lists.
@@ -28,7 +39,12 @@ window.FinFeedCache={
       if(latest)consume({...latest,cached:true,refreshing:true});
       const response=await FinFeedAuth.request(url,{signal:controller.signal});
       if(!response.ok)throw new Error(`读取失败 (${response.status})`);
-      const accept=value=>{latest=value;consume(value);if(validate(value)&&!value.partial&&!value.refreshing&&!value.stale)FinFeedCache.write(key,value);};
+      const accept=value=>{
+        const previousTime=Date.parse(latest?.fetched_at||latest?.retrieved_at||'');
+        const incomingTime=Date.parse(value?.fetched_at||value?.retrieved_at||'');
+        if(Number.isFinite(previousTime)&&Number.isFinite(incomingTime)&&incomingTime<previousTime)return;
+        latest=value;consume(value);if(validate(value))FinFeedCache.write(key,value);
+      };
       if(!response.headers?.get('content-type')?.includes('ndjson')){accept(await response.json());return latest;}
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
       try{while(true){const {value,done}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});

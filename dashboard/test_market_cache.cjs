@@ -22,7 +22,7 @@ assert(elements.get('macro-jobs').innerHTML.includes('100'));
 assert(elements.get('macro-jobs').notice.textContent.includes('缓存'));
 assert.equal(pending.size,9); // Calendar + 3 indices + 4 Macro cards + Fed.
 pending.get('/api/home?symbol=%5EGSPC&stream=1')({index:{name:'S&P 500',label:'标普 500',price:105,source:'https://finance.yahoo.com/',quoted_at:timestamp},retrieved_at:timestamp});
-pending.get('/api/macro/jobs?stream=1&refresh=1')({metrics:[],errors:['unavailable'],retrieved_at:timestamp});
+pending.get('/api/macro/jobs?stream=1')({metrics:[],errors:['unavailable'],retrieved_at:timestamp});
 setImmediate(()=>{
  assert(elements.get('home-index-0').innerHTML.includes('105.00'));
  assert(!elements.get('home-index-0').innerHTML.includes('缓存'));

@@ -183,10 +183,11 @@ window.FinFeedMacro=(()=>{
         <p class="macro-retrieved">检索于 ${time(data.retrieved_at,'Asia/Shanghai')} 北京</p>`;
     bindFedChart(card,series,end,first);
   }
-  async function refreshFed(){
+  async function refreshFed(force=false){
     if(fedBusy)return;fedBusy=true;
     const card=document.getElementById('macro-fed');
     if(!fedData){const saved=FinFeedCache.read('macro-fed',86400000);if(saved)renderFed(saved.data);}
+    if(!force&&fedData?.series?.length&&Date.now()-Date.parse(fedData.retrieved_at)<3600000){fedUpdated=Date.parse(fedData.retrieved_at);fedBusy=false;return;}
     if(fedData)notice(card,'缓存 · 正在更新，数据时间见下方');
     if(!fedData)card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-note">正在获取市场定价…</p>';
     try{
@@ -198,7 +199,7 @@ window.FinFeedMacro=(()=>{
     }catch{if(fedData)notice(card,'旧数据 · 本次更新失败，数据时间见下方');else card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-error">数据暂不可用，请稍后刷新</p>';}
     finally{fedBusy=false;}
   }
-  async function refresh(){
+  async function refresh(force=false){
     if(busy)return;busy=true;document.getElementById('macro-refresh').disabled=true;
     const grid=document.getElementById('macro-grid');
     if(!document.getElementById('macro-jobs'))grid.innerHTML=Object.keys(names).map(id=>`<article id="macro-${id}" class="macro-card" aria-busy="true"><span class="eyebrow">${names[id][0]}</span><h2>${names[id][1]}</h2><div class="macro-skeleton"><span></span><span></span><span></span></div><p class="macro-note">正在获取数据…</p></article>`).join('');
@@ -206,18 +207,20 @@ window.FinFeedMacro=(()=>{
       const card=document.getElementById('macro-'+id);
       if(!lastGood.has(id)){const saved=FinFeedCache.read('macro-'+id);if(saved){lastGood.set(id,saved.data);render(id,saved.data);}}
       if(lastGood.has(id))notice(card,'缓存 · 正在更新，数据时间见下方');
-      try{await FinFeedCache.market('/api/macro/'+id+'?stream=1&refresh=1',data=>{
+      try{await FinFeedCache.market('/api/macro/'+id+'?stream=1'+(force?'&refresh=1':''),data=>{
         if(!data.metrics?.some(m=>m.latest))throw new Error();
-        render(id,data);lastGood.set(id,data);FinFeedCache.write('macro-'+id,data);
+        const previous=lastGood.get(id);
+        if(previous&&Date.parse(data.retrieved_at)<Date.parse(previous.retrieved_at))return;
+        render(id,data);if(!data.errors?.length&&!data.stale&&!data.partial&&!data.refreshing)lastGood.set(id,data);FinFeedCache.write('macro-'+id,data);
         if(data.refreshing)notice(card,'缓存 · 正在更新，数据时间见下方');
         else if(data.stale)notice(card,'旧数据 · 本次更新失败，数据时间见下方');
-        },{ttl:3600000,refresh:true});
+        },{ttl:3600000,staleTtl:7*86400000,refresh:force});
       }catch{if(lastGood.has(id))notice(card,'旧数据 · 本次更新失败，数据时间见下方');else render(id,{metrics:[],errors:['数据暂不可用，请稍后刷新'],retrieved_at:new Date().toISOString()});}
     }));updated=Date.now();busy=false;document.getElementById('macro-refresh').disabled=false;
   }
-  document.getElementById('macro-refresh').addEventListener('click',()=>{refresh();refreshFed();});
-  setInterval(()=>{if(started)refresh();},3600000);
-  setInterval(()=>{if(started)refreshFed();},3600000);
-  document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=3600000)refreshFed();}});
-  return {open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=3600000)refreshFed();}};
+  document.getElementById('macro-refresh').addEventListener('click',()=>{refresh(true);refreshFed(true);});
+  setInterval(()=>{if(started)refresh(true);},3600000);
+  setInterval(()=>{if(started)refreshFed(true);},3600000);
+  document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=3600000)refreshFed(true);}});
+  return {open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=3600000)refreshFed(true);}};
 })();

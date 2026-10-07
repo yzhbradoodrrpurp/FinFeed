@@ -40,7 +40,7 @@ class RefreshJobs:
                         entry['expires'] = time.monotonic() + max(0, ttl - (time.time() - saved[1]))
                 except Exception as exc:
                     failure('database', 'market_cache_read', symbol=key, error=exc)
-            fresh = entry['value'] is not None and time.monotonic() < entry['expires']
+            fresh = entry['value'] is not None and not entry['failures'] and not entry['value'].get('stale') and time.monotonic() < entry['expires']
             # Concurrent tabs share a just-completed refresh; scheduled cycles bypass older caches.
             if force and time.monotonic() - entry.get('completed', float('-inf')) >= 5:
                 fresh = False
@@ -55,7 +55,7 @@ class RefreshJobs:
                     try:
                         value = loader(publish)
                         # A missing finance block must not slow healthy minute quotes.
-                        successful = valid(value) and not value.get('stale') and (key.startswith('security:') or not value.get('errors'))
+                        successful = valid(value) and not value.get('stale') and not value.get('partial') and not value.get('refreshing') and (key.startswith('security:') or not value.get('errors'))
                         with condition:
                             if successful:
                                 entry['value'] = value

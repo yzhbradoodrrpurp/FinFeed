@@ -382,7 +382,7 @@ el("holdings-body").addEventListener("click",async event=>{
   const row=event.target.closest("[data-holding-ticker]");if(row)detail(row.dataset.holdingTicker);
 });
 el("holdings-body").addEventListener("keydown",event=>{if(event.target.matches("tr[data-holding-ticker]")&&(event.key==="Enter"||event.key===" ")){event.preventDefault();detail(event.target.dataset.holdingTicker,true);}});
-el("order-button").addEventListener("click",()=>{sortKey=null;render();renderOrder();el("order-dialog").showModal();});
+el("order-button").addEventListener("click",()=>{sortKey=null;render();renderOrder();el("order-dialog").showModal();el("order-title").focus({preventScroll:true});});
 el("order-list").addEventListener("click",event=>{
   const button=event.target.closest("[data-move]");if(!button)return;
   const ticker=button.dataset.orderSymbol;

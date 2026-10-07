@@ -86,8 +86,8 @@ window.FinFeedWhales=(()=>{
     show(new URL(location.href).searchParams.get('fund'),false);
     if(Date.now()-checked>=21600000&&!busy)refresh();}
   document.querySelectorAll('[data-whale]').forEach(button=>button.addEventListener('click',()=>show(button.dataset.whale)));
-  document.querySelectorAll('[data-whale-mode]').forEach(button=>button.addEventListener('click',()=>{if(mode===button.dataset.whaleMode)return;setMode(button.dataset.whaleMode);window.FinFeedMotion?.enter(el(mode==='stock'?'whale-stock-analysis':'whales-list'),{kind:'filter'});}));
-  el('whale-stock-search').addEventListener('input',()=>{searchActive=true;if(!el('whale-stock-search').value.trim())stockCusip=null;renderStockAnalysis();});
+  document.querySelectorAll('[data-whale-mode]').forEach(button=>button.addEventListener('click',()=>{if(mode===button.dataset.whaleMode)return;const direction=button.dataset.whaleMode==='stock'?1:-1;setMode(button.dataset.whaleMode);window.FinFeedMotion?.enter(mode==='stock'?el('whale-stock-analysis'):document.querySelector('.whales-groups'),{kind:'tab',direction});}));
+  el('whale-stock-search').addEventListener('input',()=>{searchActive=true;if(!el('whale-stock-search').value.trim())stockCusip=null;renderStockAnalysis();window.FinFeedMotion?.enter(el('whale-stock-results'),{kind:'search'});});
   el('whale-stock-results').addEventListener('click',event=>{
     const button=event.target.closest('[data-stock-cusip]');if(!button)return;
     stockCusip=button.dataset.stockCusip;searchActive=false;

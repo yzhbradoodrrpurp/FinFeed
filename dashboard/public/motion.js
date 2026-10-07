@@ -64,11 +64,12 @@ window.FinFeedMotion=(()=>{
       detail:{transform:`translateX(${direction*32}px)`,duration:360},
       tab:{transform:`translateX(${direction*48}px)`,duration:320},
       account:{transform:'translateY(6px)',duration:240},
-      filter:{transform:'none',duration:220}
+      filter:{transform:'none',duration:220},
+      search:{transform:'translateY(4px)',duration:180,opacity:.75}
     };
     const preset=presets[kind]||presets.surface;
     const animation=element.animate([
-      {opacity:0,transform:preset.transform},
+      {opacity:preset.opacity??0,transform:preset.transform},
       {opacity:1,transform:'translateY(0)'}
     ],{duration:preset.duration,easing:'cubic-bezier(.22,1,.36,1)'});
     running.set(element,animation);

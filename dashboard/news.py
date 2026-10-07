@@ -1,4 +1,4 @@
-"""Bounded Yahoo press-release and SEC and earnings-call index snapshots; no article body storage."""
+"""Bounded Yahoo SEC and earnings-call index snapshots; no article body storage."""
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 import threading
@@ -6,7 +6,7 @@ import yfinance as yf
 import yahoo_session
 from failure_log import failure
 
-LIMIT = threading.BoundedSemaphore(8)
+LIMIT = threading.BoundedSemaphore(4)
 
 
 def safe_url(value):
@@ -26,16 +26,10 @@ def normalize(raw, kind):
     for row in raw:
         if not isinstance(row, dict) or row.get('ad'):
             continue
-        value = row.get('content', row) if kind == 'press' else row
+        value = row
         if not isinstance(value, dict):
             continue
-        if kind == 'press':
-            link = value.get('canonicalUrl') or value.get('clickThroughUrl') or {}
-            url = safe_url(link.get('url') if isinstance(link, dict) else link)
-            title, date = value.get('title'), value.get('pubDate')
-            provider = value.get('provider') or {}
-            source = provider.get('displayName', '公司新闻稿') if isinstance(provider, dict) else '公司新闻稿'
-        elif kind == 'calls':
+        if kind == 'calls':
             url = safe_url(value.get('url'))
             title = value.get('title')
             timestamp = value.get('date')
@@ -43,7 +37,12 @@ def normalize(raw, kind):
             source = 'Yahoo Finance · 财报电话会'
         else:
             url = safe_url(value.get('edgarUrl') or value.get('url'))
-            for exhibit in (value.get('exhibits') or {}).values():
+            exhibits = value.get('exhibits') or {}
+            if isinstance(exhibits, list):
+                exhibits = {entry.get('type'): entry.get('url') for entry in exhibits if isinstance(entry, dict)}
+            if not isinstance(exhibits, dict):
+                exhibits = {}
+            for exhibit in exhibits.values():
                 candidate = safe_url(exhibit)
                 parsed = urlsplit(candidate)
                 if parsed.hostname == 'cdn.yahoofinance.com' and parsed.path.startswith('/prod/sec-filings/'):
@@ -55,7 +54,7 @@ def normalize(raw, kind):
                     url = candidate
                     break
             if not url:
-                url = next((safe_url(u) for u in (value.get('exhibits') or {}).values() if safe_url(u)), '')
+                url = next((safe_url(u) for u in exhibits.values() if safe_url(u)), '')
             title = ' · '.join(str(v) for v in (value.get('type'), value.get('title')) if v)
             date = str(value.get('date') or '')
             source = 'SEC EDGAR'
@@ -66,71 +65,48 @@ def normalize(raw, kind):
     return sorted(items, key=lambda x: x['published_at'], reverse=True)[:20]
 
 
-# Exact newswire names only; titles and generic STORY types cannot classify releases.
-PRESS_PUBLISHERS = {'business wire', 'pr newswire', 'globenewswire'}
 
-
-def press_from_search(ticker, symbol):
-    response = ticker._data.get('https://query1.finance.yahoo.com/v1/finance/search',
-        params={'q': symbol, 'quotesCount': 0, 'newsCount': 100})
-    response.raise_for_status()
-    rows = response.json()['news']
-    if not isinstance(rows, list):
-        raise ValueError('Invalid news search response')
-    result = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        publisher = str(row.get('publisher') or '').strip()
-        related = row.get('relatedTickers') or []
-        if publisher.casefold() not in PRESS_PUBLISHERS or symbol not in related:
-            continue
-        timestamp = row.get('providerPublishTime')
-        date = datetime.fromtimestamp(timestamp, timezone.utc).isoformat() if isinstance(timestamp, (int, float)) else ''
-        result.append({'content': {'title': row.get('title'), 'pubDate': date,
-            'canonicalUrl': {'url': row.get('link')}, 'provider': {'displayName': publisher}}})
-    return result
+def fetch_index(ticker, symbol, kind):
+    module = 'earningsCallTranscripts' if kind == 'calls' else 'secFilings'
+    field = 'transcripts' if kind == 'calls' else 'filings'
+    last_error = None
+    # Bounded retry through Yahoo's other host. Never turn HTTP/schema failures into empty success.
+    for host in ('query2', 'query1'):
+        try:
+            response = ticker._data.get('https://' + host + '.finance.yahoo.com/v10/finance/quoteSummary/' + symbol,
+                params={'modules': module, 'formatted': 'false'}, timeout=6)
+            if response.status_code == 404:
+                return [], 'Yahoo 暂未提供该标的的' + ('财报电话会' if kind == 'calls' else 'SEC 披露') + '记录'
+            response.raise_for_status()
+            payload = response.json()['quoteSummary']
+            if payload.get('error'):
+                raise ValueError('Provider reported an error')
+            rows = payload['result'][0][module][field]
+            if not isinstance(rows, list):
+                raise ValueError('Invalid index response')
+            return rows, ''
+        except Exception as exc:
+            last_error = exc
+    raise last_error
 
 
 def snapshot(symbol, kind):
+    if kind not in {'calls', 'sec'}:
+        raise ValueError('Unsupported news category')
     value = {'ticker': symbol, 'kind': kind, 'items': [], 'retrieved_at': datetime.now(timezone.utc).isoformat(), 'errors': []}
+    acquired = LIMIT.acquire(timeout=3)
     try:
-        with LIMIT:
-            yahoo_session.initialize()
-            ticker = yf.Ticker(symbol)
-            if kind == 'press':
-                try:
-                    # Check HTTP and schema: get_news currently turns a 404 into [].
-                    response = ticker._data.post('https://finance.yahoo.com/xhr/ncp?queryRef=pressRelease&serviceKey=ncp_fin',
-                        body={'serviceConfig': {'snippetCount': 20, 's': [symbol]}})
-                    response.raise_for_status()
-                    raw = response.json()['data']['tickerStream']['stream']
-                    if not isinstance(raw, list):
-                        raise ValueError('Invalid press release response')
-                except Exception:
-                    raw = press_from_search(ticker, symbol)
-                    value['note'] = '备用新闻索引：按新闻稿发布渠道筛选，可能遗漏其他渠道或较早公告'
-                    value['classification'] = 'newswire'
-            elif kind == 'calls':
-                response = ticker._data.get('https://query2.finance.yahoo.com/v10/finance/quoteSummary/' + symbol,
-                    params={'modules': 'earningsCallTranscripts', 'formatted': 'false'})
-                if response.status_code == 404:
-                    # ETFs and some companies have no transcript index at Yahoo.
-                    raw = []
-                    value['note'] = 'Yahoo 暂未提供该标的的财报电话会记录'
-                else:
-                    response.raise_for_status()
-                    raw = response.json()['quoteSummary']['result'][0]['earningsCallTranscripts']['transcripts']
-            else:
-                raw = ticker.get_sec_filings()
-        # yfinance represents missing filings as an empty dictionary.
-        if kind == 'sec' and raw == {}:
-            raw = []
+        if not acquired:
+            raise TimeoutError('News provider slots busy')
+        yahoo_session.initialize()
+        raw, note = fetch_index(yf.Ticker(symbol), symbol, kind)
         value['items'] = normalize(raw, kind)
-        if value.get('classification') == 'newswire':
-            for item in value['items']:
-                item['classification'] = 'newswire'
+        if note:
+            value['note'] = note
     except Exception as exc:
         failure('yahoo', 'news_' + kind, symbol=symbol, error=exc)
-        value['errors'] = ['该来源暂时无法获取，请稍后重试']
+        value['errors'] = ['该来源暂时无法获取，下次更新重试']
+    finally:
+        if acquired:
+            LIMIT.release()
     return value

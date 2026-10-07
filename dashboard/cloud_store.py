@@ -239,7 +239,7 @@ class Store:
         if not symbols:
             return {}
         keys = ['market:v1:news:v1:' + kind + ':' + symbol
-                for symbol in symbols for kind in ('press', 'calls', 'sec')]
+                for symbol in symbols for kind in ('calls', 'sec')]
         with self.transaction() as connection:
             rows = self.execute(connection, 'SELECT id,payload,updated FROM cache WHERE id IN (' + ','.join('?' for _ in keys) + ')', keys).fetchall()
         return {row['id']: {**json.loads(row['payload']), 'cached': True,

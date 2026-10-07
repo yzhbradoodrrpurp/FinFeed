@@ -32,8 +32,8 @@ class CloudCases(unittest.TestCase):
         self.frontend_setup()
         self.client.put('/api/state', json={'watchlist':['AAPL'], 'positions':[]}, headers=HEADERS)
         for ticker in ('AAPL', 'MSFT'):
-            self.store.set_cache('market:v1:news:v1:press:' + ticker,
-                                 {'ticker':ticker, 'kind':'press', 'items':[{'title':ticker}], 'errors':[]})
+            self.store.set_cache('market:v1:news:v1:calls:' + ticker,
+                                 {'ticker':ticker, 'kind':'calls', 'items':[{'title':ticker}], 'errors':[]})
         with patch('news.snapshot') as provider:
             result = self.client.get('/api/news?cached=1&user=someone-else').json
             provider.assert_not_called()
@@ -46,11 +46,12 @@ class CloudCases(unittest.TestCase):
         self.frontend_setup()
         self.client.put('/api/state', json={'watchlist':['AAPL'], 'positions':[]}, headers=HEADERS)
         self.assertEqual(self.client.get('/api/news?user=someone-else').json['tickers'], ['AAPL'])
-        self.assertEqual(self.client.get('/api/news/MSFT/press').status_code, 403)
+        self.assertEqual(self.client.get('/api/news/MSFT/calls').status_code, 403)
         self.assertEqual(self.client.get('/api/news/AAPL/all').status_code, 404)
-        with patch('news.snapshot', return_value={'ticker':'AAPL','kind':'press','items':[], 'errors':[]}) as loader:
-            self.assertEqual(self.client.get('/api/news/AAPL/press').status_code, 200)
-            self.assertEqual(self.client.get('/api/news/AAPL/press').status_code, 200)
+        self.assertEqual(self.client.get('/api/news/AAPL/press').status_code, 404)
+        with patch('news.snapshot', return_value={'ticker':'AAPL','kind':'calls','items':[], 'errors':[]}) as loader:
+            self.assertEqual(self.client.get('/api/news/AAPL/calls').status_code, 200)
+            self.assertEqual(self.client.get('/api/news/AAPL/calls').status_code, 200)
             self.assertEqual(loader.call_count, 1)
 
     def test_backend_migration_preserves_sessions_records_and_frontend_rp(self):

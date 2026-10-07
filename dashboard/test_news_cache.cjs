@@ -1,10 +1,10 @@
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
 (async()=>{
- const elements=new Map(),buttons=['all','press','calls','sec'].map(kind=>({dataset:{newsKind:kind},setAttribute(){},addEventListener(e,fn){this.click=fn;}}));
+ const elements=new Map(),buttons=['all','calls','sec'].map(kind=>({dataset:{newsKind:kind},setAttribute(){},addEventListener(e,fn){this.click=fn;}}));
  const el=id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',textContent:'',hidden:false,setAttribute(){},querySelectorAll:()=>[],addEventListener(e,fn){this[e]=fn;}});return elements.get(id);};
  const privateCache=new Map([['finfeed-news-list:self',JSON.stringify({symbols:['AAPL','MSFT'],savedAt:Date.now()})],['finfeed-news-list:other',JSON.stringify({symbols:['TSLA'],savedAt:Date.now()})]]);
  const snapshots=new Map();
- for(const ticker of ['AAPL','MSFT'])snapshots.set('news:'+ticker+':press',{data:{ticker,kind:'press',retrieved_at:new Date().toISOString(),items:[{kind:'press',url:'https://example.com/'+ticker,title:ticker+' release',source:'IR',published_at:'2026-10-07'}]}});
+ for(const ticker of ['AAPL','MSFT'])snapshots.set('news:'+ticker+':calls',{data:{ticker,kind:'calls',retrieved_at:new Date().toISOString(),items:[{kind:'calls',url:'https://example.com/'+ticker,title:ticker+' release',source:'IR',published_at:'2026-10-07'}]}});
  let finish,requests=0,loads=0;
  const context={window:{addEventListener(){}},document:{getElementById:el,querySelectorAll:()=>buttons,addEventListener(){}},sessionStorage:{getItem:k=>privateCache.get(k),setItem:(k,v)=>privateCache.set(k,v)},FinFeedCache:{read:k=>snapshots.get(k),write:(k,data)=>snapshots.set(k,{data}),market:async()=>{loads++;throw Error('offline');}},FinFeedAuth:{request:()=>{requests++;return new Promise(r=>finish=r);}},Date,Intl,setInterval(){}};
  vm.runInNewContext(fs.readFileSync('dashboard/public/news.js','utf8'),context);
@@ -13,7 +13,7 @@ const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/st
  assert(el('news-feed').innerHTML.includes('AAPL release'));assert(el('news-feed').innerHTML.includes('MSFT release'),'cached results show before list API returns');
  assert.equal(el('news-types').hidden,false);
  finish({ok:false});await job;
- assert.equal(loads,6);assert(el('news-feed').innerHTML.includes('AAPL release'),'failed updates retain cache');
+ assert.equal(loads,4);assert(el('news-feed').innerHTML.includes('AAPL release'),'failed updates retain cache');
  await context.window.FinFeedNews.open();assert.equal(requests,1,'entering again does not re-fetch the full list');
  el('news-tickers').click({target:{closest:()=>({dataset:{newsTicker:'AAPL'}})}});
  assert(el('news-feed').innerHTML.includes('AAPL release'));assert(!el('news-feed').innerHTML.includes('MSFT release'));

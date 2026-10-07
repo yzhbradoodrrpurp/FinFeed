@@ -585,7 +585,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.get("/api/news/<symbol>/<kind>")
     def news_data(symbol, kind):
         symbol = symbol.upper()
-        if kind not in {"press", "sec", "calls"} or not SYMBOL.fullmatch(symbol):
+        if kind not in {"sec", "calls"} or not SYMBOL.fullmatch(symbol):
             abort(404)
         if symbol not in own_news_symbols():
             abort(403, description="仅支持自己的观察列表")

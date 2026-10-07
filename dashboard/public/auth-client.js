@@ -74,8 +74,8 @@ window.FinFeedAuth = (() => {
   }
   async function initialize() {
     const response=await request("/api/auth/status");
-    if(!response.ok)throw new Error("无法检查登录状态，请稍后刷新");
     const status=await response.json();
+    if(!response.ok)throw new Error(status.error||"无法检查登录状态，请稍后刷新");
     if(!status.authenticated){location.replace("/login");throw new Error("请先登录");}
     return status;
   }

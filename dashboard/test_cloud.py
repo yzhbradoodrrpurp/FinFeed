@@ -15,6 +15,23 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_database_timeout_returns_retryable_json_without_expiring_session(self):
+        import psycopg
+        from psycopg_pool import PoolTimeout
+        self.frontend_setup()
+        session = self.client.get_cookie('finfeed_test_session').value
+        for error in (PoolTimeout('connection busy'), psycopg.errors.QueryCanceled('query timed out'),
+                      psycopg.OperationalError('connection lost')):
+            with self.subTest(error=type(error).__name__), patch.object(self.store, 'transaction', side_effect=error):
+                for path in ('/api/auth/status', '/api/state'):
+                    result = self.client.get(path)
+                    self.assertEqual(result.status_code, 503)
+                    self.assertIn('数据库', result.json['error'])
+                    self.assertEqual(result.headers['Retry-After'], '15')
+                    self.assertNotIn('Set-Cookie', result.headers)
+        self.assertEqual(self.client.get_cookie('finfeed_test_session').value, session)
+        self.assertTrue(self.client.get('/api/auth/status').json['authenticated'])
+
     def test_whale_holdings_require_login_and_share_cached_sec_snapshot(self):
         self.assertEqual(self.client.get('/api/whales/berkshire', headers=HEADERS).status_code, 401)
         self.frontend_setup()

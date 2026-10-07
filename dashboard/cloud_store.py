@@ -77,8 +77,10 @@ class Store:
         self.database_url = database_url
         self.sqlite_path = sqlite_path
         self.pool = None if sqlite_path else ConnectionPool(
-            database_url, kwargs={"row_factory":dict_row,"connect_timeout":30,"sslmode":"require","prepare_threshold":None},
-            min_size=1, max_size=4, timeout=30, open=True, check=ConnectionPool.check_connection)
+            database_url, kwargs={"row_factory":dict_row,"connect_timeout":8,"sslmode":"require","prepare_threshold":None,
+                "keepalives":1,"keepalives_idle":10,"keepalives_interval":3,"keepalives_count":2,
+                "tcp_user_timeout":10000},
+            min_size=1, max_size=4, timeout=8, open=True, check=ConnectionPool.check_connection)
         if self.pool:
             atexit.register(self.pool.close)
         with self.transaction() as connection:
@@ -124,6 +126,11 @@ class Store:
         """Commit or roll back one operation; return PostgreSQL connections to the pool."""
         if not self.sqlite_path:
             with self.pool.connection() as connection:
+                # A dead/blocked database must release its slot before the browser's deadline.
+                # Transaction-local settings also work with a transaction pooler.
+                connection.execute("SET LOCAL statement_timeout = '8s'")
+                connection.execute("SET LOCAL lock_timeout = '3s'")
+                connection.execute("SET LOCAL idle_in_transaction_session_timeout = '15s'")
                 connection.execute("SET LOCAL search_path TO finfeed_private")
                 yield connection
             return

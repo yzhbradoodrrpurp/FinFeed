@@ -14,6 +14,7 @@ from urllib.parse import urlsplit, urlencode
 
 from flask import Flask, abort, g, jsonify, redirect, request, send_from_directory
 import psycopg
+from psycopg_pool import PoolTimeout
 from webauthn import (
     base64url_to_bytes, generate_authentication_options, generate_registration_options,
     options_to_json, verify_authentication_response, verify_registration_response,
@@ -152,6 +153,16 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         if secure:
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
+        return response
+
+    @app.errorhandler(PoolTimeout)
+    @app.errorhandler(psycopg.OperationalError)
+    def database_unavailable(error):
+        failure('database', 'request_unavailable', error=error,
+                request_id=getattr(g, 'request_id', ''))
+        response = jsonify(error="数据库连接暂时不可用，正在重试，请稍后再试")
+        response.status_code = 503
+        response.headers['Retry-After'] = '15'
         return response
 
     @app.errorhandler(400)

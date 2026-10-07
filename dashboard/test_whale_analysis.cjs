@@ -20,3 +20,16 @@ const duplicates=new Map([['a',snapshot([stock(10)],[stock(10),renamed])]]);
 assert.equal(api.analyze(duplicates,{a:'A'},'ABC123456').groups.increase[0].current.shares,15);
 assert.equal(api.securities(new Map([['a',snapshot([stock(10)],[])]]))[0].cusip,'ABC123456');
 console.log('PASS: all five quantity statuses, exited securities, option exclusion, duplicate aggregation, missing/nonadjacent quarters');
+const rankingStates=new Map([
+ ['a',snapshot([],[stock(10),stock(20),stock(5,{cusip:'SECOND',name:'Second'}),stock(0,{cusip:'ZERO'}),stock(5,{cusip:'OPTION',put_call:'PUT'})])],
+ ['b',snapshot([],[stock(5)])],
+ ['older',snapshot([],[stock(5,{cusip:'OLD'})],{report_date:'2026-03-31'})],
+ ['invalid',snapshot([],[stock(5,{cusip:'BAD'})],{totals_verified:false})]
+]);
+const ranked=api.topHeld(rankingStates);
+assert.equal(ranked.report_date,'2026-06-30');assert.equal(ranked.covered,2);
+assert.equal(ranked.rows.length,2);assert.equal(ranked.rows[0].count,2);
+assert.equal(ranked.rows[0].cusip,'ABC123456');assert.equal(api.topHeld(rankingStates,1).rows.length,1);
+assert.equal(api.topHeld(new Map([['a',rankingStates.get('a')]])).rows[0].count,1);
+assert.equal(api.topHeld(new Map()).rows.length,0);
+console.log('PASS: same-quarter ranking, unique institution counts, zero/option exclusion, limits and filtered scope');

@@ -51,18 +51,18 @@
       <div class="macro-toolbar"><p>美国宏观经济 · 发布数据与市场走势</p><button id="macro-refresh" class="secondary">刷新</button></div>
       <div id="macro-grid" class="macro-grid" aria-live="polite"></div>
       <article id="macro-fed" class="macro-card macro-fed" aria-live="polite"></article>
-      <p class="macro-footnote">时间同时显示北京时间与美国东部时间；官方发布日程可能调整。图表为历史统计或日线，数据失败时留空。</p>
+      <p class="macro-footnote">时间同时显示北京时间与美国东部时间；官方发布日程可能调整。</p>
     </section>
     <section id="whales-surface" hidden aria-label="巨鲸持仓视图">
       <div class="whales-intro"><p>机构观察 · 公开披露</p><span class="count">16 家机构</span><button id="whales-refresh" class="secondary">检查更新</button></div>
       <div id="whales-list">
-        <div class="whale-analysis-tabs" role="group" aria-label="机构持仓分析方式"><button class="secondary" data-whale-mode="funds" aria-pressed="true">机构列表</button><button class="secondary" data-whale-mode="stock" aria-pressed="false">按股票分析</button></div>
+        <div class="whale-analysis-tabs" role="group" aria-label="机构持仓分析方式"><button class="secondary" data-whale-mode="funds" aria-pressed="true">机构列表</button><button class="secondary" data-whale-mode="stock" aria-pressed="false">股票分析</button></div>
         <section id="whale-stock-analysis" hidden aria-labelledby="whale-stock-title">
           <h2 id="whale-stock-title">股票 · 机构持仓动向</h2>
           <label for="whale-stock-search">查找证券</label><input id="whale-stock-search" type="search" autocomplete="off" placeholder="公司名或 CUSIP，如 NVIDIA" aria-controls="whale-stock-results">
+          <p id="whale-stock-ranking" class="whale-status" hidden></p>
           <div id="whale-stock-results" class="whale-stock-results"></div>
           <div id="whale-stock-content"></div>
-          <p class="macro-footnote">范围为本站关注的 16 家机构，按各机构相邻两个披露季度的股数比较。期权与本金数量不计入；未披露完整空头组合。拆股、证券转换与申报范围变化也可能影响股数，增减持不等于可还原的实际交易。</p>
         </section>
         <div class="whales-groups">
         <section class="whale-group" aria-labelledby="whale-group-quality">

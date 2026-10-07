@@ -15,6 +15,22 @@ window.FinFeedWhaleAnalysis=(()=>{
     const year=Number(date.slice(0,4)),ends=['03-31','06-30','09-30','12-31'],index=ends.indexOf(date.slice(5));
     return index===0?`${year-1}-12-31`:`${year}-${ends[index-1]}`;
   }
+  function topHeld(states,limit=12){
+    const valid=[...states.values()].filter(data=>data?.totals_verified&&previousQuarter(data.report_date)&&Array.isArray(data.holdings));
+    const report_date=valid.map(data=>data.report_date).sort().at(-1)||null;
+    const reports=valid.filter(data=>data.report_date===report_date),result=new Map();
+    for(const data of reports){
+      const seen=new Set();
+      for(const row of data.holdings){
+        const cusip=key(row);
+        if(!stock(row)||!cusip||!Number.isFinite(Number(row.shares))||Number(row.shares)<=0||seen.has(cusip))continue;
+        seen.add(cusip);
+        const item=result.get(cusip)||{...row,cusip,count:0};
+        item.count++;result.set(cusip,item);
+      }
+    }
+    return {report_date,covered:reports.length,rows:[...result.values()].sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name)||a.cusip.localeCompare(b.cusip)).slice(0,limit)};
+  }
   function position(rows,cusip){
     return rows.filter(row=>stock(row)&&key(row)===cusip).reduce((total,row)=>({shares:total.shares+Number(row.shares),value:total.value+Number(row.value),weight:total.weight+Number(row.weight)}),{shares:0,value:0,weight:0});
   }
@@ -34,5 +50,5 @@ window.FinFeedWhaleAnalysis=(()=>{
     }
     return {groups,unavailable,absent};
   }
-  return {securities,analyze};
+  return {securities,analyze,topHeld};
 })();

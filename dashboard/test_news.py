@@ -29,6 +29,25 @@ class NewsCases(unittest.TestCase):
             ticker.return_value._data.post.return_value = response
             self.assertTrue(snapshot('AAPL', 'press')['errors'])
 
+    def test_calls_use_event_time_and_link(self):
+        result = normalize([{'title':'PENG Q4 FY2026 earnings call transcript', 'date':1791318600,
+            'url':'https://finance.yahoo.com/quote/PENG/earnings/test.html'}], 'calls')
+        self.assertEqual(result[0]['published_at'], '2026-10-06T20:30:00+00:00')
+        self.assertEqual(result[0]['kind'], 'calls')
+
+    def test_calls_snapshot_and_no_coverage(self):
+        from types import SimpleNamespace
+        response = SimpleNamespace(status_code=200, raise_for_status=lambda:None,
+            json=lambda:{'quoteSummary':{'result':[{'earningsCallTranscripts':{'transcripts':[
+                {'title':'Call', 'date':1791318600, 'url':'https://finance.yahoo.com/call'}]}}]}})
+        with patch('news.yf.Ticker') as ticker:
+            ticker.return_value._data.get.return_value = response
+            self.assertEqual(len(snapshot('PENG','calls')['items']), 1)
+            response.status_code = 404
+            empty = snapshot('VOO','calls')
+            self.assertEqual(empty['errors'], [])
+            self.assertIn('未提供', empty['note'])
+
     def test_failure_is_not_empty_success(self):
         with patch('news.yf.Ticker',side_effect=RuntimeError('provider down')):
             self.assertTrue(snapshot('AAPL','press')['errors'])

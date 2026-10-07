@@ -1,4 +1,4 @@
-"""Bounded Yahoo press-release and SEC index snapshots; no article body storage."""
+"""Bounded Yahoo press-release and SEC and earnings-call index snapshots; no article body storage."""
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 import threading
@@ -35,6 +35,12 @@ def normalize(raw, kind):
             title, date = value.get('title'), value.get('pubDate')
             provider = value.get('provider') or {}
             source = provider.get('displayName', '公司新闻稿') if isinstance(provider, dict) else '公司新闻稿'
+        elif kind == 'calls':
+            url = safe_url(value.get('url'))
+            title = value.get('title')
+            timestamp = value.get('date')
+            date = datetime.fromtimestamp(timestamp, timezone.utc).isoformat() if isinstance(timestamp, (int, float)) else ''
+            source = 'Yahoo Finance · 财报电话会'
         else:
             url = safe_url(value.get('edgarUrl') or value.get('url'))
             for exhibit in (value.get('exhibits') or {}).values():
@@ -76,6 +82,16 @@ def snapshot(symbol, kind):
                         body={'serviceConfig': {'snippetCount': 20, 's': [symbol]}})
                 response.raise_for_status()
                 raw = response.json()['data']['tickerStream']['stream']
+            elif kind == 'calls':
+                response = ticker._data.get('https://query2.finance.yahoo.com/v10/finance/quoteSummary/' + symbol,
+                    params={'modules': 'earningsCallTranscripts', 'formatted': 'false'})
+                if response.status_code == 404:
+                    # ETFs and some companies have no transcript index at Yahoo.
+                    raw = []
+                    value['note'] = 'Yahoo 暂未提供该标的的财报电话会记录'
+                else:
+                    response.raise_for_status()
+                    raw = response.json()['quoteSummary']['result'][0]['earningsCallTranscripts']['transcripts']
             else:
                 raw = ticker.get_sec_filings()
         # yfinance represents missing filings as an empty dictionary.

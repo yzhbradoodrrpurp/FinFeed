@@ -155,7 +155,7 @@ function renderHoldings(){
   flashChangedCells();
   el("holdings-status").textContent=running||queue.length?"正在更新行情…":holdings.length?"使用最近常规时段报价估值，点击持仓行查看报价时间和来源。":"按平均成本记录持仓，支持小数数量。";
 }
-function openPosition(ticker=null){
+function openPosition(ticker=null,keyboard=false){
   if(readOnly)return;
   editingPosition=ticker;
   const p=holdings.find(p=>p.ticker===ticker);
@@ -164,8 +164,14 @@ function openPosition(ticker=null){
   el("position-ticker").value=p?.ticker||"";el("position-ticker").readOnly=Boolean(p);
   el("position-quantity").value=p?.quantity??"";el("position-cost").value=p?.averageCost??"";
   el("position-currency").value=p?.currency||"USD";
+  el("position-dialog").dataset.pointerOpened=String(!keyboard);
   el("position-dialog").showModal();
 }
+el("position-dialog").addEventListener("close",()=>{
+  if(el("position-dialog").dataset.pointerOpened!=="true")return;
+  // Safari restores mouse-opened dialogs to the focusable parent table row.
+  if(document.activeElement?.matches('tr[data-holding-ticker],[data-edit-position],#add-position'))document.activeElement.blur();
+});
 let stateWrites=Promise.resolve();
 function persistState(patch){
   if(readOnly)return Promise.reject(new Error("当前账户仅供查看，请切换回我的账户后修改"));
@@ -385,7 +391,7 @@ el("add-form").addEventListener("submit",event=>{event.preventDefault();try{cons
 el("refresh").addEventListener("click",()=>{feedback("");refreshWatchlist();});
 el("method-button").addEventListener("click",()=>el("method-dialog").showModal());
 document.querySelectorAll("[data-surface]").forEach(b=>b.addEventListener("click",()=>switchSurface(b.dataset.surface)));
-el("add-position").addEventListener("click",()=>openPosition());
+el("add-position").addEventListener("click",event=>openPosition(null,event.detail===0));
 el("position-ticker").addEventListener("change",()=>{if(!editingPosition){const record=records.get(el("position-ticker").value.trim().toUpperCase());if(record?.currency&&/^[A-Z]{3}$/.test(record.currency))el("position-currency").value=record.currency;}});
 el("position-form").addEventListener("submit",async event=>{
   event.preventDefault();
@@ -399,7 +405,7 @@ el("position-form").addEventListener("submit",async event=>{
   }catch(error){el("position-error").textContent=error.name==="QuotaExceededError"||error.name==="SecurityError"?"浏览器未允许保存，记录尚未保存，请保留输入并检查浏览器存储设置。":error.message;el("position-error").hidden=false;}
 });
 el("holdings-body").addEventListener("click",async event=>{
-  const edit=event.target.closest("[data-edit-position]");if(edit){openPosition(edit.dataset.editPosition);return;}
+  const edit=event.target.closest("[data-edit-position]");if(edit){openPosition(edit.dataset.editPosition,event.detail===0);return;}
   const remove=event.target.closest("[data-delete-position]");if(remove){
     if(readOnly)return;
     if(confirm(`删除 ${remove.dataset.deletePosition} 的持仓记录？`)){try{await storeHoldings(holdings.filter(p=>p.ticker!==remove.dataset.deletePosition));renderHoldings();}catch{alert("未能保存删除操作，记录已保留。");}}

@@ -232,7 +232,7 @@ async function switchSurface(next){
   el("page-title").textContent={home:currentUser?"Hi "+currentUser.name:"Hi",watchlist:"关注列表",portfolio:"持仓",macro:"宏观动向",whales:"巨鲸持仓"}[surface];
   el("page-eyebrow").textContent={home:"HOME",watchlist:"MY WATCHLIST",portfolio:"MY PORTFOLIO",macro:"MACRO OUTLOOK",whales:"WHALE HOLDINGS"}[surface];
   document.querySelector(".account-browser").hidden=!["watchlist","portfolio"].includes(surface);
-  if(el("whale-category-control"))el("whale-category-control").hidden=surface!=="whales";
+  if(el("whale-category-control"))el("whale-category-control").hidden=surface!=="whales"||!!FinFeedWhales.isStockAnalysis?.();
   document.querySelector(".title-actions").hidden=!["watchlist","portfolio"].includes(surface);
   document.querySelector(".source-footer").hidden=!["watchlist","portfolio"].includes(surface);
   document.querySelectorAll("[data-surface]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.surface===surface)));

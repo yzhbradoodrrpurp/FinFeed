@@ -16,6 +16,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from state import validate
+from failure_log import failure
 
 
 class BoundedConnection(psycopg.Connection):
@@ -149,14 +150,20 @@ class Store:
     def transaction(self, *, cache=False) -> Iterator[Any]:
         """Commit or roll back one operation; return PostgreSQL connections to the pool."""
         if not self.sqlite_path:
-            with (self.cache_pool if cache else self.pool).connection() as connection:
-                # A dead/blocked database must release its slot before the browser's deadline.
-                # Transaction-local settings also work with a transaction pooler.
-                connection.execute("SET LOCAL statement_timeout = '8s'; "
-                    "SET LOCAL lock_timeout = '3s'; "
-                    "SET LOCAL idle_in_transaction_session_timeout = '15s'; "
-                    "SET LOCAL search_path TO finfeed_private")
-                yield connection
+            pool = self.cache_pool if cache else self.pool
+            started = time.monotonic()
+            try:
+                with pool.connection() as connection:
+                    # Bound SQL and socket waits independently of pool queueing.
+                    connection.execute("SET LOCAL statement_timeout = '8s'; "
+                        "SET LOCAL lock_timeout = '3s'; "
+                        "SET LOCAL idle_in_transaction_session_timeout = '15s'; "
+                        "SET LOCAL search_path TO finfeed_private")
+                    yield connection
+            except psycopg.OperationalError as exc:
+                failure('database', 'pool_transaction', error=exc, started=started,
+                        pool_kind='cache' if cache else 'private', pool_stats=pool.get_stats())
+                raise
             return
         connection = sqlite3.connect(self.sqlite_path, timeout=30)
         connection.row_factory = sqlite3.Row

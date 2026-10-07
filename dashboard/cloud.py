@@ -84,7 +84,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def logged_in() -> dict | None:
         if not hasattr(g, "owner_session"):
             with database.transaction() as connection:
-                g.owner_session = database.session(connection, request.cookies.get(session_cookie, ""))
+                g.owner_session = database.session(connection, request.cookies.get(session_cookie, ""), news=request.path.startswith("/api/news"))
         return g.owner_session
 
     def require_owner(*, recent: bool = False, connection=None) -> dict:
@@ -586,9 +586,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
 
     def own_news_symbols():
-        with database.transaction() as connection:
-            account = database.account(connection, logged_in()["user_id"], lock=False)
-            state = validate(json.loads(account["state"])) if account["state"] else None
+        raw = require_owner().get('news_state')
+        state = validate(json.loads(raw)) if raw else None
         return state["watchlist"] if state else []
 
     @app.get("/api/news")
@@ -609,7 +608,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if symbol not in own_news_symbols():
             abort(403, description="仅支持自己的观察列表")
         from news import snapshot
-        return refresh_jobs.response('news:v2:' + kind + ':' + symbol,
+        return refresh_jobs.response('news:v1:' + kind + ':' + symbol,
             lambda publish: snapshot(symbol, kind), 3600,
             lambda value: isinstance(value.get('items'), list) and not value.get('errors'),
             stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')

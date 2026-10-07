@@ -175,7 +175,10 @@ class Store:
     def credentials(self, connection: Any, user_id=None) -> list[dict]:
         return [dict(row) for row in self.execute(connection, "SELECT * FROM credentials WHERE NOT EXISTS (SELECT 1 FROM revoked_passkeys r WHERE r.id=credentials.id) AND NOT EXISTS (SELECT 1 FROM disabled_accounts d WHERE d.id=credentials.user_id)" + (" AND user_id=?" if user_id else "") + " ORDER BY created", (user_id,) if user_id else ()).fetchall()]
 
-    def session(self, connection: Any, token: str) -> dict | None:
+    def session(self, connection: Any, token: str, *, news=False) -> dict | None:
+        if news:
+            row = self.execute(connection, "SELECT s.*, a.state AS news_state FROM sessions s JOIN accounts a ON a.id=s.user_id WHERE s.id=? AND s.expires>? AND NOT EXISTS (SELECT 1 FROM disabled_accounts d WHERE d.id=s.user_id)", (digest(token), time.time())).fetchone()
+            return dict(row) if row else None
         row = self.execute(connection, "SELECT * FROM sessions WHERE id=? AND expires>? AND NOT EXISTS (SELECT 1 FROM disabled_accounts d WHERE d.id=sessions.user_id)", (digest(token), time.time())).fetchone()
         return dict(row) if row else None
 
@@ -250,8 +253,8 @@ class Store:
     def get_cached_news(self, symbols: list[str]) -> dict:
         if not symbols:
             return {}
-        keys = ['market:v1:news:v2:' + kind + ':' + symbol
-                for symbol in symbols for kind in ('calls', 'sec')]
+        keys = ['market:v1:news:' + version + ':' + kind + ':' + symbol
+                for symbol in symbols for kind in ('calls', 'sec') for version in ('v1', 'v2')]
         with self.transaction(cache=True) as connection:
             rows = self.execute(connection, 'SELECT id,payload,updated FROM cache WHERE id IN (' + ','.join('?' for _ in keys) + ')', keys).fetchall()
         return {row['id']: {**json.loads(row['payload']), 'cached': True,

@@ -13,5 +13,11 @@ const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/st
  now+=60*60*1000;document.hidden=false;events.visibilitychange();await new Promise(r=>setImmediate(r));assert.equal(requests,3,'refresh while another surface is selected');
  get('news-surface').hidden=false;events.focus();await new Promise(r=>setImmediate(r));assert.equal(requests,3,'already refreshed');
  timer();assert.equal(requests,3,'avoid duplicate refresh');
- console.log('PASS: hourly refresh, hidden page/surface refresh, overdue resume, no duplicate refresh');
+ sandbox.FinFeedAuth.request=async()=>({ok:true,json:async()=>({tickers:['AAPL']})});
+ let calls=0;
+ sandbox.FinFeedCache={read:()=>null,write(){},market:async(url,consume)=>{calls++;if(url.includes('/calls?'))throw Error('temporary outage');consume({ticker:'AAPL',kind:'sec',items:[],errors:[]});}};
+ await window.FinFeedNews.open(true);assert.equal(calls,2);
+ now+=60000;timer();await new Promise(r=>setImmediate(r));assert.equal(calls,3,'retry only failed source after a minute');
+ now+=60000;timer();await new Promise(r=>setImmediate(r));assert.equal(calls,3,'bounded retry must not loop');
+ console.log('PASS: hourly refresh, hidden surfaces, no duplicates, bounded failed-source retry');
 })();

@@ -5,7 +5,7 @@ window.FinFeedNews=(()=>{
   const sourceLink=(ticker,kind)=>`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/${{sec:'sec-filings',calls:'earnings-calls'}[kind]}/`;
   const kinds=['calls','sec'];
   const refreshInterval=60*60*1000;
-  let lastCheck=null,owner=null,pendingRender=false;
+  let lastCheck=null,owner=null,pendingRender=false,retryAt=null;
   function scheduleRender(){
     if(pendingRender)return;pendingRender=true;
     const frame=window.requestAnimationFrame|| (callback=>Promise.resolve().then(callback));
@@ -71,24 +71,24 @@ window.FinFeedNews=(()=>{
     el('news-errors').innerHTML=(listError?`<p class="macro-note">${escape(listError)}</p>`:'')+[...states.values()].filter(value=>matches(value)&&(value.errors?.length||value.stale)).map(value=>`<p class="macro-note">${escape(value.ticker)} · ${label(value.kind)}：${escape(value.errors?.join('；')||'暂显示缓存，等待更新')} · <a href="${escape(sourceLink(value.ticker,value.kind))}" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></p>`).join('');
     el('news-refresh').disabled=busy;
   }
-  async function open(force=false){
+  async function open(force=false,retryOnly=false){
     if(busy||(!force&&lastCheck!==null&&Date.now()-lastCheck<refreshInterval)){render();return;}
     busy=true;done=0;total=symbols.length*kinds.length;listError='';seed();render();
     try{
       // Read only the authenticated owner's list, regardless of the viewed account.
-      try{
+      if(!retryOnly)try{
         const response=await FinFeedAuth.request('/api/news?cached=1');if(!response.ok)throw new Error('自己的观察列表读取失败');
         const data=await response.json();setWatchlist(data.tickers||[]);
         for(const value of Object.values(data.snapshots||{}))if(symbols.includes(value.ticker)&&kinds.includes(value.kind))accept(value,value);
         render();
       }catch(error){listError=error.message;render();}
       total=symbols.length*kinds.length;
-      const tasks=symbols.flatMap(ticker=>kinds.map(kind=>({ticker,kind})));let next=0;
+      const tasks=symbols.flatMap(ticker=>kinds.map(kind=>({ticker,kind}))).filter(task=>!retryOnly||states.get(task.ticker+':'+task.kind)?.errors?.length);total=tasks.length;let next=0;
       async function worker(){while(next<tasks.length){const task=tasks[next++];try{
         await FinFeedCache.market(`/api/news/${encodeURIComponent(task.ticker)}/${task.kind}?stream=1&window=reported-v2${force?'&refresh=1':''}`,value=>{accept(task,value);scheduleRender();},{ttl:refreshInterval,staleTtl:cacheAge,refresh:force,validate:value=>Array.isArray(value.items)&&!value.errors?.length});
-      }catch{accept(task,{items:[],errors:['获取失败，保留已有缓存，可稍后重试'],stale:true});}finally{done++;scheduleRender();}}}
+      }catch{const saved=states.get(task.ticker+':'+task.kind)?.items?.length;accept(task,{items:[],errors:[saved?'本次更新失败，暂显示上次成功结果':'暂时无法取得数据，将自动重试'],stale:true});}finally{done++;scheduleRender();}}}
       await Promise.allSettled(Array.from({length:Math.min(4,tasks.length)},worker));
-    }finally{busy=false;lastCheck=Date.now();render();}
+    }finally{busy=false;if(!retryOnly){lastCheck=Date.now();retryAt=[...states.values()].some(value=>value.errors?.length)?lastCheck+60000:null;}else retryAt=null;render();}
   }
   document.querySelectorAll('[data-news-kind]').forEach(button=>button.addEventListener('click',()=>{if(kind===button.dataset.newsKind)return;const order=['all',...kinds],direction=order.indexOf(button.dataset.newsKind)>order.indexOf(kind)?1:-1;kind=button.dataset.newsKind;document.querySelectorAll('[data-news-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));render();window.FinFeedMotion?.enter(el('news-feed'),{kind:'tab',direction});}));
   el('news-tickers').addEventListener('wheel',event=>{
@@ -109,6 +109,7 @@ window.FinFeedNews=(()=>{
   el('news-refresh').addEventListener('click',()=>open(true));
   function checkDue(){
     if(lastCheck!==null&&Date.now()-lastCheck>=refreshInterval)open(true);
+    else if(retryAt!==null&&Date.now()>=retryAt)open(true,true);
   }
   setInterval(checkDue,60000);
   document.addEventListener('visibilitychange',checkDue);

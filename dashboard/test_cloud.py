@@ -73,6 +73,19 @@ class CloudCases(unittest.TestCase):
         self.assertEqual([value['ticker'] for value in result['snapshots'].values()], ['AAPL'])
         self.assertTrue(next(iter(result['snapshots'].values()))['cached'])
 
+    def test_news_reuses_legacy_cache_and_authorizes_in_one_transaction(self):
+        self.frontend_setup()
+        self.client.put('/api/state', json={'watchlist':['AAPL'], 'positions':[]}, headers=HEADERS)
+        value = {'ticker':'AAPL','kind':'calls','items':[{'title':'AAPL Q3 FY2026 earnings call transcript'}],'errors':[]}
+        self.store.set_cache('market:v1:news:v1:calls:AAPL', value)
+        with patch.object(self.store, 'transaction', wraps=self.store.transaction) as transactions, patch('news.snapshot') as provider:
+            response = self.client.get('/api/news/AAPL/calls')
+            self.assertEqual(response.json['items'], value['items'])
+            provider.assert_not_called()
+            self.assertEqual(sum(not call.kwargs.get('cache') for call in transactions.call_args_list), 1)
+        data = self.client.get('/api/news?cached=1').json
+        self.assertEqual(next(iter(data['snapshots'].values()))['items'], value['items'])
+
     def test_news_only_reads_own_watchlist_and_caches_each_source(self):
         self.assertEqual(self.client.get('/api/news').status_code, 401)
         self.frontend_setup()

@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from news import normalize, snapshot
+from news import normalize, snapshot, press_from_search
 
 class NewsCases(unittest.TestCase):
     def test_normalize_filters_ad_unsafe_url_and_duplicates(self):
@@ -28,6 +28,23 @@ class NewsCases(unittest.TestCase):
         with patch('news.yf.Ticker') as ticker:
             ticker.return_value._data.post.return_value = response
             self.assertTrue(snapshot('AAPL', 'press')['errors'])
+
+    def test_press_search_filters_publisher_and_exact_ticker(self):
+        from types import SimpleNamespace
+        def row(publisher, related):
+            return {'publisher':publisher, 'relatedTickers':related, 'type':'STORY',
+                'title':'Results', 'link':'https://finance.yahoo.com/release', 'providerPublishTime':1791318600}
+        rows = [row('Business Wire',['PENG']), row('PR Newswire',['PENG']), row('GlobeNewswire',['PENG']),
+            row('Reuters',['PENG']), row('Business Wire',['OTHER']), row('Business Wire',[]), row('Business Wire News',['PENG'])]
+        response = SimpleNamespace(raise_for_status=lambda:None, json=lambda:{'news':rows})
+        with patch('news.yf.Ticker') as ticker:
+            ticker.return_value._data.get.return_value = response
+            result = press_from_search(ticker.return_value,'PENG')
+            self.assertEqual(len(result), 3)
+            ticker.return_value._data.post.side_effect = RuntimeError('native feed unavailable')
+            value = snapshot('PENG','press')
+            self.assertEqual(value['errors'], [])
+            self.assertEqual(value['items'][0]['classification'], 'newswire')
 
     def test_calls_use_event_time_and_link(self):
         result = normalize([{'title':'PENG Q4 FY2026 earnings call transcript', 'date':1791318600,

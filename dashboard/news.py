@@ -66,6 +66,32 @@ def normalize(raw, kind):
     return sorted(items, key=lambda x: x['published_at'], reverse=True)[:20]
 
 
+# Exact newswire names only; titles and generic STORY types cannot classify releases.
+PRESS_PUBLISHERS = {'business wire', 'pr newswire', 'globenewswire'}
+
+
+def press_from_search(ticker, symbol):
+    response = ticker._data.get('https://query1.finance.yahoo.com/v1/finance/search',
+        params={'q': symbol, 'quotesCount': 0, 'newsCount': 100})
+    response.raise_for_status()
+    rows = response.json()['news']
+    if not isinstance(rows, list):
+        raise ValueError('Invalid news search response')
+    result = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        publisher = str(row.get('publisher') or '').strip()
+        related = row.get('relatedTickers') or []
+        if publisher.casefold() not in PRESS_PUBLISHERS or symbol not in related:
+            continue
+        timestamp = row.get('providerPublishTime')
+        date = datetime.fromtimestamp(timestamp, timezone.utc).isoformat() if isinstance(timestamp, (int, float)) else ''
+        result.append({'content': {'title': row.get('title'), 'pubDate': date,
+            'canonicalUrl': {'url': row.get('link')}, 'provider': {'displayName': publisher}}})
+    return result
+
+
 def snapshot(symbol, kind):
     value = {'ticker': symbol, 'kind': kind, 'items': [], 'retrieved_at': datetime.now(timezone.utc).isoformat(), 'errors': []}
     try:
@@ -73,15 +99,18 @@ def snapshot(symbol, kind):
             yahoo_session.initialize()
             ticker = yf.Ticker(symbol)
             if kind == 'press':
-                # Check HTTP and schema: get_news currently turns a 404 into [].
-                response = ticker._data.post('https://finance.yahoo.com/xhr/ncp?queryRef=pressRelease&serviceKey=ncp_fin',
-                    body={'serviceConfig': {'snippetCount': 20, 's': [symbol]}})
-                if response.status_code == 404:
-                    # Current Yahoo page configuration uses this expanded queryRef.
-                    response = ticker._data.post('https://finance.yahoo.com/xhr/ncp?queryRef=finance-US-en-US-ticker-pressrelease&serviceKey=ncp_fin',
+                try:
+                    # Check HTTP and schema: get_news currently turns a 404 into [].
+                    response = ticker._data.post('https://finance.yahoo.com/xhr/ncp?queryRef=pressRelease&serviceKey=ncp_fin',
                         body={'serviceConfig': {'snippetCount': 20, 's': [symbol]}})
-                response.raise_for_status()
-                raw = response.json()['data']['tickerStream']['stream']
+                    response.raise_for_status()
+                    raw = response.json()['data']['tickerStream']['stream']
+                    if not isinstance(raw, list):
+                        raise ValueError('Invalid press release response')
+                except Exception:
+                    raw = press_from_search(ticker, symbol)
+                    value['note'] = '备用新闻索引：按新闻稿发布渠道筛选，可能遗漏其他渠道或较早公告'
+                    value['classification'] = 'newswire'
             elif kind == 'calls':
                 response = ticker._data.get('https://query2.finance.yahoo.com/v10/finance/quoteSummary/' + symbol,
                     params={'modules': 'earningsCallTranscripts', 'formatted': 'false'})
@@ -98,6 +127,9 @@ def snapshot(symbol, kind):
         if kind == 'sec' and raw == {}:
             raw = []
         value['items'] = normalize(raw, kind)
+        if value.get('classification') == 'newswire':
+            for item in value['items']:
+                item['classification'] = 'newswire'
     except Exception as exc:
         failure('yahoo', 'news_' + kind, symbol=symbol, error=exc)
         value['errors'] = ['该来源暂时无法获取，请稍后重试']

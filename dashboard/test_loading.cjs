@@ -8,16 +8,18 @@ const deferred=url=>new Promise(resolve=>pending.set(url,resolve));
 const context={window:{},URLSearchParams,Promise,AbortController,accountStateVersion:0,accountRequest:null,location:{search:'',hostname:'finfeed-research.vercel.app'},surface:'portfolio',currentUser:null,surfaceAccounts:{},viewedUserId:null,records:new Map(),initialLoading:true,readOnly:false,tickers:[],holdings:[],
  document:{addEventListener(){},querySelector:()=>main,querySelectorAll:()=>[],body:{classList:{toggle(){}}}},el,sessionStorage:{getItem:()=>null},escapeHTML:s=>s,switchSurface(){},rememberSurfaceAccount(name,id){context.surfaceAccounts[name]=id;},
  seedQuoteSnapshots(){},FinFeedNews:{initialize:()=>calls.push('news'),setWatchlist(){}},FinFeedAuth:{initialize:()=>deferred('auth'),request:deferred},FinFeedHome:{prefetch:()=>calls.push('home'),open:()=>calls.push('greeting')},FinFeedMacro:{open:()=>calls.push('macro')},FinFeedWhales:{open:()=>calls.push('whales')},
- trackedTickers:()=>[...new Set([...context.tickers,...context.holdings.map(p=>p.ticker)])],render:()=>calls.push('render'),load:tickers=>calls.push([...tickers]),setInterval(){},refreshWatchlist(){},feedback:message=>calls.push(message)};
+ trackedTickers:()=>[...new Set([...context.tickers,...context.holdings.map(p=>p.ticker)])],render:()=>calls.push('render'),load:tickers=>calls.push([...tickers]),setTimeout:callback=>{context.timers.push(callback);},timers:[],setInterval(){},refreshWatchlist(){},feedback:message=>calls.push(message)};
 vm.createContext(context);vm.runInContext(init,context);
 (async()=>{
  const done=context.initializeState();assert.deepEqual(calls,[]);
  assert.equal(main.inert,false);assert.equal(context.readOnly,true); // Filters stay usable; writes wait for verified state.
  pending.get('auth')({user:{id:'self',name:'Liam'}});await new Promise(setImmediate);
- assert.deepEqual(calls,['','home','news','macro','whales']);assert.equal(pending.size,3);assert.equal(main.inert,false);
+ assert.deepEqual(calls,['']);assert.equal(pending.size,3);assert.equal(main.inert,false);
  pending.get('/api/state')({ok:true,json:async()=>({state:{watchlist:['AAPL'],positions:[{ticker:'AAPL'},{ticker:'MSFT'}]},quotes:{},readOnly:false})});
  await new Promise(setImmediate);
  assert.deepEqual(calls.at(-1),['AAPL','MSFT']);assert.equal(main.inert,false);
+ assert(!calls.includes('news'));context.timers.splice(0).forEach(run=>run());
+ assert(calls.includes('news'));
  assert.equal(el('view-account').disabled,true); // Directory is still pending.
  pending.get('/api/accounts')({ok:true,json:async()=>({accounts:[{id:'self',name:'Liam'}]})});await done;
  assert.equal(el('view-account').disabled,false);
@@ -37,14 +39,14 @@ vm.createContext(context);vm.runInContext(init,context);
  await context.initializeState();
  pending.get('auth')({user:{id:'self',name:'Liam'}});await new Promise(setImmediate);
  assert.equal(el('startup-status').hidden,true);
- assert.equal(calls.filter(call=>call==='home').length,1);
- assert.equal(calls.filter(call=>call==='news').length,1);
- assert.equal(calls.filter(call=>call==='macro').length,1);
- assert.equal(calls.filter(call=>call==='whales').length,1);
+ assert(!calls.includes('home'));
+ context.setTimeout=callback=>context.timers.push(callback);
  pending.get('/api/state')({ok:true,json:async()=>({state:{watchlist:['AAPL'],positions:[]},quotes:{},readOnly:false})});
  pending.get('/api/accounts')({ok:true,json:async()=>({accounts:[{id:'self',name:'Liam'}]})});
  await new Promise(setImmediate);
+ context.timers.splice(0).forEach(run=>run());
+ for(const name of ['home','news','macro','whales'])assert.equal(calls.filter(call=>call===name).length,1);
  assert.deepEqual(context.tickers,['AAPL']);assert.equal(context.initializeState.running,false);
- console.log('PASS: shared views start after auth; private rows do not wait for account directory; only one account loads');
+ console.log('PASS: private snapshots render before shared views; private rows do not wait for account directory; only one account loads');
  console.log('PASS: failed auth automatically retries and starts each view once after recovery');
 })().catch(e=>{console.error(e);process.exitCode=1;});

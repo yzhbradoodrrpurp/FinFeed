@@ -14,7 +14,7 @@ from mihomo_runtime import BINARY, PORT, private_config
 
 def main():
     gunicorn = [sys.executable, str(Path(__file__).with_name("cloud_worker.py")), "cloud:create_app()", "--bind", "0.0.0.0:" + os.environ.get("PORT", "10000"),
-                "--workers", "1", "--threads", "1025", "--timeout", "180"]
+                "--workers", "1", "--threads", "64", "--timeout", "180"]
     encoded = os.environ.get("MIHOMO_CONFIG_B64", "")
     if not encoded:
         os.execvp(gunicorn[0], gunicorn)

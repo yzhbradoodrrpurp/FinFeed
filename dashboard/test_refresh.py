@@ -8,10 +8,10 @@ import data
 
 
 class RefreshCases(unittest.TestCase):
-    def test_provider_limit_is_1024(self):
+    def test_provider_limit_is_four(self):
         acquired = 0
         try:
-            for _ in range(1024):
+            for _ in range(4):
                 self.assertTrue(data.LIMIT.acquire(blocking=False))
                 acquired += 1
             self.assertFalse(data.LIMIT.acquire(blocking=False))
@@ -21,7 +21,7 @@ class RefreshCases(unittest.TestCase):
 
     def test_provider_requests_overlap_and_wait_at_global_limit(self):
         # Reserve most permits to test the real global limit with four threads.
-        for _ in range(1021):
+        for _ in range(1):
             self.assertTrue(data.LIMIT.acquire(blocking=False))
             self.addCleanup(data.LIMIT.release)
         release = threading.Event()
@@ -199,7 +199,7 @@ class RefreshCases(unittest.TestCase):
         self.assertTrue(result['stale'])
         self.assertTrue(result['refresh_checked_at'])
         self.assertTrue(result['errors'])
-        store.set_cache.assert_not_called()
+        store.publish_cache.assert_not_called()
 
     def test_cache_read_outage_does_not_block_provider_refresh(self):
         store = MagicMock()
@@ -215,7 +215,7 @@ class RefreshCases(unittest.TestCase):
         store = MagicMock()
         store.get_cache.return_value = ({'schema_version': data.SCHEMA_VERSION,
             'metrics': {'price': {'value': 100}}}, 0)
-        store.set_cache.side_effect = RuntimeError('cache unavailable')
+        store.publish_cache.side_effect = RuntimeError('cache unavailable')
         fresh = {'ticker': 'QA', 'metrics': {'price': {'value': 110}}, 'fetched_at': data.now()}
         with patch.object(data, 'fetch_security', return_value=fresh):
             result = data.security('QA', refresh=True, store=store)
@@ -235,7 +235,7 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(result['fetched_at'],saved['fetched_at'])
         self.assertEqual(result['quote_date'],saved['quote_date'])
         self.assertTrue(result['stale'])
-        store.set_cache.assert_not_called()
+        store.publish_cache.assert_not_called()
         self.assertNotIn('stale',saved)
         # Next successful retry replaces the old snapshot and removes stale status.
         fresh={**saved,'metrics':{'price':{'value':110}},'fetched_at':data.now()}
@@ -243,7 +243,7 @@ class RefreshCases(unittest.TestCase):
             result=data.security('QA',refresh=True,store=store)
         self.assertEqual(result['metrics']['price']['value'],110)
         self.assertFalse(result.get('stale',False))
-        store.set_cache.assert_called_once()
+        store.publish_cache.assert_called_once()
 
     def test_first_failed_quote_has_no_fabricated_cache(self):
         store=MagicMock();store.get_cache.return_value=None
@@ -251,7 +251,7 @@ class RefreshCases(unittest.TestCase):
             result=data.security('NEW',store=store)
         self.assertEqual(result['metrics'],{})
         self.assertFalse(result.get('stale',False))
-        store.set_cache.assert_not_called()
+        store.publish_cache.assert_not_called()
 
     def test_yahoo_forecast_preferred_and_alpha_only_fills_gaps(self):
         record = self.fetch('2026-10-04T02:00:00+00:00')

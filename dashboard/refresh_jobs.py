@@ -5,18 +5,39 @@ one shared job running; further subscribers reuse it rather than start duplicate
 """
 from copy import deepcopy
 import json
+import queue
 import threading
 import time
 from failure_log import failure
 
 
 class RefreshJobs:
-    def __init__(self, store, deadline=30):
+    def __init__(self, store, deadline=25, limits=None):
         self.store = store
         self.deadline = deadline
         self.guard = threading.Lock()
         self.entries = {}
-        self.capacity = threading.BoundedSemaphore(1024)
+        self.capacity = threading.BoundedSemaphore(256)
+        self.limits = limits or {'security': 4, 'news': 2, 'whales': 2, 'macro': 2, 'home': 2}
+        self.queues = {}
+
+    def submit(self, key, work):
+        # Separate lanes keep long SEC/provider jobs from starving minute quotes.
+        lane = key.split(':', 1)[0]
+        with self.guard:
+            if lane not in self.queues:
+                pending = self.queues[lane] = queue.Queue()
+                def worker():
+                    while True:
+                        task = pending.get()
+                        try:
+                            task()
+                        finally:
+                            pending.task_done()
+                for index in range(self.limits.get(lane, 2)):
+                    threading.Thread(target=worker, daemon=True,
+                        name=f'refresh-{lane}-{index}').start()
+            self.queues[lane].put(work)
 
     def events(self, key, loader, ttl, valid, persist=True, force=False):
         started = time.monotonic()
@@ -32,7 +53,7 @@ class RefreshJobs:
                 'retry': 0, 'failures': 0})
         condition = entry['condition']
         with condition:
-            if entry['value'] is None:
+            if entry['value'] is None and not entry.get('cache_checked'):
                 try:
                     saved = self.store.get_cache('market:v1:' + key if persist else 'quote:' + key.split(':', 1)[1])
                     if saved and valid(saved[0]):
@@ -40,6 +61,7 @@ class RefreshJobs:
                         entry['expires'] = time.monotonic() + max(0, ttl - (time.time() - saved[1]))
                 except Exception as exc:
                     failure('database', 'market_cache_read', symbol=key, error=exc)
+                entry['cache_checked'] = True
             fresh = entry['value'] is not None and not entry['failures'] and not entry['value'].get('stale') and time.monotonic() < entry['expires']
             # Concurrent tabs share a just-completed refresh; scheduled cycles bypass older caches.
             if force and time.monotonic() - entry.get('completed', float('-inf')) >= 5:
@@ -75,7 +97,7 @@ class RefreshJobs:
                         publish(value)
                         if successful and persist:
                             try:
-                                self.store.set_cache('market:v1:' + key, value)
+                                getattr(self.store, 'publish_cache', self.store.set_cache)('market:v1:' + key, value)
                             except Exception as exc:
                                 failure('database', 'market_cache_write', symbol=key, error=exc)
                     except Exception as exc:
@@ -89,7 +111,7 @@ class RefreshJobs:
                             entry['running'] = False
                             self.capacity.release()
                             condition.notify_all()
-                threading.Thread(target=run, daemon=True, name='market-refresh').start()
+                self.submit(key, run)
             version = entry['version']
             initial = deepcopy(entry['value'])
             if initial is None and entry.get('latest') is not None:
@@ -102,8 +124,7 @@ class RefreshJobs:
             with condition:
                 remaining = self.deadline - (time.monotonic() - started)
                 if remaining <= 0:
-                    failure('backend', 'market_deadline', symbol=key, reason='whole refresh exceeded 30 seconds', started=started, fallback_available=initial is not None)
-                    yield {**(initial or {}), 'stale': True, 'refreshing': False, 'errors': ['刷新超过 30 秒，保留已取得的数据']}
+                    yield {**(initial or {}), 'stale': True, 'refreshing': True, 'pending': True}
                     return
                 condition.wait_for(lambda: entry['version'] != version or not entry['running'], remaining)
                 changed = entry['version'] != version

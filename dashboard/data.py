@@ -30,7 +30,7 @@ yf.config.network.retries = 1
 yahoo_session.configure_transport()
 # yfinance protects cookie/crumb setup with its own lock. Bound concurrent
 # network work across all users in this single backend process.
-LIMIT = threading.Semaphore(1024)
+LIMIT = threading.Semaphore(4)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60
@@ -500,7 +500,7 @@ def security(symbol, refresh=False, store=None, on_update=None):
                 result["financial_checked_at"] = saved.get("financial_checked_at")
             stage = "quote_cache_write"
             try:
-                store.set_cache("quote:" + symbol, result)
+                getattr(store, "publish_cache", store.set_cache)("quote:" + symbol, result)
             except Exception as exc:
                 # A persistence outage must not replace newly fetched data with
                 # an older snapshot. The current refresh and browser still get it.

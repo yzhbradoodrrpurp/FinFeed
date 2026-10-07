@@ -109,6 +109,61 @@ class RefreshJobCases(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(jobs.entries['security:QA']['retry'], 0)
 
+    def test_queued_jobs_are_bounded_and_subscribers_rejoin_without_failure(self):
+        jobs = RefreshJobs(self.store, deadline=.02, limits={'home': 1, 'news': 1})
+        release = threading.Event()
+        entered = threading.Event()
+        calls = []
+        def slow(publish):
+            calls.append('slow')
+            entered.set()
+            release.wait(2)
+            return {'price': 101}
+        try:
+            first = list(jobs.events('home:A', slow, 60, self.good))[-1]
+            self.assertTrue(first['pending'])
+            self.assertNotIn('errors', first)
+            self.assertTrue(entered.is_set())
+            queued = list(jobs.events('home:B', slow, 60, self.good))[-1]
+            self.assertTrue(queued['pending'])
+            self.assertEqual(calls, ['slow'])
+            independent = list(jobs.events('news:A', lambda publish: {'price': 9}, 60, self.good))[-1]
+            self.assertEqual(independent['price'], 9)
+            list(jobs.events('home:A', slow, 60, self.good))
+            self.assertEqual(calls, ['slow'])
+        finally:
+            release.set()
+            for lane in jobs.queues.values():
+                lane.join()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(list(jobs.events('home:B', slow, 60, self.good))[-1]['price'], 101)
+
+    def test_late_cache_write_cannot_overwrite_new_snapshot(self):
+        new = {'price': 102, 'retrieved_at': '2026-01-02T00:00:00Z'}
+        old = {'price': 101, 'retrieved_at': '2026-01-01T00:00:00Z'}
+        self.store.set_cache('market:v1:home:A', new)
+        self.store.set_cache('market:v1:home:A', old)
+        self.assertEqual(self.store.get_cache('market:v1:home:A')[0], new)
+        recreated = Store(sqlite_path=self.path)
+        self.assertEqual(recreated.get_cache('market:v1:home:A')[0], new)
+
+    def test_buffered_snapshots_survive_write_failure_and_batch_retry(self):
+        from collections import OrderedDict
+        from unittest.mock import patch
+        self.store._snapshot_pending = OrderedDict()
+        self.store._snapshot_guard = threading.Lock()
+        self.store._snapshot_wake = threading.Event()
+        self.store.publish_cache('quote:A', {'price': 101})
+        self.store.publish_cache('quote:B', {'price': 102})
+        with patch.object(self.store, 'transaction', side_effect=RuntimeError('offline')):
+            self.assertEqual(self.store.get_cache('quote:A')[0]['price'], 101)
+            self.assertFalse(self.store.flush_snapshots())
+        self.assertEqual(len(self.store._snapshot_pending), 2)
+        self.assertTrue(self.store.flush_snapshots())
+        self.assertFalse(self.store._snapshot_pending)
+        recreated = Store(sqlite_path=self.path)
+        self.assertEqual(recreated.get_cache('quote:B')[0]['price'], 102)
+
     def test_batch_quote_read_prewarms_memory_and_returns_copies(self):
         self.store.set_cache('quote:QA', {'metrics': {'price': {'value': 100}}})
         recreated = Store(sqlite_path=self.path)

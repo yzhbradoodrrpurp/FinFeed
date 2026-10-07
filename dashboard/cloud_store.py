@@ -1,5 +1,6 @@
 """Private PostgreSQL storage; SQLite is injected only by local tests."""
 from contextlib import contextmanager
+from datetime import datetime
 import atexit
 import os
 import hashlib
@@ -250,11 +251,15 @@ class Store:
         if row:
             value = (json.loads(row["payload"]), row["updated"])
             self._remember_cache(key, *value)
-            return value
+            with self._hot_guard:
+                return deepcopy(self._hot_cache[key][:2])
         return None
 
     def _remember_cache(self, key, payload, updated):
         with self._hot_guard:
+            previous = self._hot_cache.get(key)
+            if previous and previous[1] > updated:
+                return
             self._hot_cache[key] = (deepcopy(payload), updated, time.monotonic())
             self._hot_cache.move_to_end(key)
             while len(self._hot_cache) > 1024:
@@ -262,34 +267,109 @@ class Store:
 
     def set_cache(self, key: str, payload: dict) -> None:
         updated = time.time()
+        # Public snapshot age follows collection time, never the time a cached
+        # result was copied. SQL ordering also protects overlapping deployments.
+        if key.startswith(('quote:', 'market:v1:')):
+            source_time = payload.get('fetched_at') or payload.get('retrieved_at')
+            if source_time:
+                try:
+                    updated = min(updated, datetime.fromisoformat(source_time.replace('Z', '+00:00')).timestamp())
+                except (ValueError, TypeError):
+                    pass
         with self.transaction(cache=True) as connection:
-            self.execute(connection, "INSERT INTO cache VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated=excluded.updated",
+            cursor = self.execute(connection, "INSERT INTO cache VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated=excluded.updated WHERE excluded.updated >= cache.updated",
                          (key, json.dumps(payload, ensure_ascii=False, allow_nan=False), updated))
+            accepted = cursor.rowcount > 0
+        if accepted:
+            self._remember_cache(key, payload, updated)
+
+    def enable_snapshot_writer(self):
+        """One bounded, coalescing write lane for public snapshots only."""
+        self._snapshot_pending = OrderedDict()
+        self._snapshot_guard = threading.Lock()
+        self._snapshot_wake = threading.Event()
+        def run():
+            while True:
+                self._snapshot_wake.wait()
+                self._snapshot_wake.clear()
+                # Small window combines completions from concurrent providers.
+                time.sleep(.1)
+                if not self.flush_snapshots():
+                    time.sleep(15)
+                with self._snapshot_guard:
+                    if self._snapshot_pending:
+                        self._snapshot_wake.set()
+        threading.Thread(target=run, daemon=True, name='snapshot-writer').start()
+
+    def publish_cache(self, key, payload):
+        if not hasattr(self, '_snapshot_pending'):
+            return self.set_cache(key, payload)
+        stamp = payload.get('fetched_at') or payload.get('retrieved_at')
+        try:
+            updated = min(time.time(), datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp())
+        except (AttributeError, ValueError, TypeError):
+            updated = time.time()
         self._remember_cache(key, payload, updated)
+        with self._snapshot_guard:
+            previous = self._snapshot_pending.get(key)
+            if previous and previous[1] > updated:
+                return
+            self._snapshot_pending[key] = (deepcopy(payload), updated)
+            if len(self._snapshot_pending) > 1024:
+                self._snapshot_pending.popitem(last=False)
+                failure('database', 'snapshot_queue_full', reason='public snapshot retained in memory only')
+        self._snapshot_wake.set()
+
+    def flush_snapshots(self):
+        with self._snapshot_guard:
+            batch = list(self._snapshot_pending.items())[:32]
+        if not batch:
+            return True
+        try:
+            with self.transaction(cache=True) as connection:
+                for key, (payload, updated) in batch:
+                    self.execute(connection, "INSERT INTO cache VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated=excluded.updated WHERE excluded.updated >= cache.updated",
+                        (key, json.dumps(payload, ensure_ascii=False, allow_nan=False), updated))
+            with self._snapshot_guard:
+                for key, item in batch:
+                    if self._snapshot_pending.get(key) == item:
+                        del self._snapshot_pending[key]
+            return True
+        except Exception as exc:
+            failure('database', 'snapshot_batch_write', error=exc)
+            return False
+
+    def _cached_batch(self, keys):
+        found = {}
+        with self._hot_guard:
+            for key in keys:
+                item = self._hot_cache.get(key)
+                if item and time.monotonic() - item[2] < 60:
+                    found[key] = deepcopy(item[:2])
+        missing = [key for key in keys if key not in found]
+        if missing:
+            with self.transaction(cache=True) as connection:
+                rows = self.execute(connection, "SELECT id,payload,updated FROM cache WHERE id IN (" + ",".join("?" for _ in missing) + ")", missing).fetchall()
+            for row in rows:
+                self._remember_cache(row['id'], json.loads(row['payload']), row['updated'])
+                with self._hot_guard:
+                    found[row['id']] = deepcopy(self._hot_cache[row['id']][:2])
+        return found
 
     def get_cached_quotes(self, symbols: list[str]) -> dict:
-        """Read tracked snapshots in one database round trip, without a provider call."""
-        if not symbols:
-            return {}
-        keys = ["quote:" + symbol for symbol in symbols]
-        with self.transaction(cache=True) as connection:
-            rows = self.execute(connection, "SELECT id,payload,updated FROM cache WHERE id IN (" + ",".join("?" for _ in keys) + ")", keys).fetchall()
-        for row in rows:
-            self._remember_cache(row["id"], json.loads(row["payload"]), row["updated"])
-        return {row["id"][6:]: {**json.loads(row["payload"]), "cached": True,
-                                "cache_age_seconds": round(max(0, time.time() - row["updated"]))}
-                for row in rows}
+        """Batch only memory misses; never refetch providers on bootstrap."""
+        values = self._cached_batch(['quote:' + symbol for symbol in symbols])
+        return {key[6:]: {**payload, 'cached': True,
+                'cache_age_seconds': round(max(0, time.time() - updated))}
+                for key, (payload, updated) in values.items()}
 
     def get_cached_news(self, symbols: list[str]) -> dict:
-        if not symbols:
-            return {}
         keys = ['market:v1:news:' + version + ':' + kind + ':' + symbol
                 for symbol in symbols for kind in ('calls', 'sec') for version in ('v1', 'v2')]
-        with self.transaction(cache=True) as connection:
-            rows = self.execute(connection, 'SELECT id,payload,updated FROM cache WHERE id IN (' + ','.join('?' for _ in keys) + ')', keys).fetchall()
-        return {row['id']: {**json.loads(row['payload']), 'cached': True,
-                           'cache_age_seconds': round(max(0, time.time() - row['updated']))}
-                for row in rows if time.time() - row['updated'] <= 7 * 86400}
+        values = self._cached_batch(keys)
+        return {key: {**payload, 'cached': True,
+                'cache_age_seconds': round(max(0, time.time() - updated))}
+                for key, (payload, updated) in values.items() if time.time() - updated <= 7 * 86400}
 
     def update_state(self, patch: dict, *, require_empty: bool = False, user_id=None) -> dict:
         if not isinstance(patch, dict) or set(patch) - {"watchlist", "positions", "initialize"}:

@@ -62,6 +62,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     if bootstrap and len(bootstrap) < 32:
         raise ValueError("首次绑定码至少需要 32 个字符，请在部署平台生成高强度随机值")
     database = store or Store(app.config["DATABASE_URL"])
+    if not local_test:
+        database.enable_snapshot_writer()
     from refresh_jobs import RefreshJobs
     refresh_jobs = RefreshJobs(database)
     app.extensions["finfeed_store"] = database
@@ -220,6 +222,13 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.get("/api/health")
     def health():
         return jsonify(ok=True, service="FinFeed")
+
+    @app.get("/api/ready")
+    def readiness():
+        # Authenticated diagnostics; liveness stays independent of DB recovery.
+        with database.transaction() as connection:
+            connection.execute("SELECT 1")
+        return jsonify(ok=True, refresh_queues={key: lane.qsize() for key, lane in refresh_jobs.queues.items()})
 
     @app.post("/api/auth/frontend-ticket")
     def frontend_ticket():

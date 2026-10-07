@@ -327,7 +327,7 @@ function acceptRecord(ticker,incoming){
   }else records.set(ticker,incoming.partial&&saved?{...saved,...incoming,metrics:{...saved.metrics,...incoming.metrics}}:incoming);
 }
 function pump(){
-  while(running<128&&queue.length){
+  while(running<4&&queue.length){
     const task=queue.shift(),controller=new AbortController();running++;recordRequests.add(controller);
     getRecord(task.ticker,task.refresh,controller.signal,record=>{
       if(task.generation===recordGeneration&&trackedTickers().includes(task.ticker)){acceptRecord(task.ticker,record);scheduleRender();}
@@ -438,12 +438,6 @@ async function initializeState(){
     const auth=await FinFeedAuth.initialize();
     el("startup-status").hidden=true;feedback("");
     currentUser=auth.user;main.inert=false;
-    // Shared views start after authentication, without waiting for private records.
-    FinFeedHome.prefetch();
-    if(surface==="home")FinFeedHome.open(currentUser);
-    FinFeedNews.initialize(currentUser);
-    FinFeedMacro.open();
-    FinFeedWhales.open();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;
     el("profile-name").textContent=currentUser.name;
     el("invite-controls").hidden=!auth.canInvite;
@@ -488,7 +482,16 @@ async function initializeState(){
       readOnly=true;document.body.classList.toggle("read-only",true);
       viewedUserId=null;initialLoading=false;render();
       feedback(`记录加载失败：${error.message}。请稍后刷新页面。`);
-    }).finally(()=>{main.inert=false;});
+    }).finally(()=>{
+      main.inert=false;
+      // Private rows and snapshots have priority. Every other view still updates
+      // while hidden, with staggered startup to avoid a database connection burst.
+      const starters={home:()=>FinFeedHome.prefetch(),news:()=>FinFeedNews.initialize(currentUser),
+        macro:()=>FinFeedMacro.open(),whales:()=>FinFeedWhales.open()};
+      if(surface==="home")FinFeedHome.open(currentUser);
+      if(starters[surface])starters[surface]();
+      Object.entries(starters).filter(([name])=>name!==surface).forEach(([,start],index)=>setTimeout(start,1500*(index+1)));
+    });
     setInterval(refreshWatchlist,60_000);
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWatchlist();});
     await Promise.allSettled([directoryTask,stateTask]);

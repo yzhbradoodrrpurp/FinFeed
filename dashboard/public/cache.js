@@ -29,7 +29,7 @@ window.FinFeedCache={
     const controller=new AbortController();
     const abort=()=>controller.abort(signal?.reason);
     if(signal?.aborted)abort();else signal?.addEventListener('abort',abort,{once:true});
-    const timeout=setTimeout(()=>controller.abort(new DOMException('数据请求超过 30 秒','TimeoutError')),30000);
+    const timeout=setTimeout(()=>controller.abort(new DOMException('后台更新暂未完成，保留已取得的数据','TimeoutError')),125000);
     const run=async()=>{
       const cached=FinFeedCache.read(key,staleTtl);
       const shared=cached&&validate(cached.data)?cached:null;
@@ -37,21 +37,33 @@ window.FinFeedCache={
       if(!refresh&&shared&&Date.now()-shared.savedAt<ttl&&!shared.data.stale&&(!Number.isFinite(sourceTime)||Date.now()-sourceTime<ttl)){consume(shared.data);return shared.data;}
       let latest=shared?.data;
       if(latest)consume({...latest,cached:true,refreshing:true});
-      const response=await FinFeedAuth.request(url,{signal:controller.signal});
-      if(!response.ok)throw new Error(`读取失败 (${response.status})`);
       const accept=value=>{
         const previousTime=Date.parse(latest?.fetched_at||latest?.retrieved_at||'');
         const incomingTime=Date.parse(value?.fetched_at||value?.retrieved_at||'');
         if(Number.isFinite(previousTime)&&Number.isFinite(incomingTime)&&incomingTime<previousTime)return;
         latest=value;consume(value);if(validate(value))FinFeedCache.write(key,value);
       };
+      let pollURL=url;
+      do{
+      const response=await FinFeedAuth.request(pollURL,{signal:controller.signal});
+      if(!response.ok)throw new Error(`读取失败 (${response.status})`);
       if(!response.headers?.get('content-type')?.includes('ndjson')){accept(await response.json());return latest;}
       const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
       try{while(true){const {value,done}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});
         const lines=buffer.split('\n');buffer=lines.pop();for(const line of lines)if(line.trim())accept(JSON.parse(line));
         if(done){if(buffer.trim())accept(JSON.parse(buffer));break;}
       }}finally{reader.releaseLock();}
-      return latest;
+      if(!latest?.pending)return latest;
+      // A queued/running server job is not a provider failure. Rejoin that job
+      // without forcing a second refresh, releasing its HTTP thread meanwhile.
+      await new Promise((resolve,reject)=>{
+        const abortWait=()=>{clearTimeout(timer);reject(controller.signal.reason);};
+        const timer=setTimeout(()=>{controller.signal.removeEventListener('abort',abortWait);resolve();},1000);
+        if(controller.signal.aborted)abortWait();else controller.signal.addEventListener('abort',abortWait,{once:true});
+      });
+      pollURL=url.replace(/([?&])refresh=1(&|$)/,'$1').replace(/[?&]$/,'');
+      }while(!controller.signal.aborted);
+      throw controller.signal.reason;
     };
     try{
       // Show old public snapshots before waiting for another tab's refresh lock.

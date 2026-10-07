@@ -2,8 +2,6 @@
 from contextlib import contextmanager
 import atexit
 import os
-import sys
-import traceback
 import hashlib
 import json
 import secrets
@@ -168,11 +166,7 @@ class Store:
                 failure('database', 'pool_transaction', error=exc, started=started,
                         pool_kind='cache' if cache else 'private', pool_stats=pool.get_stats(),
                         created_pid=self.created_pid, current_pid=os.getpid(),
-                        workers=[dict(name=t.name, alive=t.is_alive(),
-                            stack=[f'{frame.name}:{frame.lineno}' for frame in
-                                   traceback.extract_stack(sys._current_frames()[t.ident])[-6:]]
-                            if t.ident in sys._current_frames() else [])
-                            for t in pool._workers])
+                        workers_alive=sum(t.is_alive() for t in pool._workers))
                 raise
             return
         connection = sqlite3.connect(self.sqlite_path, timeout=30)

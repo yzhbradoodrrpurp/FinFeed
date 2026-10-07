@@ -210,3 +210,5 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 
 #ticker-input:focus,#ticker-input:focus-visible{outline:none;box-shadow:none}
 .ticker-search{position:relative;min-width:0}.ticker-suggestions{position:absolute;top:calc(100% + 8px);left:0;width:max(100%,340px);max-width:80vw;max-height:360px;overflow:auto;z-index:100;padding:6px;border:1px solid var(--line);border-radius:10px;background:white;box-shadow:0 8px 28px #46301c20}.ticker-suggestions button{display:block;width:100%;border:0;border-radius:6px;padding:10px;background:transparent;text-align:left;color:var(--ink);font-size:12px}.ticker-suggestions button:hover,.ticker-suggestions button[aria-selected=true]{background:#fff3e8}.ticker-suggestions strong{display:block}.ticker-suggestions span{display:block;color:var(--muted);margin-top:4px;font-size:11px}.ticker-suggestions[hidden]{display:none}@media(max-width:800px){.ticker-search{flex:1}.ticker-search input{width:100%}.ticker-suggestions{width:100%;max-width:100%}}
+
+#position-form input:focus,#position-form input:focus-visible{outline:none;box-shadow:none}

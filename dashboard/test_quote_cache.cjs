@@ -15,6 +15,8 @@ const flush=()=>new Promise(setImmediate);
  assert.equal(ctx.records.get('AAPL').metrics.price.value,100);assert.equal(ctx.records.get('AAPL').stale,true);
  ctx.load(['AAPL'],true);pending.shift().resolve({ok:true,json:async()=>({...saved,metrics:{price:{value:110}}})});await flush();
  assert.equal(ctx.records.get('AAPL').metrics.price.value,110);assert.equal(ctx.records.get('AAPL').stale,undefined);assert.equal(ctx.running,0);
+ ctx.acceptRecord('AAPL',{...saved,fetched_at:'2026-10-04T20:00:00Z',metrics:{price:{value:90}}});
+ assert.equal(ctx.records.get('AAPL').metrics.price.value,110,'older cached response cannot replace newer quote');
  assert.equal(saved.stale,undefined);
  console.log('PASS: network and empty-response failures preserve dated quote and financial snapshot; successful retry clears stale status');
 })().catch(error=>{console.error(error);process.exitCode=1;});

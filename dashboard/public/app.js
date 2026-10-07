@@ -207,7 +207,7 @@ async function changeViewedAccount(name,id){
     const state=data.state||{watchlist:[],positions:[]};
     readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
     tickers=state.watchlist;holdings=state.positions;initialLoading=false;
-    for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
+    seedQuoteSnapshots(data.quotes);
     feedback("");render();load(trackedTickers());
     if(surface===name)window.FinFeedMotion?.enter(el(`${name}-surface`),{kind:'account'});
     return true;
@@ -303,12 +303,25 @@ function render(){
   if(surface==="watchlist")flashChangedCells();
 }
 async function getRecord(ticker,refresh=false,signal,onUpdate=()=>{}){
-  return FinFeedCache.market(`/api/security/${encodeURIComponent(ticker)}?stream=1${refresh?"&refresh=1":""}`,onUpdate,{signal});
+  return FinFeedCache.market(`/api/security/${encodeURIComponent(ticker)}?stream=1${refresh?"&refresh=1":""}`,onUpdate,{signal,staleTtl:7*86400000,validate:value=>value?.schema_version===8&&value.metrics?.price?.value!=null});
+}
+function seedQuoteSnapshots(quotes={}){
+  for(const ticker of trackedTickers()){
+    const key=`request:/api/security/${encodeURIComponent(ticker)}`;
+    const local=FinFeedCache.read(key,7*86400000)?.data;
+    const candidates=[records.get(ticker),local,quotes[ticker]].filter(value=>value?.schema_version===8&&value.metrics?.price?.value!=null);
+    candidates.sort((a,b)=>(Date.parse(b.fetched_at||b.retrieved_at)||0)-(Date.parse(a.fetched_at||a.retrieved_at)||0));
+    const latest=candidates[0];if(!latest)continue;
+    records.set(ticker,{...latest,cached:true,refreshing:Date.now()-(Date.parse(latest.fetched_at||latest.retrieved_at)||0)>=60000});
+    if(!latest.stale&&!latest.partial)FinFeedCache.write(key,latest);
+  }
 }
 function acceptRecord(ticker,incoming){
   const saved=records.get(ticker);
+  const savedTime=Date.parse(saved?.fetched_at||saved?.retrieved_at||''),incomingTime=Date.parse(incoming?.fetched_at||incoming?.retrieved_at||'');
+  if(saved?.metrics?.price?.value!=null&&incoming?.metrics?.price?.value!=null&&Number.isFinite(savedTime)&&Number.isFinite(incomingTime)&&incomingTime<savedTime)return;
   if(incoming?.metrics?.price?.value==null&&saved?.metrics?.price?.value!=null){
-    records.set(ticker,{...saved,stale:true,refresh_checked_at:new Date().toISOString(),
+    records.set(ticker,{...saved,stale:true,refreshing:false,partial:false,refresh_checked_at:new Date().toISOString(),
       errors:[...new Set([...(saved.errors||[]),...(incoming.errors||[]),'行情刷新失败，保留上次成功快照'])]});
   }else records.set(ticker,incoming.partial&&saved?{...saved,...incoming,metrics:{...saved.metrics,...incoming.metrics}}:incoming);
 }
@@ -466,7 +479,7 @@ async function initializeState(){
       if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
       if(stateVersion!==accountStateVersion)return;
       initialLoading=false;tickers=state.watchlist;holdings=state.positions;
-      for(const ticker of trackedTickers()){if(data.quotes?.[ticker])records.set(ticker,data.quotes[ticker]);}
+      seedQuoteSnapshots(data.quotes);
       render();load(trackedTickers());
     }).catch(error=>{
       if(stateVersion!==accountStateVersion||error.name==="AbortError")return;

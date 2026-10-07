@@ -11,8 +11,8 @@ const ctx={window:{},URL,Promise,AbortController,encodeURIComponent,surfaceNames
  rememberSurfaceAccount(name,id){ctx.surfaceAccounts[name]=id;},accountViewURL:(name,id)=>`/?surface=${name}&user=${id}`,feedback(){},render(){},scheduleRender(){},
  trackedTickers:()=>[...new Set([...ctx.tickers,...ctx.holdings.map(p=>p.ticker)])],FinFeedMacro:{open(){}},FinFeedWhales:{open(){}},FinFeedHome:{open(){}},
  // Intentionally ignore abort: also verify protection when stale responses arrive anyway.
- FinFeedAuth:{request:(url,options)=>new Promise(resolve=>pending.push({url,options,resolve}))}};
-ctx.FinFeedCache={market:async(url,consume,{signal}={})=>{const response=await ctx.FinFeedAuth.request(url,{signal});if(!response.ok)throw new Error('request failed');const value=await response.json();consume(value);return value;}};
+ seedQuoteSnapshots(){},FinFeedAuth:{request:(url,options)=>new Promise(resolve=>pending.push({url,options,resolve}))}};
+ctx.FinFeedCache={read:()=>null,write(){},market:async(url,consume,{signal}={})=>{const response=await ctx.FinFeedAuth.request(url,{signal});if(!response.ok)throw new Error('request failed');const value=await response.json();consume(value);return value;}};
 vm.createContext(ctx);vm.runInContext(functions+pump,ctx);
 const flush=()=>new Promise(setImmediate);
 const response=data=>({ok:true,json:async()=>data});

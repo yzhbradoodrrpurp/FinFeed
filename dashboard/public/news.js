@@ -5,7 +5,12 @@ window.FinFeedNews=(()=>{
   const sourceLink=(ticker,kind)=>`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/${{press:'press-releases',sec:'sec-filings',calls:'earnings-calls'}[kind]}/`;
   const kinds=['press','calls','sec'];
   const refreshInterval=60*60*1000;
-  let lastCheck=null,owner=null;
+  let lastCheck=null,owner=null,pendingRender=false;
+  function scheduleRender(){
+    if(pendingRender)return;pendingRender=true;
+    const frame=window.requestAnimationFrame|| (callback=>Promise.resolve().then(callback));
+    frame(()=>{pendingRender=false;render();});
+  }
   const cacheAge=7*86400000;
   const matches=value=>(selectedTicker==='all'||value.ticker===selectedTicker)&&(kind==='all'||value.kind===kind);
   function tickers(){el('news-tickers').innerHTML=['all',...symbols].map(ticker=>`<button class="secondary" data-news-ticker="${escape(ticker)}" aria-pressed="${ticker===selectedTicker}">${ticker==='all'?'全部':escape(ticker)}</button>`).join('');}
@@ -59,8 +64,8 @@ window.FinFeedNews=(()=>{
       total=symbols.length*kinds.length;
       const tasks=symbols.flatMap(ticker=>kinds.map(kind=>({ticker,kind})));let next=0;
       async function worker(){while(next<tasks.length){const task=tasks[next++];try{
-        await FinFeedCache.market(`/api/news/${encodeURIComponent(task.ticker)}/${task.kind}?stream=1${force?'&refresh=1':''}`,value=>{accept(task,value);render();},{ttl:refreshInterval,staleTtl:cacheAge,refresh:force,validate:value=>Array.isArray(value.items)&&!value.errors?.length});
-      }catch{accept(task,{items:[],errors:['获取失败，保留已有缓存，可稍后重试'],stale:true});}finally{done++;render();}}}
+        await FinFeedCache.market(`/api/news/${encodeURIComponent(task.ticker)}/${task.kind}?stream=1${force?'&refresh=1':''}`,value=>{accept(task,value);scheduleRender();},{ttl:refreshInterval,staleTtl:cacheAge,refresh:force,validate:value=>Array.isArray(value.items)&&!value.errors?.length});
+      }catch{accept(task,{items:[],errors:['获取失败，保留已有缓存，可稍后重试'],stale:true});}finally{done++;scheduleRender();}}}
       await Promise.allSettled(Array.from({length:Math.min(8,tasks.length)},worker));
     }finally{busy=false;lastCheck=Date.now();render();}
   }

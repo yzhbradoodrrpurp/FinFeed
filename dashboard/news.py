@@ -2,6 +2,8 @@
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 import threading
+import re
+from zoneinfo import ZoneInfo
 import yfinance as yf
 import yahoo_session
 from failure_log import failure
@@ -17,6 +19,39 @@ def safe_url(value):
         return value if url.scheme == 'https' and url.hostname and not url.username and not url.password else ''
     except ValueError:
         return ''
+
+
+def fiscal_period(value):
+    year, quarter = value.get('fiscalYear'), value.get('fiscalPeriod')
+    match = re.fullmatch(r'Q?([1-4])', str(quarter or ''), re.I)
+    if match and str(year).isdigit():
+        return int(year) * 4 + int(match[1]) - 1
+    title = str(value.get('title') or '')
+    match = re.search(r'\bQ([1-4])\s+(?:FY\s*)?(20\d{2})\b', title, re.I)
+    if match:
+        return int(match[2]) * 4 + int(match[1]) - 1
+    return None
+
+
+def recent_items(items, kind, now=None):
+    now = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo('America/New_York'))
+    today = now.date().isoformat()
+    items = [item for item in items if item.get('published_at', '')[:10] <= today]
+    if kind == 'calls':
+        periods = [item['fiscal_period'] for item in items if item.get('fiscal_period') is not None]
+        if not periods:
+            return []
+        latest = max(periods)
+        return [item for item in items if item.get('fiscal_period') in {latest, latest - 1}]
+    # Index rows do not have report-period metadata. Anchor the filing window
+    # to the latest two original quarterly/annual reports, not calendar quarters.
+    anchors = sorted({item['published_at'][:10] for item in items
+        if re.match(r'^10-[QK](?:\s|$)', item.get('title', ''))
+        and re.fullmatch(r'\d{4}-\d{2}-\d{2}', item.get('published_at', '')[:10])}, reverse=True)[:2]
+    if not anchors:
+        return []
+    start = min(anchors)
+    return [item for item in items if start <= item.get('published_at', '')[:10] <= today]
 
 
 def normalize(raw, kind):
@@ -61,8 +96,11 @@ def normalize(raw, kind):
         if not url or not title or url in seen:
             continue
         seen.add(url)
-        items.append({'title': str(title), 'url': url, 'published_at': str(date or ''), 'source': source, 'kind': kind})
-    return sorted(items, key=lambda x: x['published_at'], reverse=True)[:20]
+        item = {'title': str(title), 'url': url, 'published_at': str(date or ''), 'source': source, 'kind': kind}
+        if kind == 'calls':
+            item['fiscal_period'] = fiscal_period(value)
+        items.append(item)
+    return sorted(items, key=lambda x: x['published_at'], reverse=True)
 
 
 
@@ -100,9 +138,12 @@ def snapshot(symbol, kind):
             raise TimeoutError('News provider slots busy')
         yahoo_session.initialize()
         raw, note = fetch_index(yf.Ticker(symbol), symbol, kind)
-        value['items'] = normalize(raw, kind)
+        value['items'] = recent_items(normalize(raw, kind), kind)
+        value['period_basis'] = 'fiscal_quarter' if kind == 'calls' else 'latest_periodic_filings'
         if note:
             value['note'] = note
+        elif raw and not value['items']:
+            value['note'] = '来源索引中没有可识别的已披露财季记录'
     except Exception as exc:
         failure('yahoo', 'news_' + kind, symbol=symbol, error=exc)
         value['errors'] = ['该来源暂时无法获取，下次更新重试']

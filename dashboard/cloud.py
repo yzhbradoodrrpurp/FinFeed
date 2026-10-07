@@ -609,7 +609,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if symbol not in own_news_symbols():
             abort(403, description="仅支持自己的观察列表")
         from news import snapshot
-        return refresh_jobs.response('news:v1:' + kind + ':' + symbol,
+        return refresh_jobs.response('news:v2:' + kind + ':' + symbol,
             lambda publish: snapshot(symbol, kind), 3600,
             lambda value: isinstance(value.get('items'), list) and not value.get('errors'),
             stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')

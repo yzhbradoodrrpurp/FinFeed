@@ -64,7 +64,7 @@ class CloudCases(unittest.TestCase):
         self.frontend_setup()
         self.client.put('/api/state', json={'watchlist':['AAPL'], 'positions':[]}, headers=HEADERS)
         for ticker in ('AAPL', 'MSFT'):
-            self.store.set_cache('market:v1:news:v1:calls:' + ticker,
+            self.store.set_cache('market:v1:news:v2:calls:' + ticker,
                                  {'ticker':ticker, 'kind':'calls', 'items':[{'title':ticker}], 'errors':[]})
         with patch('news.snapshot') as provider:
             result = self.client.get('/api/news?cached=1&user=someone-else').json

@@ -531,7 +531,11 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         except ValueError:
             abort(404, description="账户不存在")
         symbols = list(dict.fromkeys(state["watchlist"] + [p["ticker"] for p in state["positions"]])) if state else []
-        snapshots = database.get_cached_quotes(symbols)
+        try:
+            snapshots = database.get_cached_quotes(symbols)
+        except (PoolTimeout, psycopg.OperationalError) as error:
+            failure('database', 'quote_bootstrap_cache', error=error)
+            snapshots = {}
         return jsonify(account={"id": account["id"], "name": account["name"]}, readOnly=user_id != viewer_id, state=state, quotes={symbol: record for symbol, record in snapshots.items()
                                            if record.get("schema_version") == SCHEMA_VERSION})
 
@@ -590,7 +594,11 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.get("/api/news")
     def news_list():
         symbols = own_news_symbols()
-        snapshots = database.get_cached_news(symbols) if request.args.get('cached') == '1' else {}
+        try:
+            snapshots = database.get_cached_news(symbols) if request.args.get('cached') == '1' else {}
+        except (PoolTimeout, psycopg.OperationalError) as error:
+            failure('database', 'news_bootstrap_cache', error=error)
+            snapshots = {}
         return jsonify(tickers=symbols, snapshots=snapshots)
 
     @app.get("/api/news/<symbol>/<kind>")

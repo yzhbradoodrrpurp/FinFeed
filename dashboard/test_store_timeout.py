@@ -17,12 +17,15 @@ class StoreTimeoutCases(unittest.TestCase):
         with store.transaction() as active:
             self.assertIs(active, connection)
             active.execute('SELECT private_record')
-        self.assertEqual([call.args[0] for call in connection.execute.call_args_list], [
-            "SET LOCAL statement_timeout = '8s'",
-            "SET LOCAL lock_timeout = '3s'",
-            "SET LOCAL idle_in_transaction_session_timeout = '15s'",
-            'SET LOCAL search_path TO finfeed_private',
-            'SELECT private_record'])
+        self.assertEqual(connection.execute.call_args_list[0].args[0],
+            "SET LOCAL statement_timeout = '8s'; SET LOCAL lock_timeout = '3s'; "
+            "SET LOCAL idle_in_transaction_session_timeout = '15s'; SET LOCAL search_path TO finfeed_private")
+        store.cache_pool = Mock()
+        store.cache_pool.connection.side_effect = checkout
+        with store.transaction(cache=True):
+            pass
+        self.assertEqual(store.pool.connection.call_count, 1)
+        self.assertEqual(store.cache_pool.connection.call_count, 1)
 
 if __name__ == '__main__':
     unittest.main()

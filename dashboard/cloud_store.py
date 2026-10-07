@@ -76,13 +76,18 @@ class Store:
         self._hot_guard = threading.Lock()
         self.database_url = database_url
         self.sqlite_path = sqlite_path
-        self.pool = None if sqlite_path else ConnectionPool(
-            database_url, kwargs={"row_factory":dict_row,"connect_timeout":8,"sslmode":"require","prepare_threshold":None,
-                "keepalives":1,"keepalives_idle":10,"keepalives_interval":3,"keepalives_count":2,
-                "tcp_user_timeout":10000},
-            min_size=1, max_size=4, timeout=8, open=True, check=ConnectionPool.check_connection)
-        if self.pool:
+        self.pool = self.cache_pool = None
+        if not sqlite_path:
+            pool_options = dict(kwargs={"row_factory":dict_row,"connect_timeout":8,
+                "sslmode":"require","prepare_threshold":None,"keepalives":1,
+                "keepalives_idle":10,"keepalives_interval":3,"keepalives_count":2,
+                "tcp_user_timeout":10000}, timeout=8, open=True,
+                check=ConnectionPool.check_connection)
+            self.pool = ConnectionPool(database_url, min_size=1, max_size=4, **pool_options)
+            # Bulk public cache jobs cannot consume the slots used for sessions/records.
+            self.cache_pool = ConnectionPool(database_url, min_size=0, max_size=2, **pool_options)
             atexit.register(self.pool.close)
+            atexit.register(self.cache_pool.close)
         with self.transaction() as connection:
             if not sqlite_path:
                 # Both Render services can start during one Git push. Serialize
@@ -122,16 +127,16 @@ class Store:
 
 
     @contextmanager
-    def transaction(self) -> Iterator[Any]:
+    def transaction(self, *, cache=False) -> Iterator[Any]:
         """Commit or roll back one operation; return PostgreSQL connections to the pool."""
         if not self.sqlite_path:
-            with self.pool.connection() as connection:
+            with (self.cache_pool if cache else self.pool).connection() as connection:
                 # A dead/blocked database must release its slot before the browser's deadline.
                 # Transaction-local settings also work with a transaction pooler.
-                connection.execute("SET LOCAL statement_timeout = '8s'")
-                connection.execute("SET LOCAL lock_timeout = '3s'")
-                connection.execute("SET LOCAL idle_in_transaction_session_timeout = '15s'")
-                connection.execute("SET LOCAL search_path TO finfeed_private")
+                connection.execute("SET LOCAL statement_timeout = '8s'; "
+                    "SET LOCAL lock_timeout = '3s'; "
+                    "SET LOCAL idle_in_transaction_session_timeout = '15s'; "
+                    "SET LOCAL search_path TO finfeed_private")
                 yield connection
             return
         connection = sqlite3.connect(self.sqlite_path, timeout=30)
@@ -207,7 +212,7 @@ class Store:
             if item and time.monotonic() - item[2] < 60:
                 self._hot_cache.move_to_end(key)
                 return deepcopy(item[:2])
-        with self.transaction() as connection:
+        with self.transaction(cache=True) as connection:
             row = self.execute(connection, "SELECT payload,updated FROM cache WHERE id=?", (key,)).fetchone()
         if row:
             value = (json.loads(row["payload"]), row["updated"])
@@ -224,7 +229,7 @@ class Store:
 
     def set_cache(self, key: str, payload: dict) -> None:
         updated = time.time()
-        with self.transaction() as connection:
+        with self.transaction(cache=True) as connection:
             self.execute(connection, "INSERT INTO cache VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated=excluded.updated",
                          (key, json.dumps(payload, ensure_ascii=False, allow_nan=False), updated))
         self._remember_cache(key, payload, updated)
@@ -234,7 +239,7 @@ class Store:
         if not symbols:
             return {}
         keys = ["quote:" + symbol for symbol in symbols]
-        with self.transaction() as connection:
+        with self.transaction(cache=True) as connection:
             rows = self.execute(connection, "SELECT id,payload,updated FROM cache WHERE id IN (" + ",".join("?" for _ in keys) + ")", keys).fetchall()
         for row in rows:
             self._remember_cache(row["id"], json.loads(row["payload"]), row["updated"])
@@ -247,7 +252,7 @@ class Store:
             return {}
         keys = ['market:v1:news:v1:' + kind + ':' + symbol
                 for symbol in symbols for kind in ('calls', 'sec')]
-        with self.transaction() as connection:
+        with self.transaction(cache=True) as connection:
             rows = self.execute(connection, 'SELECT id,payload,updated FROM cache WHERE id IN (' + ','.join('?' for _ in keys) + ')', keys).fetchall()
         return {row['id']: {**json.loads(row['payload']), 'cached': True,
                            'cache_age_seconds': round(max(0, time.time() - row['updated']))}

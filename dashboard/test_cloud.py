@@ -32,6 +32,21 @@ class CloudCases(unittest.TestCase):
         self.assertEqual(self.client.get_cookie('finfeed_test_session').value, session)
         self.assertTrue(self.client.get('/api/auth/status').json['authenticated'])
 
+    def test_cache_failure_does_not_hide_own_watchlist_or_records(self):
+        from psycopg_pool import PoolTimeout
+        self.frontend_setup()
+        self.client.put('/api/state', json={'watchlist':['AAPL'], 'positions':[]}, headers=HEADERS)
+        with patch.object(self.store, 'get_cached_quotes', side_effect=PoolTimeout('cache busy')):
+            result = self.client.get('/api/state')
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual(result.json['state']['watchlist'], ['AAPL'])
+            self.assertEqual(result.json['quotes'], {})
+        with patch.object(self.store, 'get_cached_news', side_effect=PoolTimeout('cache busy')):
+            result = self.client.get('/api/news?cached=1')
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual(result.json['tickers'], ['AAPL'])
+            self.assertEqual(result.json['snapshots'], {})
+
     def test_whale_holdings_require_login_and_share_cached_sec_snapshot(self):
         self.assertEqual(self.client.get('/api/whales/berkshire', headers=HEADERS).status_code, 401)
         self.frontend_setup()

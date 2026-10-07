@@ -91,6 +91,14 @@ window.FinFeedNews=(()=>{
     }finally{busy=false;lastCheck=Date.now();render();}
   }
   document.querySelectorAll('[data-news-kind]').forEach(button=>button.addEventListener('click',()=>{if(kind===button.dataset.newsKind)return;const order=['all',...kinds],direction=order.indexOf(button.dataset.newsKind)>order.indexOf(kind)?1:-1;kind=button.dataset.newsKind;document.querySelectorAll('[data-news-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));render();window.FinFeedMotion?.enter(el('news-feed'),{kind:'tab',direction});}));
+  el('news-tickers').addEventListener('wheel',event=>{
+    if(event.ctrlKey||Math.abs(event.deltaX)>=Math.abs(event.deltaY))return;
+    const strip=el('news-tickers');
+    const scale=event.deltaMode===1?16:event.deltaMode===2?strip.clientWidth:1;
+    const next=Math.max(0,Math.min(strip.scrollWidth-strip.clientWidth,strip.scrollLeft+event.deltaY*scale));
+    if(next===strip.scrollLeft)return;
+    event.preventDefault();strip.scrollLeft=next;
+  },{passive:false});
   el('news-tickers').addEventListener('click',event=>{
     const button=event.target.closest('[data-news-ticker]');
     if(!button||button.dataset.newsTicker===selectedTicker)return;

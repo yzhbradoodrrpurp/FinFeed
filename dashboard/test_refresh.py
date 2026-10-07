@@ -201,6 +201,28 @@ class RefreshCases(unittest.TestCase):
         self.assertTrue(result['errors'])
         store.set_cache.assert_not_called()
 
+    def test_cache_read_outage_does_not_block_provider_refresh(self):
+        store = MagicMock()
+        store.get_cache.side_effect = RuntimeError('cache unavailable')
+        fresh = {'ticker': 'QA', 'metrics': {'price': {'value': 110}}, 'fetched_at': data.now()}
+        with patch.object(data, 'fetch_security', return_value=fresh) as fetch:
+            result = data.security('QA', refresh=True, store=store)
+        fetch.assert_called_once()
+        self.assertEqual(result['metrics']['price']['value'], 110)
+        self.assertFalse(result.get('stale', False))
+
+    def test_cache_write_outage_does_not_roll_back_fresh_data(self):
+        store = MagicMock()
+        store.get_cache.return_value = ({'schema_version': data.SCHEMA_VERSION,
+            'metrics': {'price': {'value': 100}}}, 0)
+        store.set_cache.side_effect = RuntimeError('cache unavailable')
+        fresh = {'ticker': 'QA', 'metrics': {'price': {'value': 110}}, 'fetched_at': data.now()}
+        with patch.object(data, 'fetch_security', return_value=fresh):
+            result = data.security('QA', refresh=True, store=store)
+        self.assertEqual(result['metrics']['price']['value'], 110)
+        self.assertFalse(result.get('stale', False))
+        self.assertFalse(result['cached'])
+
     def test_empty_provider_response_cannot_poison_successful_cache(self):
         saved={'schema_version':data.SCHEMA_VERSION,'name':'Test Company',
                'fetched_at':'2026-10-04T01:00:00+00:00','quote_date':'2026-10-02',

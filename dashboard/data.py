@@ -460,7 +460,7 @@ def security(symbol, refresh=False, store=None, on_update=None):
             stored = store.get_cache("quote:" + symbol)
         except Exception as exc:
             failure("database", "quote_cache_read", symbol=symbol, error=exc)
-            raise
+            stored = None
         saved = stored[0] if stored else None
         age = time.time() - stored[1] if stored else float("inf")
         if saved and saved.get("schema_version") != SCHEMA_VERSION:
@@ -499,7 +499,12 @@ def security(symbol, refresh=False, store=None, on_update=None):
                         result["metrics"][key] = {**deepcopy(previous), "stale": True}
                 result["financial_checked_at"] = saved.get("financial_checked_at")
             stage = "quote_cache_write"
-            store.set_cache("quote:" + symbol, result)
+            try:
+                store.set_cache("quote:" + symbol, result)
+            except Exception as exc:
+                # A persistence outage must not replace newly fetched data with
+                # an older snapshot. The current refresh and browser still get it.
+                failure("database", stage, symbol=symbol, error=exc, started=fetch_started)
             return {**result, "cached": False}
         except Exception as exc:
             failure("database" if stage == "quote_cache_write" else "yahoo", stage, symbol=symbol, error=exc, started=fetch_started)

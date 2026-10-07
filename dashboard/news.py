@@ -36,8 +36,9 @@ def fiscal_period(value):
 def recent_items(items, kind, now=None):
     now = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo('America/New_York'))
     today = now.date().isoformat()
-    items = [item for item in items if item.get('published_at', '')[:10] <= today]
     if kind == 'calls':
+        items = [item for item in items if item.get('published_at')
+            and datetime.fromisoformat(item['published_at'].replace('Z', '+00:00')) <= now]
         periods = [item['fiscal_period'] for item in items if item.get('fiscal_period') is not None]
         if not periods:
             return []
@@ -45,6 +46,7 @@ def recent_items(items, kind, now=None):
         return [item for item in items if item.get('fiscal_period') in {latest, latest - 1}]
     # Index rows do not have report-period metadata. Anchor the filing window
     # to the latest two original quarterly/annual reports, not calendar quarters.
+    items = [item for item in items if item.get('published_at', '')[:10] <= today]
     anchors = sorted({item['published_at'][:10] for item in items
         if re.match(r'^10-[QK](?:\s|$)', item.get('title', ''))
         and re.fullmatch(r'\d{4}-\d{2}-\d{2}', item.get('published_at', '')[:10])}, reverse=True)[:2]

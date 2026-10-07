@@ -42,7 +42,7 @@ window.FinFeedNews=(()=>{
     const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(Date.now()));
     const part=name=>parts.find(value=>value.type===name).value;
     const today=`${part('year')}-${part('month')}-${part('day')}`;
-    const items=(value.items||[]).filter(item=>String(item.published_at||'').slice(0,10)<=today);
+    const items=(value.items||[]).filter(item=>value.kind==='calls'?Date.parse(item.published_at)<=Date.now():String(item.published_at||'').slice(0,10)<=today);
     const fiscal=item=>{
       if(Number.isInteger(item.fiscal_period))return item.fiscal_period;
       const match=String(item.title||'').match(/\bQ([1-4])\s+(?:FY\s*)?(20\d{2})\b/i);

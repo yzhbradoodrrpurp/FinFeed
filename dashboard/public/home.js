@@ -53,8 +53,8 @@ window.FinFeedHome=(()=>{
   }
   document.getElementById('home-refresh').addEventListener('click',refresh);
   setInterval(clock,1000);
-  setInterval(()=>{if(started&&!document.hidden&&!document.getElementById('home-surface').hidden)refresh();},60000);
-  document.addEventListener('visibilitychange',()=>{if(started&&!document.hidden&&!document.getElementById('home-surface').hidden&&Date.now()-updated>=60000)refresh();});
+  setInterval(()=>{if(started)refresh();},60000);
+  document.addEventListener('visibilitychange',()=>{if(started&&Date.now()-updated>=60000)refresh();});
   function start(){if(!started){started=true;
     document.getElementById('home-indices').innerHTML=indices.map((index,slot)=>`<article class="home-index" id="home-index-${slot}"></article>`).join('');
     indices.forEach((index,slot)=>{const saved=FinFeedCache.read('home-'+index[0],86400000);

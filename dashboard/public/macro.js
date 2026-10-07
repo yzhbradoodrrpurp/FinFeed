@@ -216,8 +216,8 @@ window.FinFeedMacro=(()=>{
     }));updated=Date.now();busy=false;document.getElementById('macro-refresh').disabled=false;
   }
   document.getElementById('macro-refresh').addEventListener('click',()=>{refresh();refreshFed();});
-  setInterval(()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden)refresh();},3600000);
-  setInterval(()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden)refreshFed();},60000);
-  document.addEventListener('visibilitychange',()=>{if(started&&!document.hidden&&!document.getElementById('macro-surface').hidden){if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=60000)refreshFed();}});
+  setInterval(()=>{if(started)refresh();},3600000);
+  setInterval(()=>{if(started)refreshFed();},60000);
+  document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=60000)refreshFed();}});
   return {open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh();if(Date.now()-fedUpdated>=60000)refreshFed();}};
 })();

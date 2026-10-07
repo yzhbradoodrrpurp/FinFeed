@@ -116,6 +116,9 @@ window.FinFeedWhales=(()=>{
   });
   el('whale-back').addEventListener('click',()=>{const old=selected;show(null);document.querySelector('[data-whale="'+old+'"]').focus();});
   el('whales-refresh').addEventListener('click',refresh);
-  setInterval(()=>{if(started&&!document.hidden&&!el('whales-surface').hidden&&Date.now()-checked>=21600000)refresh();},60000);
+  function checkDue(){if(started&&Date.now()-checked>=21600000)refresh();}
+  setInterval(checkDue,60000);
+  document.addEventListener('visibilitychange',checkDue);
+  window.addEventListener('focus',checkDue);
   return {open,isStockAnalysis:()=>mode==='stock'};
 })();

@@ -440,7 +440,7 @@ async function initializeState(){
     // Shared views start after authentication, without waiting for private records.
     FinFeedHome.prefetch();
     if(surface==="home")FinFeedHome.open(currentUser);
-    if(surface==="news")FinFeedNews.open();
+    FinFeedNews.open();
     FinFeedMacro.open();
     FinFeedWhales.open();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;
@@ -488,6 +488,7 @@ async function initializeState(){
       feedback(`记录加载失败：${error.message}。请稍后刷新页面。`);
     }).finally(()=>{main.inert=false;});
     setInterval(refreshWatchlist,60_000);
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWatchlist();});
     await Promise.allSettled([directoryTask,stateTask]);
   }catch(error){
     const message=`登录检查失败：${error.message}。15 秒后自动重试。`;

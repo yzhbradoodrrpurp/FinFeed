@@ -6,15 +6,15 @@ const pending=new Map(),calls=[],elements=new Map(),main={inert:false};
 const el=id=>{if(!elements.has(id))elements.set(id,{disabled:false,hidden:false});return elements.get(id);};
 const deferred=url=>new Promise(resolve=>pending.set(url,resolve));
 const context={window:{},URLSearchParams,Promise,AbortController,accountStateVersion:0,accountRequest:null,location:{search:'',hostname:'finfeed-research.vercel.app'},surface:'portfolio',currentUser:null,surfaceAccounts:{},viewedUserId:null,records:new Map(),initialLoading:true,readOnly:false,tickers:[],holdings:[],
- document:{querySelector:()=>main,querySelectorAll:()=>[],body:{classList:{toggle(){}}}},el,sessionStorage:{getItem:()=>null},escapeHTML:s=>s,switchSurface(){},rememberSurfaceAccount(name,id){context.surfaceAccounts[name]=id;},
- seedQuoteSnapshots(){},FinFeedAuth:{initialize:()=>deferred('auth'),request:deferred},FinFeedHome:{prefetch:()=>calls.push('home'),open:()=>calls.push('greeting')},FinFeedMacro:{open:()=>calls.push('macro')},FinFeedWhales:{open:()=>calls.push('whales')},
+ document:{addEventListener(){},querySelector:()=>main,querySelectorAll:()=>[],body:{classList:{toggle(){}}}},el,sessionStorage:{getItem:()=>null},escapeHTML:s=>s,switchSurface(){},rememberSurfaceAccount(name,id){context.surfaceAccounts[name]=id;},
+ seedQuoteSnapshots(){},FinFeedNews:{open:()=>calls.push('news')},FinFeedAuth:{initialize:()=>deferred('auth'),request:deferred},FinFeedHome:{prefetch:()=>calls.push('home'),open:()=>calls.push('greeting')},FinFeedMacro:{open:()=>calls.push('macro')},FinFeedWhales:{open:()=>calls.push('whales')},
  trackedTickers:()=>[...new Set([...context.tickers,...context.holdings.map(p=>p.ticker)])],render:()=>calls.push('render'),load:tickers=>calls.push([...tickers]),setInterval(){},refreshWatchlist(){},feedback:message=>calls.push(message)};
 vm.createContext(context);vm.runInContext(init,context);
 (async()=>{
  const done=context.initializeState();assert.deepEqual(calls,[]);
  assert.equal(main.inert,false);assert.equal(context.readOnly,true); // Filters stay usable; writes wait for verified state.
  pending.get('auth')({user:{id:'self',name:'Liam'}});await new Promise(setImmediate);
- assert.deepEqual(calls,['','home','macro','whales']);assert.equal(pending.size,3);assert.equal(main.inert,false);
+ assert.deepEqual(calls,['','home','news','macro','whales']);assert.equal(pending.size,3);assert.equal(main.inert,false);
  pending.get('/api/state')({ok:true,json:async()=>({state:{watchlist:['AAPL'],positions:[{ticker:'AAPL'},{ticker:'MSFT'}]},quotes:{},readOnly:false})});
  await new Promise(setImmediate);
  assert.deepEqual(calls.at(-1),['AAPL','MSFT']);assert.equal(main.inert,false);
@@ -38,6 +38,7 @@ vm.createContext(context);vm.runInContext(init,context);
  pending.get('auth')({user:{id:'self',name:'Liam'}});await new Promise(setImmediate);
  assert.equal(el('startup-status').hidden,true);
  assert.equal(calls.filter(call=>call==='home').length,1);
+ assert.equal(calls.filter(call=>call==='news').length,1);
  assert.equal(calls.filter(call=>call==='macro').length,1);
  assert.equal(calls.filter(call=>call==='whales').length,1);
  pending.get('/api/state')({ok:true,json:async()=>({state:{watchlist:['AAPL'],positions:[]},quotes:{},readOnly:false})});

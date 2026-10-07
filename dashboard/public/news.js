@@ -53,7 +53,7 @@ window.FinFeedNews=(()=>{
   });
   el('news-refresh').addEventListener('click',()=>open(true));
   function checkDue(){
-    if(lastCheck!==null&&!document.hidden&&!el('news-surface').hidden&&Date.now()-lastCheck>=refreshInterval)open();
+    if(lastCheck!==null&&Date.now()-lastCheck>=refreshInterval)open();
   }
   setInterval(checkDue,60000);
   document.addEventListener('visibilitychange',checkDue);

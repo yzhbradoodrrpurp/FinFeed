@@ -214,3 +214,5 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 #position-form input:focus,#position-form input:focus-visible{outline:none;box-shadow:none}
 
 .holdings-empty{cursor:default;user-select:none;-webkit-user-select:none}.holdings-empty:hover td{background:white}.holdings-empty:focus,.holdings-empty td:focus{outline:none}
+
+.holdings-table .holdings-empty td{height:216px;vertical-align:middle;text-align:center;padding:12px}

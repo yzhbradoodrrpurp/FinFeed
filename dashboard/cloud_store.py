@@ -1,6 +1,9 @@
 """Private PostgreSQL storage; SQLite is injected only by local tests."""
 from contextlib import contextmanager
 import atexit
+import os
+import sys
+import traceback
 import hashlib
 import json
 import secrets
@@ -93,6 +96,7 @@ class Store:
             raise ValueError("DATABASE_URL 必须为 PostgreSQL 连接地址")
         self._hot_cache = OrderedDict()
         self._hot_guard = threading.Lock()
+        self.created_pid = os.getpid()
         self.database_url = database_url
         self.sqlite_path = sqlite_path
         self.pool = self.cache_pool = None
@@ -162,7 +166,13 @@ class Store:
                     yield connection
             except psycopg.OperationalError as exc:
                 failure('database', 'pool_transaction', error=exc, started=started,
-                        pool_kind='cache' if cache else 'private', pool_stats=pool.get_stats())
+                        pool_kind='cache' if cache else 'private', pool_stats=pool.get_stats(),
+                        created_pid=self.created_pid, current_pid=os.getpid(),
+                        workers=[dict(name=t.name, alive=t.is_alive(),
+                            stack=[f'{frame.name}:{frame.lineno}' for frame in
+                                   traceback.extract_stack(sys._current_frames()[t.ident])[-6:]]
+                            if t.ident in sys._current_frames() else [])
+                            for t in pool._workers])
                 raise
             return
         connection = sqlite3.connect(self.sqlite_path, timeout=30)

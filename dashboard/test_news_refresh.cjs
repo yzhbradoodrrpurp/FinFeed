@@ -2,7 +2,7 @@ const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/st
 (async()=>{
  let now=1000,requests=0,timer;
  const elements=new Map(),events={};
- const get=id=>{if(!elements.has(id))elements.set(id,{hidden:false,innerHTML:'',textContent:'',addEventListener(){}});return elements.get(id);};
+ const get=id=>{if(!elements.has(id))elements.set(id,{hidden:false,innerHTML:'',textContent:'',addEventListener(){},querySelectorAll:()=>[]});return elements.get(id);};
  const document={hidden:false,getElementById:get,querySelectorAll:()=>[],addEventListener:(key,callback)=>events[key]=callback};
  const window={addEventListener:(key,callback)=>events[key]=callback};
  const sandbox={window,document,Date:class extends Date{static now(){return now;}},Intl,AbortController,DOMException,setTimeout,clearTimeout,setInterval:callback=>timer=callback,FinFeedAuth:{request:async()=>{requests++;return{ok:true,json:async()=>({tickers:[]})};}}};

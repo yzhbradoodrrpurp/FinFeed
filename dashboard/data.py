@@ -213,6 +213,9 @@ def revalue(result, estimate_store=None):
 def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, force=False):
     started = now()
     session_status = yahoo_session.initialize()
+    if force:
+        # yfinance's process-wide LRU has no TTL; refresh financial HTTP responses too.
+        yf.data.YfData().cache_get.cache_clear()
     item = yf.Ticker(symbol)
     history_item = yf.Ticker(symbol)
     errors = []

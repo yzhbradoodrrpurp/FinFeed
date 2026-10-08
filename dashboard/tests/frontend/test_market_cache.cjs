@@ -1,7 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const saved=new Map(),pending=new Map(),elements=new Map();
 class Element{
- constructor(id){this.id=id;this.textContent='';this.hidden=false;this.notice=null;this.classList={toggle(){}};}
+ constructor(id){this.dataset={};this.id=id;this.textContent='';this.hidden=false;this.notice=null;this.classList={toggle(){}};}
  set innerHTML(v){this.html=v;this.notice=null;for(const match of v.matchAll(/id="([^"]+)"/g))elements.set(match[1],new Element(match[1]));}
  get innerHTML(){return this.html||'';}addEventListener(){}setAttribute(){}
  querySelector(){return this.notice;}append(node){this.notice=node;}

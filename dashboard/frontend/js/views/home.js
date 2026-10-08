@@ -38,7 +38,7 @@ window.FinFeedHome=(()=>{
     grid.insertBefore(card,target>from?cards[target].nextSibling:cards[target]);
     window.FinFeedMotion.settle(before,grid.children);saveSectorOrder();
   }
-  function finishSectorDrag(){sectorDragging=null;sectorScroll?.stop();document.querySelectorAll('.sector-dragging,.sector-drop').forEach(card=>card.classList.remove('sector-dragging','sector-drop'));}
+  function finishSectorDrag(){const dragged=sectorDragging;sectorDragging=null;if(dragged&&sectorGood.has(dragged))renderSector(sectorGood.get(dragged).sector,'每分钟检查更新');sectorScroll?.stop();document.querySelectorAll('.sector-dragging,.sector-drop').forEach(card=>card.classList.remove('sector-dragging','sector-drop'));}
   function bindSectorOrder(){
     const grid=document.getElementById('home-sectors');
     grid.addEventListener('dragstart',event=>{
@@ -70,17 +70,33 @@ window.FinFeedHome=(()=>{
   }
   function renderSector(data,state=''){
     const card=document.getElementById('home-sector-'+data.symbol);if(!card)return;
-    const chart=window.FinFeedMacro.chart(data);
+    const historyKey=JSON.stringify(data.history||[]);
+    const unchanged=card.dataset.history===historyKey;
+    const chart=unchanged?'':window.FinFeedMacro.chart(data);
+    state=[state,data.history_warning].filter(Boolean).join(' · ');
     if(sectorDragging===data.symbol)return; // Keep the native drag source attached during refresh.
-    card.innerHTML=`<button class="sector-handle" draggable="true" type="button" aria-label="拖动排序 ${esc(data.symbol)}，也可用方向键移动" title="按住拖动排序">⠿</button><span class="eyebrow">${esc(data.symbol)}</span><h3>${esc(data.label)}</h3><strong class="home-index-price">${format(data.price)}<small>USD</small></strong><p class="${data.change>0?'positive':data.change<0?'negative':''}">${data.change>0?'+':''}${format(data.change)} / ${data.change_percent>0?'+':''}${format(data.change_percent)}%</p>${chart||'<div class="home-sector-chart-empty">日线数据暂不可用</div>'}<p class="home-quote-time">${esc(state)}${state?'<br>':''}${data.quoted_at?'报价于 '+date(data.quoted_at,'America/New_York')+' 美国东部':'等待报价'}</p><a class="home-source" href="https://finance.yahoo.com/quote/${esc(data.symbol)}/" target="_blank" rel="noreferrer">Yahoo Finance ↗</a>`;
-    window.FinFeedMacro.bindChart(card,data);
+    const html=`<button class="sector-handle" draggable="true" type="button" aria-label="拖动排序 ${esc(data.symbol)}，也可用方向键移动" title="按住拖动排序">⠿</button><span class="eyebrow">${esc(data.symbol)}</span><h3>${esc(data.label)}</h3><strong class="home-index-price">${format(data.price)}<small>USD</small></strong><p class="${data.change>0?'positive':data.change<0?'negative':''}">${data.change>0?'+':''}${format(data.change)} / ${data.change_percent>0?'+':''}${format(data.change_percent)}%</p>${chart||'<div class="home-sector-chart-empty">日线数据暂不可用</div>'}<p class="home-quote-time">${esc(state)}${state?'<br>':''}${data.quoted_at?'报价于 '+date(data.quoted_at,'America/New_York')+' 美国东部':'等待报价'}</p><a class="home-source" href="https://finance.yahoo.com/quote/${esc(data.symbol)}/" target="_blank" rel="noreferrer">Yahoo Finance ↗</a>`;
+    if(!card.querySelector('.sector-handle')){card.innerHTML=html;window.FinFeedMacro.bindChart(card,data);}
+    else{
+      const draft=document.createElement('div');draft.innerHTML=html;
+      const updates=['.home-index-price','.home-index-price + p','.home-quote-time'].map(selector=>[card.querySelector(selector),draft.querySelector(selector)]);
+      for(const [current,next] of updates){
+        if(current&&next&&current.outerHTML!==next.outerHTML)current.replaceWith(next);
+      }
+      if(!unchanged){
+        const current=card.querySelector('.macro-chart,.home-sector-chart-empty');
+        current?.replaceWith(draft.querySelector('.macro-chart,.home-sector-chart-empty'));
+        window.FinFeedMacro.bindChart(card,data);
+      }
+    }
+    card.dataset.history=historyKey;
   }
-  async function refreshSector([symbol,label]){
+  async function refreshSector([symbol,label],force=false){
     if(sectorBusy.has(symbol))return;sectorBusy.add(symbol);
     try{
-      await FinFeedCache.market('/api/home/sectors/'+symbol+'?stream=1&refresh=1&range=3y',data=>{
+      await FinFeedCache.market('/api/home/sectors/'+symbol+'?stream=1&range=3y-v3'+(force?'&refresh=1':''),data=>{
         const old=sectorGood.get(symbol),item=data.sector;
-        if(!item||item.price==null||item.error||!item.history?.length){
+        if(!item||item.price==null||item.error){
           if(data.pending)return;
           throw new Error('Sector unavailable');
         }
@@ -89,13 +105,13 @@ window.FinFeedHome=(()=>{
         if(old&&Date.parse(data.retrieved_at)<Date.parse(old.retrieved_at))return;
         sectorGood.set(symbol,data);
         renderSector(item,data.refreshing?'缓存 · 正在更新':data.stale?'旧数据 · 更新失败':'每分钟检查更新');
-        FinFeedCache.write('sector-3y-v2-'+symbol,data);
-      },{refresh:true,staleTtl:7*86400000,validate:data=>!!data.sector?.history?.length&&data.sector.price!=null&&!data.sector.error});
+
+      },{refresh:force,staleTtl:7*86400000,validate:data=>data.sector?.price!=null&&!data.sector.error});
     }catch{
       renderSector(sectorGood.get(symbol)?.sector||{symbol,label},'更新失败，稍后自动重试');
     }finally{sectorBusy.delete(symbol);}
   }
-  function refreshSectors(){sectors.forEach(item=>refreshSector(item));}
+  function refreshSectors(force=false){sectors.forEach(item=>refreshSector(item,force));}
   function startSectors(){
     document.getElementById('home-sectors').innerHTML=sectors.map(([symbol])=>`<article class="home-sector" id="home-sector-${symbol}"></article>`).join('');
     try{
@@ -107,7 +123,7 @@ window.FinFeedHome=(()=>{
     }catch{}
     bindSectorOrder();
     sectors.forEach(([symbol,label])=>{
-      const saved=FinFeedCache.read('sector-3y-v2-'+symbol,7*86400000);
+      const saved=FinFeedCache.read('request:/api/home/sectors/'+symbol+'&range=3y-v3',7*86400000);
       if(saved?.data?.sector?.price!=null){sectorGood.set(symbol,saved.data);renderSector(saved.data.sector,'缓存 · 正在更新');}
       else renderSector({symbol,label},'正在加载…');
     });
@@ -138,7 +154,7 @@ window.FinFeedHome=(()=>{
     await Promise.allSettled([calendar,...quotes]);
     updated=Date.now();busy=false;document.getElementById('home-refresh').disabled=false;
   }
-  document.getElementById('home-refresh').addEventListener('click',()=>{refresh();refreshSectors();});
+  document.getElementById('home-refresh').addEventListener('click',()=>{refresh();refreshSectors(true);});
   setInterval(clock,1000);
   setInterval(()=>{if(started){refresh();refreshSectors();}},60000);
   document.addEventListener('visibilitychange',()=>{if(started&&Date.now()-updated>=60000){refresh();refreshSectors();}});

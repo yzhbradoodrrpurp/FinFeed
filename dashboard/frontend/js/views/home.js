@@ -45,7 +45,10 @@ window.FinFeedHome=(()=>{
       const handle=event.target.closest('.sector-handle');if(!handle)return;
       const card=handle.closest('.home-sector');sectorDragging=card.id.replace('home-sector-','');
       event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',sectorDragging);
-      event.dataTransfer.setDragImage(card,30,30);card.classList.add('sector-dragging');
+      const bounds=card.getBoundingClientRect();
+      // Anchor the preview to the point grabbed, including its position after scrolling.
+      event.dataTransfer.setDragImage(card,event.clientX-bounds.left,event.clientY-bounds.top);
+      card.classList.add('sector-dragging');
     });
     grid.addEventListener('dragover',event=>{
       if(!sectorDragging)return;event.preventDefault();event.dataTransfer.dropEffect='move';

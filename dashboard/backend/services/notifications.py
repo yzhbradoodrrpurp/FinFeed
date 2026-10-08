@@ -6,7 +6,7 @@ import math
 import threading
 import time
 from backend.infrastructure.failure_log import failure
-from backend.infrastructure.mailer import DeliveryUncertain
+from backend.infrastructure.mailer import DeliveryUncertain, format_email
 from backend.storage.notifications import fingerprint
 
 
@@ -25,7 +25,7 @@ def times(stamp):
 
 def event(category, key, title, body):
     return {'category':category,'key':key,'subject':'FinFeed · '+title,
-            'body':body+'\n\n管理邮件提醒：登录 FinFeed → 我的账户 → 邮件提醒，可关闭提醒或解绑邮箱。'}
+            'body':body+'\n\n管理邮件提醒：如需调整接收类别或停止接收，请登录 FinFeed → 我的账户 → 邮件提醒，修改设置或解绑邮箱。'}
 
 
 def macro_events(kind, data, previous, now, since):
@@ -115,7 +115,7 @@ class NotificationWorker:
                 self.storage.finish_mail(mail,cancel=True);continue
             try:
                 options = {'before_send': lambda: self.storage.mark_sending(mail)} if self.mailer.provider == 'gmail' else {}
-                provider=self.mailer.send(mail['email'],mail['subject'],mail['body'],'finfeed-'+mail['id'], **options)
+                provider=self.mailer.send(mail['email'],mail['subject'],format_email(mail.get('username'),mail['body']),'finfeed-'+mail['id'], **options)
             except DeliveryUncertain as exc:
                 failure('email','delivery_uncertain',error=exc)
                 self.storage.mark_uncertain(mail)

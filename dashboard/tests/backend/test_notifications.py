@@ -26,6 +26,25 @@ class NotificationCases(unittest.TestCase):
     def enqueue(self):
         self.n.observe(self.uid,'jobs',lambda old:({},[event('jobs','release:one','NFP','body')]))
 
+    def test_personalized_alert_envelope(self):
+        self.enabled();self.enqueue()
+        with self.store.transaction() as c:
+            self.store.execute(c, 'UPDATE accounts SET name=? WHERE id=?', ('Liam',self.uid))
+        NotificationWorker(self.n,self.mailer,self.store).deliver()
+        body=self.mailer.send.call_args.args[2]
+        self.assertTrue(body.startswith('Dear Liam,\n\n'))
+        self.assertIn('body',body)
+        self.assertIn('管理邮件提醒',body)
+        self.assertTrue(body.endswith('Best regards,\nFinFeed Team'))
+
+    def test_verification_envelope(self):
+        from backend.infrastructure.mailer import format_email
+        body=format_email('Liam\n', '邮箱绑定验证码：123456', verification=True)
+        self.assertTrue(body.startswith('Dear Liam,\n\n'))
+        self.assertIn('绑定收件邮箱',body)
+        self.assertIn('123456',body)
+        self.assertEqual(body.count('Best regards,'),1)
+
     def test_verification_attempts_expiry_rate_limit_and_recipient_reset(self):
         code=self.n.begin_verification(self.uid,'user@example.com',now=1000)
         with self.assertRaises(ValueError):self.n.begin_verification(self.uid,'other@example.com',now=1020)

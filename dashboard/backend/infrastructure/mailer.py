@@ -17,6 +17,14 @@ _last_send = 0.0
 EMAIL = re.compile(r'^[A-Za-z0-9.!#$%&\'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}$')
 
 
+def format_email(username, body, *, verification=False):
+    """Personalized plain-text envelope shared by verification and alerts."""
+    name = ' '.join(str(username or '').split()) or 'FinFeed User'
+    intro = ('您好，您正在为 FinFeed 账户绑定收件邮箱，请使用以下验证码完成验证。'
+             if verification else '您好，以下是您在 FinFeed 订阅的最新提醒，请查阅。')
+    return f'Dear {name},\n\n{intro}\n\n{body.strip()}\n\nBest regards,\nFinFeed Team'
+
+
 class DeliveryUncertain(RuntimeError):
     """The channel may have accepted a message; automatic retry can duplicate it."""
 

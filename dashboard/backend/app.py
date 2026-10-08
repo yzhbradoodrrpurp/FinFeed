@@ -69,7 +69,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     refresh_jobs = RefreshJobs(database)
     app.extensions["finfeed_store"] = database
     from backend.storage.notifications import NotificationStore, DEFAULTS as NOTIFICATION_DEFAULTS
-    from backend.infrastructure.mailer import Mailer, EMAIL
+    from backend.infrastructure.mailer import Mailer, EMAIL, format_email
     from backend.services.notifications import NotificationWorker
     notifications = NotificationStore(database)
     mailer = Mailer({**os.environ, **app.config})
@@ -255,11 +255,13 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(400,description='请输入有效邮箱地址')
         if not mailer.ready:return jsonify(error='邮件服务尚未配置，请先配置服务器发信渠道'),503
         try:
+            with database.transaction() as connection:
+                username=database.account(connection,session['user_id'],lock=False)['name']
             code=notifications.begin_verification(session['user_id'],email)
         except ValueError as exc:abort(429,description=str(exc))
         try:
             mailer.send(email,'FinFeed · 邮箱绑定验证码',
-                '你的验证码是 '+code+'，10 分钟内有效。若不是你本人操作，请忽略此邮件。',
+                format_email(username,'邮箱绑定验证码：'+code+'\n有效期：10 分钟。\n\n请勿向他人透露此验证码。如非您本人操作，请忽略本邮件。',verification=True),
                 'verify-'+secrets.token_hex(24))
         except Exception as exc:
             failure('email','verification_send',error=exc)

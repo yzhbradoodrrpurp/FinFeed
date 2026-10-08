@@ -149,7 +149,10 @@ class NotificationStore:
             for row in rows:
                 changed = self.store.execute(c, "UPDATE notification_outbox SET lease=?,attempts=attempts+1 WHERE id=? AND status='pending' AND lease<=?", (now+90,row['id'],now)).rowcount
                 if changed:
-                    return dict(row)
+                    mail = dict(row)
+                    account = self.store.execute(c, 'SELECT name FROM accounts WHERE id=?', (row['user_id'],)).fetchone()
+                    mail['username'] = account['name'] if account else ''
+                    return mail
         return None
 
     def allowed(self, mail):

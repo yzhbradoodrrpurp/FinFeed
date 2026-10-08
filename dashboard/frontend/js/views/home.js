@@ -34,7 +34,9 @@ window.FinFeedHome=(()=>{
   function moveSector(symbol,target){
     const grid=document.getElementById('home-sectors'),cards=[...grid.children],card=document.getElementById('home-sector-'+symbol);
     const from=cards.indexOf(card);if(from<0||target<0||target>=cards.length||target===from)return;
-    grid.insertBefore(card,target>from?cards[target].nextSibling:cards[target]);saveSectorOrder();
+    const before=window.FinFeedMotion.capture(cards);
+    grid.insertBefore(card,target>from?cards[target].nextSibling:cards[target]);
+    window.FinFeedMotion.settle(before,grid.children);saveSectorOrder();
   }
   function finishSectorDrag(){sectorDragging=null;sectorScroll?.stop();document.querySelectorAll('.sector-dragging,.sector-drop').forEach(card=>card.classList.remove('sector-dragging','sector-drop'));}
   function bindSectorOrder(){

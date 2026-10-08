@@ -589,8 +589,9 @@ el("bind-domain-passkey").addEventListener("click",async()=>{
 });
 el("account-close").addEventListener("click",()=>window.FinFeedMotion.close(el("account-dialog")));
 el("logout").addEventListener("click",async()=>{
-  try{await FinFeedAuth.post("/api/auth/logout");location.replace("/login?manual=1");}
-  catch(e){accountFeedback(FinFeedAuth.message(e));}
+  const button=el("logout");if(button.disabled)return;button.disabled=true;
+  try{await FinFeedAuth.post("/api/auth/logout");button.textContent="已退出登录";await window.FinFeedMotion.leave(el("account-dialog"));location.replace("/login?manual=1");}
+  catch(e){button.disabled=false;button.textContent="退出登录";accountFeedback(FinFeedAuth.message(e));}
 });
 el("export-state").addEventListener("click",()=>{
   const blob=new Blob([JSON.stringify({watchlist:tickers,positions:holdings,watchlistFavorites},null,2)],{type:"application/json"});

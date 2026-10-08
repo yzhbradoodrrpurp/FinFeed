@@ -94,5 +94,10 @@ window.FinFeedMotion=(()=>{
     }
     return {move(clientY){y=clientY;if(!frame)frame=requestAnimationFrame(tick);},stop(){cancelAnimationFrame(frame);frame=0;y=null;last=0;}};
   }
-  return {enter,capture,settle,close,removeRow,edgeScroll};
+  async function leave(element){
+    if(!element)return;
+    const animation=play(element,[{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-8px)'}],220);
+    if(animation){animation.effect.updateTiming({fill:'forwards'});await animation.finished.catch(()=>{});}
+  }
+  return {enter,capture,settle,close,removeRow,edgeScroll,leave};
 })();

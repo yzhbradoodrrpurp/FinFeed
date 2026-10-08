@@ -28,8 +28,10 @@ async function authenticate(){
     document.getElementById("setup-code").value="";document.getElementById("invite-code").value="";
     if(frontendLogin){
       const result=await FinFeedAuth.post("/api/auth/frontend-ticket",{challenge:loginParams.get("challenge"),state:loginParams.get("state")});
+      button.textContent="登录成功";
+      await window.FinFeedMotion?.leave(document.querySelector(".login-card"));
       location.replace(result.redirect);
-    }else location.replace("/");
+    }else{button.textContent="登录成功";await window.FinFeedMotion?.leave(document.querySelector(".login-card"));location.replace("/");}
   }catch(e){if(!active.signal.aborted)error(FinFeedAuth.message(e));}
   finally{if(controller===active){controller=null;button.disabled=false;}}
 }

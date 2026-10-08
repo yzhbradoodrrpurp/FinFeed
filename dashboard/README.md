@@ -2,7 +2,7 @@
 
 # FinFeed 自选股与持仓网站
 
-邮件提醒入口为“我的账户”；Gmail / Resend 配置、服务器调度及迁移验收见 [邮件提醒说明](docs/email-notifications.md)。
+邮件提醒入口为“我的账户”；Gmail 配置、服务器调度及迁移验收见 [邮件提醒说明](docs/email-notifications.md)。
 
 唯一运行入口为 Render 上的 `cloud:create_app()`，使用 Supabase PostgreSQL 保存记录及应用缓存，所有账户数据访问和修改要求 Passkey 登录。部署设置见 [DEPLOY.md](DEPLOY.md)。不提供无登录的本机服务或浏览器本地记录模式。
 

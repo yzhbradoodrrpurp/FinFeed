@@ -169,7 +169,7 @@ class NotificationStore:
     def finish_mail(self, mail, provider_id=None, cancel=False):
         with self.store.transaction() as c:
             status = 'sent' if provider_id else 'cancelled' if cancel else 'pending'
-            # Do not replay uncertain sends beyond Resend's 24-hour dedup window.
+            # Expire old reminders instead of delivering stale alerts.
             if not provider_id and time.time()-mail['created'] >= 23*3600:
                 status = 'failed'
             due = time.time()+min(3600,60*2**min(mail['attempts'],6))

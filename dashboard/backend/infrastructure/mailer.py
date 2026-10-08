@@ -1,4 +1,4 @@
-"""HTTPS mail transports; OAuth credentials remain on the server."""
+"""Gmail HTTPS mail transport; OAuth credentials remain on the server."""
 import base64
 from email.message import EmailMessage
 from email.utils import formatdate
@@ -24,8 +24,7 @@ class DeliveryUncertain(RuntimeError):
 class Mailer:
     def __init__(self, config=None):
         config = os.environ if config is None else config
-        self.provider = config.get('FINFEED_EMAIL_PROVIDER', 'resend').lower()
-        self.key = config.get('RESEND_API_KEY', '')
+        self.provider = config.get('FINFEED_EMAIL_PROVIDER', 'gmail').lower()
         self.sender = config.get('FINFEED_EMAIL_FROM', '')
         self.client_id = config.get('GMAIL_CLIENT_ID', '')
         self.client_secret = config.get('GMAIL_CLIENT_SECRET', '')
@@ -37,7 +36,7 @@ class Mailer:
     @property
     def ready(self):
         credentials = (self.client_id and self.client_secret and self.refresh_token
-                       if self.provider == 'gmail' else self.key if self.provider == 'resend' else '')
+                       if self.provider == 'gmail' else '')
         return bool(credentials and EMAIL.fullmatch(self.sender) and len(self.sender) <= 254)
 
     def _access_token(self):
@@ -67,26 +66,19 @@ class Mailer:
             raise RuntimeError('邮件服务尚未配置')
         if not EMAIL.fullmatch(recipient) or len(recipient) > 254:
             raise ValueError('收件邮箱无效')
-        if self.provider == 'gmail':
-            token = self._access_token()  # Safe to retry if this fails before sending.
-            message = EmailMessage()
-            message['From'] = self.sender
-            message['To'] = recipient
-            message['Subject'] = subject[:180]
-            message['Date'] = formatdate(localtime=False)
-            # Traceability only: Gmail does not promise Message-ID deduplication.
-            message['Message-ID'] = '<' + hashlib.sha256(key.encode()).hexdigest() + '@finfeed.local>'
-            message.set_content(body[:50000])
-            payload = json.dumps({'raw': base64.urlsafe_b64encode(message.as_bytes()).decode()}).encode()
-            request = Request('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-                              data=payload, headers={'Authorization': 'Bearer ' + token,
-                              'Content-Type': 'application/json'}, method='POST')
-        else:
-            payload = json.dumps({'from': self.sender, 'to': [recipient], 'subject': subject[:180],
-                                  'text': body[:50000]}, ensure_ascii=False).encode()
-            request = Request('https://api.resend.com/emails', data=payload, method='POST', headers={
-                'Authorization': 'Bearer ' + self.key, 'Content-Type': 'application/json',
-                'Idempotency-Key': key})
+        token = self._access_token()  # Safe to retry if this fails before sending.
+        message = EmailMessage()
+        message['From'] = self.sender
+        message['To'] = recipient
+        message['Subject'] = subject[:180]
+        message['Date'] = formatdate(localtime=False)
+        # Traceability only: Gmail does not promise Message-ID deduplication.
+        message['Message-ID'] = '<' + hashlib.sha256(key.encode()).hexdigest() + '@finfeed.local>'
+        message.set_content(body[:50000])
+        payload = json.dumps({'raw': base64.urlsafe_b64encode(message.as_bytes()).decode()}).encode()
+        request = Request('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+                          data=payload, headers={'Authorization': 'Bearer ' + token,
+                          'Content-Type': 'application/json'}, method='POST')
         global _last_send
         with _send_lock:
             time.sleep(max(0, .55 - (time.monotonic() - _last_send)))
@@ -99,15 +91,11 @@ class Mailer:
                 if not result.get('id'):
                     raise ValueError('missing message id')
             except HTTPError as exc:
-                if self.provider == 'gmail':
-                    if exc.code >= 500 or exc.code == 408:
-                        raise DeliveryUncertain('Gmail 接收状态未知，已暂停自动重发') from None
-                    if exc.code == 401:
-                        self._token_until = 0
-                    raise RuntimeError('Gmail 拒绝发送（HTTP %s）' % exc.code) from None
-                raise
-            except Exception:
-                if self.provider == 'gmail':
+                if exc.code >= 500 or exc.code == 408:
                     raise DeliveryUncertain('Gmail 接收状态未知，已暂停自动重发') from None
-                raise
+                if exc.code == 401:
+                    self._token_until = 0
+                raise RuntimeError('Gmail 拒绝发送（HTTP %s）' % exc.code) from None
+            except Exception:
+                raise DeliveryUncertain('Gmail 接收状态未知，已暂停自动重发') from None
         return result['id']

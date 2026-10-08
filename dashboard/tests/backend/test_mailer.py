@@ -64,4 +64,4 @@ class MailerCases(unittest.TestCase):
 
     def test_unknown_provider_and_missing_config_not_ready(self):
         self.assertFalse(Mailer({}).ready)
-        self.assertFalse(Mailer({'FINFEED_EMAIL_PROVIDER':'unknown','RESEND_API_KEY':'key','FINFEED_EMAIL_FROM':'a@b.com'}).ready)
+        self.assertFalse(Mailer({'FINFEED_EMAIL_PROVIDER':'unknown','FINFEED_EMAIL_FROM':'a@b.com'}).ready)

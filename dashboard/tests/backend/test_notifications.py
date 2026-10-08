@@ -46,6 +46,33 @@ class NotificationCases(unittest.TestCase):
         NotificationWorker(self.n,self.mailer,self.store).deliver()
         self.mailer.send.assert_not_called()
 
+    def test_gmail_uncertain_or_crashed_send_is_not_reclaimed(self):
+        from backend.infrastructure.mailer import DeliveryUncertain
+        self.enabled();self.enqueue();self.mailer.provider='gmail'
+        def send(*args, before_send):
+            before_send()
+            raise DeliveryUncertain('unknown')
+        self.mailer.send.side_effect=send
+        worker=NotificationWorker(self.n,self.mailer,self.store)
+        worker.deliver();worker.deliver()
+        self.assertEqual(self.mailer.send.call_count,1)
+        self.assertEqual(self.n.delivery_status(self.uid),{'uncertain':1})
+        with self.store.transaction() as c:
+            self.store.execute(c,"UPDATE notification_outbox SET status='sending',lease=0")
+        self.assertIsNone(self.n.claim_mail(time.time()+1000))
+
+    def test_gmail_accepted_then_db_failure_does_not_requeue(self):
+        self.enabled();self.enqueue();self.mailer.provider='gmail'
+        def send(*args, before_send):
+            before_send()
+            return 'gmail-id'
+        self.mailer.send.side_effect=send
+        with patch.object(self.n,'finish_mail',side_effect=RuntimeError('db unavailable')):
+            with self.assertRaises(RuntimeError):
+                NotificationWorker(self.n,self.mailer,self.store).deliver()
+        self.assertEqual(self.n.delivery_status(self.uid),{'sending':1})
+        self.assertIsNone(self.n.claim_mail(time.time()+1000))
+
     def test_delivery_retry_uses_same_id_and_stops_before_dedup_expires(self):
         self.enabled();self.enqueue();worker=NotificationWorker(self.n,self.mailer,self.store)
         self.mailer.send.side_effect=RuntimeError('temporary')

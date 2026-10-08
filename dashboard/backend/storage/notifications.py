@@ -155,6 +155,17 @@ class NotificationStore:
             row = self.store.execute(c, 'SELECT n.* FROM notification_settings n WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM disabled_accounts d WHERE d.id=n.user_id)', (mail['user_id'],)).fetchone()
             return bool(row and row['email']==mail['email'] and json.loads(row['preferences']).get('enabled') and json.loads(row['preferences']).get(mail['category']))
 
+    def mark_sending(self, mail):
+        # Gmail has no idempotency key. A crashed sender must not be reclaimed.
+        with self.store.transaction() as c:
+            changed = self.store.execute(c, "UPDATE notification_outbox SET status='sending' WHERE id=? AND status='pending' AND attempts=?", (mail['id'], mail['attempts']+1)).rowcount
+            if not changed:
+                raise RuntimeError('邮件发送任务已变更')
+
+    def mark_uncertain(self, mail):
+        with self.store.transaction() as c:
+            self.store.execute(c, "UPDATE notification_outbox SET status='uncertain',lease=0 WHERE id=?", (mail['id'],))
+
     def finish_mail(self, mail, provider_id=None, cancel=False):
         with self.store.transaction() as c:
             status = 'sent' if provider_id else 'cancelled' if cancel else 'pending'

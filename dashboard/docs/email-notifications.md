@@ -2,7 +2,21 @@
 
 入口：登录 → 我的账户 → 邮件提醒。每个账户独立绑定并验证邮箱，独立设置总开关、NFP、PCE、十年美债、巨鲸及 News 开关。默认总开关关闭。验证码只保存哈希，10 分钟有效，最多尝试五次，每分钟最多发送一次。
 
-## 配置步骤
+## Gmail 发信配置（无需自有域名）
+
+发件人使用自己的 Gmail 账户，后台通过 HTTPS Gmail API 发信；不使用 Render 免费实例限制的 SMTP 端口。只申请 `gmail.send` 权限，不读取邮箱内容。普通收件人不需要 Google 授权。
+
+1. 在 Google Cloud 创建专用项目，启用 Gmail API，配置 Google Auth Platform。创建桌面 OAuth 客户端，用本机回环地址完成一次发件人授权。
+2. 下载桌面客户端 JSON 后，在本机运行 `python3 dashboard/deployment/authorize_gmail.py --client /完整路径/client.json --sender 发件人@gmail.com`，在 Safari 打开工具打印的本机地址并完成授权。工具使用 PKCE、随机 state、离线访问，凭据保存在 Git 忽略的 `dashboard/.local/gmail-mailer.json`，文件权限为 600。将配置转存 Render 后妥善管理本机凭据，不提交代码。
+3. 配置 `FINFEED_EMAIL_PROVIDER=gmail`、`FINFEED_EMAIL_FROM`（授权的 Gmail 邮箱）、`GMAIL_CLIENT_ID`、`GMAIL_CLIENT_SECRET`、`GMAIL_REFRESH_TOKEN`。
+4. Google 外部应用处于 Testing 时，相关 refresh token 通常七天失效；长期运行需按 Google 要求调整发布状态及验证，不能把测试授权当成永久授权。用户撤销授权等情况仍会导致失效。
+5. 继续配置下方的 `FINFEED_NOTIFICATION_CRON_TOKEN` 和外部调度，再完成实际邮件验证。Gmail 个人账户有发送限额；渠道接受不代表一定进入收件箱。
+
+Gmail 没有 Resend 的幂等键承诺。发送前持久化为 `sending`；明确拒绝时退避重试，网络超时、服务端异常等接收状态未知时记为 `uncertain` 并暂停自动重发。进程中断留下的 `sending` 也不自动重发，需管理者核查发件箱和日志。固定 Message-ID 仅用于追踪，不宣称 Gmail 会据此去重。此策略优先避免重复邮件，状态不明时可能需要人工补发。
+
+参考：[Gmail 发送接口](https://developers.google.com/workspace/gmail/api/guides/sending)、[桌面 OAuth 与 PKCE](https://developers.google.com/identity/protocols/oauth2/native-app)、[令牌有效期](https://developers.google.com/identity/protocols/oauth2#expiration)、[Gmail 发送限制](https://support.google.com/mail/answer/22839)。
+
+## Resend 发信配置与通用调度步骤
 
 1. 创建 [Resend](https://resend.com/docs/dashboard/domains/introduction) 账户，添加自己控制的发信域名，按面板要求配置 DNS，等待域名验证完成。没有自有域名时，测试发件域的收件人限制不能用于给所有用户正式发信。
 2. 创建具有发送权限的 API key。在 Render 后端服务 Environment 中配置：
@@ -18,7 +32,7 @@
 4. 在网站“我的账户”输入收件邮箱，发送验证码并验证，选择提醒开关，开启总开关，保存。
 5. 检查定时服务日志：202 表示任务已接受，403 表示密钥不匹配，503 表示邮件服务未配置。202 不代表邮件已送达。Resend 后台可检查实际送达、退信等情况。登录后的 `GET /api/notifications` 返回本人队列计数；`sent` 表示渠道已接受，不能等同收件箱送达。
 
-当前实现尚未配置生产发件凭据；自动化测试使用模拟邮件渠道，没有发送真实邮件。首次上线必须完成真实邮箱验证和一次实际触发验收。
+自动化测试使用模拟邮件渠道。每次首次配置渠道必须完成真实邮箱验证和一次实际触发验收；代码测试通过不代表生产邮件已送达。
 
 ## 提醒口径
 

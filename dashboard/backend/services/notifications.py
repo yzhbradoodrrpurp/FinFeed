@@ -6,6 +6,7 @@ import math
 import threading
 import time
 from backend.infrastructure.failure_log import failure
+from backend.infrastructure.mailer import DeliveryUncertain
 from backend.storage.notifications import fingerprint
 
 
@@ -113,11 +114,17 @@ class NotificationWorker:
             if not self.storage.allowed(mail):
                 self.storage.finish_mail(mail,cancel=True);continue
             try:
-                provider=self.mailer.send(mail['email'],mail['subject'],mail['body'],'finfeed-'+mail['id'])
-                self.storage.finish_mail(mail,provider_id=provider)
+                options = {'before_send': lambda: self.storage.mark_sending(mail)} if self.mailer.provider == 'gmail' else {}
+                provider=self.mailer.send(mail['email'],mail['subject'],mail['body'],'finfeed-'+mail['id'], **options)
+            except DeliveryUncertain as exc:
+                failure('email','delivery_uncertain',error=exc)
+                self.storage.mark_uncertain(mail)
             except Exception as exc:
                 failure('email','delivery',error=exc)
                 self.storage.finish_mail(mail)
+            else:
+                # A DB failure after acceptance must leave Gmail in 'sending'.
+                self.storage.finish_mail(mail,provider_id=provider)
 
     def cycle(self, lane=None):
         self.deliver()

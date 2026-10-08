@@ -43,3 +43,11 @@ class SectorCacheCases(unittest.TestCase):
         self.assertTrue(sectors.complete(self.rows,today))
         self.assertFalse(sectors.complete(self.rows[:-1]+[self.rows[-2]],today))
         self.assertFalse(sectors.complete(self.rows[:100]+self.rows[130:],today))
+
+    def test_legacy_history_migration_avoids_cold_download(self):
+        stamp=sectors.time.time()
+        self.store.get_cache.side_effect=lambda key: ({'sector':{'history':self.rows},'retrieved_at':'2026-10-08T09:00:00+00:00'},stamp) if 'sector:3y:' in key else None
+        with patch.object(sectors,'quote',return_value=deepcopy(self.recent)) as fetch:
+            result=sectors.snapshot('XLK',self.store)
+        self.assertEqual(fetch.call_count,1)
+        self.assertEqual(len(result['sector']['history']),len(self.rows))

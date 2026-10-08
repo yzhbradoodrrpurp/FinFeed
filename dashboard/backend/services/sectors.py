@@ -50,6 +50,11 @@ def snapshot(symbol, store, publish=None):
         if symbol not in _histories:
             try:
                 saved = store.get_cache(key)
+                if not saved:
+                    legacy = store.get_cache('market:v1:sector:3y:' + symbol)
+                    if legacy and complete(legacy[0].get('sector', {}).get('history', []), today):
+                        saved = ({'history': legacy[0]['sector']['history'],
+                                  'checked_at': legacy[1], 'retrieved_at': legacy[0]['retrieved_at']}, legacy[1])
                 if saved and complete(saved[0].get('history', []), today):
                     _histories[symbol] = saved[0]
             except Exception as exc:

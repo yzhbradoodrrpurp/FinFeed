@@ -103,6 +103,7 @@ window.FinFeedHome=(()=>{
         // A delayed response must never replace a newer quote already displayed.
         if(old&&Date.parse(item.quoted_at)<Date.parse(old.sector.quoted_at))return;
         if(old&&Date.parse(data.retrieved_at)<Date.parse(old.retrieved_at))return;
+        if(!item.history?.length&&old?.sector?.history?.length){item.history=old.sector.history;item.history_warning ||= '历史日线暂未更新，保留上次成功历史';}
         sectorGood.set(symbol,data);
         renderSector(item,data.refreshing?'缓存 · 正在更新':data.stale?'旧数据 · 更新失败':'每分钟检查更新');
 
@@ -123,7 +124,7 @@ window.FinFeedHome=(()=>{
     }catch{}
     bindSectorOrder();
     sectors.forEach(([symbol,label])=>{
-      const saved=FinFeedCache.read('request:/api/home/sectors/'+symbol+'&range=3y-v3',7*86400000);
+      const saved=FinFeedCache.read('request:/api/home/sectors/'+symbol+'&range=3y-v3',7*86400000)||FinFeedCache.read('sector-3y-v2-'+symbol,7*86400000);
       if(saved?.data?.sector?.price!=null){sectorGood.set(symbol,saved.data);renderSector(saved.data.sector,'缓存 · 正在更新');}
       else renderSector({symbol,label},'正在加载…');
     });

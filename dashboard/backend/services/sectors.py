@@ -31,7 +31,7 @@ def snapshot(symbol, store, publish=None):
     with _locks[symbol]:
         if symbol not in _quotes:
             try:
-                saved_quote = store.get_cache('market:v1:sector:v3:' + symbol)
+                saved_quote = store.get_cache('market:v1:sector:3y:' + symbol)
                 if saved_quote and saved_quote[0].get('sector', {}).get('quoted_at'):
                     _quotes[symbol] = saved_quote[0]['sector']
             except Exception as exc:

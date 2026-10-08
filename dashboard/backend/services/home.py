@@ -42,7 +42,7 @@ def quote(index, *, daily_history=False):
         from backend.services.securities import LIMIT
         with LIMIT:
             ticker = yf.Ticker(symbol)
-            frame = ticker.history(period='1y' if daily_history else '5d', interval='1d', auto_adjust=False, timeout=30, raise_errors=True)
+            frame = ticker.history(period='3y' if daily_history else '5d', interval='1d', auto_adjust=False, timeout=30, raise_errors=True)
             metadata = ticker.get_history_metadata()
         price = finite(metadata.get('regularMarketPrice'))
         previous = finite(metadata.get('previousClose'))

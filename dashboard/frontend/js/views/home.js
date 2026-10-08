@@ -78,7 +78,7 @@ window.FinFeedHome=(()=>{
   async function refreshSector([symbol,label]){
     if(sectorBusy.has(symbol))return;sectorBusy.add(symbol);
     try{
-      await FinFeedCache.market('/api/home/sectors/'+symbol+'?stream=1&refresh=1',data=>{
+      await FinFeedCache.market('/api/home/sectors/'+symbol+'?stream=1&refresh=1&range=3y',data=>{
         const old=sectorGood.get(symbol),item=data.sector;
         if(!item||item.price==null||item.error||!item.history?.length){
           if(data.pending)return;
@@ -89,7 +89,7 @@ window.FinFeedHome=(()=>{
         if(old&&Date.parse(data.retrieved_at)<Date.parse(old.retrieved_at))return;
         sectorGood.set(symbol,data);
         renderSector(item,data.refreshing?'缓存 · 正在更新':data.stale?'旧数据 · 更新失败':'每分钟检查更新');
-        FinFeedCache.write('sector-v1-'+symbol,data);
+        FinFeedCache.write('sector-3y-v2-'+symbol,data);
       },{refresh:true,staleTtl:7*86400000,validate:data=>!!data.sector?.history?.length&&data.sector.price!=null&&!data.sector.error});
     }catch{
       renderSector(sectorGood.get(symbol)?.sector||{symbol,label},'更新失败，稍后自动重试');
@@ -107,7 +107,7 @@ window.FinFeedHome=(()=>{
     }catch{}
     bindSectorOrder();
     sectors.forEach(([symbol,label])=>{
-      const saved=FinFeedCache.read('sector-v1-'+symbol,7*86400000);
+      const saved=FinFeedCache.read('sector-3y-v2-'+symbol,7*86400000);
       if(saved?.data?.sector?.price!=null){sectorGood.set(symbol,saved.data);renderSector(saved.data.sector,'缓存 · 正在更新');}
       else renderSector({symbol,label},'正在加载…');
     });

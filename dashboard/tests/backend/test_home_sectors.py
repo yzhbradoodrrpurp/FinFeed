@@ -18,7 +18,7 @@ class SectorCases(unittest.TestCase):
         self.assertEqual(data['change'], 3.)
         self.assertEqual(len(data['history']), 3)
         self.assertEqual(data['price'], 107.)
-        ticker.history.assert_called_once_with(period='1y', interval='1d', auto_adjust=False, timeout=30, raise_errors=True)
+        ticker.history.assert_called_once_with(period='3y', interval='1d', auto_adjust=False, timeout=30, raise_errors=True)
 
     def test_failure_cannot_be_accepted_as_success(self):
         with patch('yfinance.Ticker', side_effect=RuntimeError('timeout')):

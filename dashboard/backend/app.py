@@ -580,7 +580,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         from backend.services.home import SECTORS, sector_snapshot
         if symbol not in {item[0] for item in SECTORS}:
             return jsonify(error='未知板块 ETF'), 400
-        return refresh_jobs.response('sector:' + symbol, lambda publish: sector_snapshot(symbol),
+        return refresh_jobs.response('sector:3y:' + symbol, lambda publish: sector_snapshot(symbol),
             60, lambda value: value.get('sector', {}).get('price') is not None
                 and len(value.get('sector', {}).get('history', [])) >= 2
                 and not value.get('sector', {}).get('error'),

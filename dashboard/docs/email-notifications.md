@@ -16,21 +16,24 @@ Gmail 没有 Resend 的幂等键承诺。发送前持久化为 `sending`；明�
 
 参考：[Gmail 发送接口](https://developers.google.com/workspace/gmail/api/guides/sending)、[桌面 OAuth 与 PKCE](https://developers.google.com/identity/protocols/oauth2/native-app)、[令牌有效期](https://developers.google.com/identity/protocols/oauth2#expiration)、[Gmail 发送限制](https://support.google.com/mail/answer/22839)。
 
-## Resend 发信配置与通用调度步骤
+## Resend 备用渠道（迁移期间保留）
 
 1. 创建 [Resend](https://resend.com/docs/dashboard/domains/introduction) 账户，添加自己控制的发信域名，按面板要求配置 DNS，等待域名验证完成。没有自有域名时，测试发件域的收件人限制不能用于给所有用户正式发信。
 2. 创建具有发送权限的 API key。在 Render 后端服务 Environment 中配置：
    - `RESEND_API_KEY`：Resend API key。
    - `FINFEED_EMAIL_FROM`：已验证域名下的发件邮箱，例如 `alerts@example.com`，只填邮箱，不加显示名称。
-   - `FINFEED_NOTIFICATION_CRON_TOKEN`：独立随机字符串，至少 32 字符。可在本机运行 `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` 生成。不要提交到 Git 或贴入聊天。
-3. 重新部署后端。在外部定时服务中设置每分钟执行一次 HTTP POST：
+
+## 外部调度与收件邮箱验证（Gmail / Resend 通用）
+
+1. 在 Render 设置 `FINFEED_NOTIFICATION_CRON_TOKEN`：独立随机字符串，至少 32 字符。可在本机运行 `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` 生成。不要提交到 Git 或贴入聊天。
+2. 重新部署后端。在外部定时服务中设置每分钟执行一次 HTTP POST：
    - URL：实际 **Render 后端域名** 的 `/api/notifications/tick`，不是 Vercel 静态站点域名。
    - Header `Authorization: Bearer <上一步生成的调度密钥>`。
    - Header `Content-Type: application/json`。
    - Body：`{}`。
    - 不把密钥放进 URL。将调度密钥保存在定时服务的加密配置中。
-4. 在网站“我的账户”输入收件邮箱，发送验证码并验证，选择提醒开关，开启总开关，保存。
-5. 检查定时服务日志：202 表示任务已接受，403 表示密钥不匹配，503 表示邮件服务未配置。202 不代表邮件已送达。Resend 后台可检查实际送达、退信等情况。登录后的 `GET /api/notifications` 返回本人队列计数；`sent` 表示渠道已接受，不能等同收件箱送达。
+3. 在网站“我的账户”输入收件邮箱，发送验证码并验证，选择提醒开关，开启总开关，保存。
+4. 检查定时服务日志：202 表示任务已接受，403 表示密钥不匹配，503 表示邮件服务未配置。202 不代表邮件已送达。Resend 后台可检查实际送达、退信等情况。登录后的 `GET /api/notifications` 返回本人队列计数；`sent` 表示渠道已接受，不能等同收件箱送达。
 
 自动化测试使用模拟邮件渠道。每次首次配置渠道必须完成真实邮箱验证和一次实际触发验收；代码测试通过不代表生产邮件已送达。
 
@@ -61,4 +64,13 @@ Gmail 没有 Resend 的幂等键承诺。发送前持久化为 `sending`；明�
 4. 如需彻底移除 Resend，删除其 transport 分支、相关测试与配置说明，并将 Gmail 设为唯一渠道；只删除环境变量并不等于移除代码支持。
 5. 关闭 Resend 账户是独立操作，通常无需为完成迁移而注销账户。
 
-截至 2026-10-09 的配置进度：Gmail transport 已推送；Google Cloud 专用项目、Gmail API 与桌面 OAuth 客户端已创建。发件人 OAuth 授权、Render Gmail 凭据、外部定时调度和实际送达验收仍待完成。当前仍保留 Resend 代码支持；不要据此记录为已迁移或已删除。
+### 实际配置进度（2026-10-09，北京时间）
+
+- 已完成：Google Cloud 专用项目、Gmail API、桌面 OAuth 客户端，以及仅含 `gmail.send` 的发件人授权。
+- 已完成：Gmail 五项环境变量已保存到 Render；环境变量更新触发的后端部署于 02:08:23 成功，状态为 Live，代码版本为 `24d6aed`。
+- 已验证：本机使用正式 Mailer 和授权凭据发送测试邮件，Gmail API 返回消息 ID，确认渠道接受。尚未确认收件箱实际收到；也尚未通过生产通知队列完成端到端验收。
+- 待完成：外部每分钟调度、网站收件邮箱验证与实际事件触发验收。
+- 待完成：Google 应用目前仍处于 Testing，需处理发布要求和令牌有效期，不能据此承诺持续运行。
+- Resend 环境变量及代码支持仍保留，尚未撤销或删除；完成上述验收后再按清理步骤处理。
+
+此进度记录不包含密钥、令牌或本地凭据文件内容。后续部署和验收应同步更新本节。

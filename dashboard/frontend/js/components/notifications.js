@@ -2,12 +2,26 @@
 window.FinFeedNotifications=(()=>{
   const el=id=>document.getElementById(id);
   const categories=['jobs','pce','treasury','whales','news'];
+  let resendUntil=0,resendTimer=null,sendingCode=false;
+  function updateResend(){
+    const seconds=Math.max(0,Math.ceil((resendUntil-Date.now())/1000));
+    const button=el('notification-send-code');
+    button.disabled=sendingCode||seconds>0;
+    button.textContent=seconds>0?`${seconds}s 后重发`:'发送验证码';
+    if(!seconds&&resendTimer){clearInterval(resendTimer);resendTimer=null;}
+  }
+  function cooldown(seconds){
+    resendUntil=Date.now()+Math.max(0,Number(seconds)||0)*1000;
+    if(resendTimer)clearInterval(resendTimer);
+    resendTimer=setInterval(updateResend,250);updateResend();
+  }
   const status=message=>{el('notification-status').textContent=message;};
   async function request(path,method='GET',body){
     const response=await FinFeedAuth.request(path,{method,...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:method==='DELETE'?{headers:{'Content-Type':'application/json'},body:'{}'}:{})});
     const data=await response.json();if(!response.ok)throw new Error(data.error||'邮件设置读取失败');return data;
   }
   function render(data){
+    cooldown(data.verification_retry_after||0);
     el('notification-email-current').textContent=data.verified?'已验证邮箱：'+data.email:'尚未绑定收件邮箱';
     el('notification-email').value=data.pending_email||data.email||'';
     el('notification-binding-fields').hidden=Boolean(data.verified);
@@ -20,9 +34,17 @@ window.FinFeedNotifications=(()=>{
   }
   async function open(){try{render(await request('/api/notifications'));}catch(e){status(e.message);}}
   async function action(button,work){button.disabled=true;try{await work();}catch(e){status(e.message);}finally{button.disabled=false;}}
-  el('notification-send-code').addEventListener('click',event=>action(event.currentTarget,async()=>{
-    await request('/api/notifications/email','POST',{email:el('notification-email').value.trim()});status('验证码已发送，10 分钟内有效。');
-  }));
+  el('notification-send-code').addEventListener('click',async()=>{
+    if(sendingCode||Date.now()<resendUntil)return;
+    sendingCode=true;updateResend();
+    try{
+      await request('/api/notifications/email','POST',{email:el('notification-email').value.trim()});
+      cooldown(60);status('验证码已发送，10 分钟内有效。');
+    }catch(e){
+      status(e.message);
+      try{const data=await request('/api/notifications');cooldown(data.verification_retry_after||0);}catch{}
+    }finally{sendingCode=false;updateResend();}
+  });
   el('notification-verify').addEventListener('click',event=>action(event.currentTarget,async()=>{
     render(await request('/api/notifications/verify','POST',{code:el('notification-code').value.trim()}));el('notification-code').value='';status('邮箱验证成功。选择提醒后点击保存设置。');
   }));

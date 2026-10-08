@@ -1,6 +1,7 @@
 """Private email subscriptions, persistent event cursors and leased outbox."""
 import hashlib
 import json
+import math
 import secrets
 import time
 
@@ -47,7 +48,8 @@ class NotificationStore:
         with self.store.transaction() as c:
             row = self._row(c, uid)
             return {'email': row['email'], 'pending_email': row['pending_email'],
-                    'preferences': json.loads(row['preferences']), 'verified': bool(row['email'])}
+                    'preferences': json.loads(row['preferences']), 'verified': bool(row['email']),
+                    'verification_retry_after': max(0, math.ceil(row['code_sent']+60-time.time()))}
 
     def begin_verification(self, uid, email, now=None):
         now = time.time() if now is None else now

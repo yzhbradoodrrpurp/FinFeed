@@ -68,6 +68,16 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     from backend.infrastructure.refresh_jobs import RefreshJobs
     refresh_jobs = RefreshJobs(database)
     app.extensions["finfeed_store"] = database
+    from backend.storage.notifications import NotificationStore, DEFAULTS as NOTIFICATION_DEFAULTS
+    from backend.infrastructure.mailer import Mailer, EMAIL
+    from backend.services.notifications import NotificationWorker
+    notifications = NotificationStore(database)
+    mailer = Mailer({**os.environ, **app.config})
+    notification_worker = NotificationWorker(notifications, mailer, database)
+    app.extensions['finfeed_notifications'] = notifications
+    app.extensions['finfeed_notification_worker'] = notification_worker
+    tick_token = app.config.get('FINFEED_NOTIFICATION_CRON_TOKEN') or os.environ.get('FINFEED_NOTIFICATION_CRON_TOKEN','')
+
     secure = not local_test
     session_cookie = "__Host-finfeed_session" if secure else "finfeed_test_session"
     flow_cookie = "__Host-finfeed_flow" if secure else "finfeed_test_flow"
@@ -119,6 +129,13 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             g.request_id = secrets.token_hex(8)
         if request.path != "/api/health" and request.host != parsed.netloc:
             abort(403, description="网站域名不匹配")
+        if request.path == '/api/notifications/tick':
+            if request.method != 'POST':abort(405)
+            provided = request.headers.get('Authorization','')
+            if len(tick_token)<32 or not secrets.compare_digest(provided, 'Bearer '+tick_token):
+                abort(403, description='无效后台调度凭据')
+            if request.mimetype != 'application/json':abort(415)
+            return None
         if request.method in {"POST", "PUT", "DELETE", "PATCH"}:
             # Exact origin + non-simple JSON/header prevents cross-site writes/login CSRF.
             allowed = {origin}
@@ -223,6 +240,62 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.get("/api/health")
     def health():
         return jsonify(ok=True, service="FinFeed")
+
+    @app.get('/api/notifications')
+    def notification_settings():
+        session = require_owner()
+        return jsonify(**notifications.settings(session['user_id']), configured=mailer.ready,
+                       scheduler_configured=len(tick_token)>=32,
+                       deliveries=notifications.delivery_status(session['user_id']))
+
+    @app.post('/api/notifications/email')
+    def notification_email():
+        session=require_owner();body=json_body();email=body.get('email','')
+        if not isinstance(email,str) or len(email)>254 or not EMAIL.fullmatch(email):
+            abort(400,description='请输入有效邮箱地址')
+        if not mailer.ready:return jsonify(error='邮件服务尚未配置，请先配置服务器发信渠道'),503
+        try:
+            code=notifications.begin_verification(session['user_id'],email)
+        except ValueError as exc:abort(429,description=str(exc))
+        try:
+            mailer.send(email,'FinFeed · 邮箱绑定验证码',
+                '你的验证码是 '+code+'，10 分钟内有效。若不是你本人操作，请忽略此邮件。',
+                'verify-'+secrets.token_hex(24))
+        except Exception as exc:
+            failure('email','verification_send',error=exc)
+            return jsonify(error='验证码发送暂时失败，请一分钟后重试'),503
+        return jsonify(ok=True)
+
+    @app.post('/api/notifications/verify')
+    def notification_verify():
+        session=require_owner();code=json_body().get('code','')
+        if not isinstance(code,str) or not re.fullmatch(r'[0-9]{6}',code):abort(400,description='请输入六位验证码')
+        if not notifications.verify(session['user_id'],code):abort(400,description='验证码错误、过期或尝试次数过多')
+        return jsonify(**notifications.settings(session['user_id']))
+
+    @app.put('/api/notifications')
+    def notification_save():
+        session=require_owner();prefs=json_body()
+        if set(prefs)!=set(NOTIFICATION_DEFAULTS) or any(type(prefs[k]) is not bool for k in NOTIFICATION_DEFAULTS if k!='treasury_threshold'):
+            abort(400,description='无效提醒设置')
+        threshold=prefs['treasury_threshold']
+        if isinstance(threshold,bool) or not isinstance(threshold,(float,int)) or not .1<=threshold<=20:
+            abort(400,description='预警线须为 0.1% 至 20%')
+        try:data=notifications.save(session['user_id'],prefs)
+        except ValueError as exc:abort(400,description=str(exc))
+        notification_worker.trigger()
+        return jsonify(**data)
+
+    @app.delete('/api/notifications/email')
+    def notification_unbind():
+        notifications.unbind(require_owner()['user_id'])
+        return jsonify(ok=True)
+
+    @app.post('/api/notifications/tick')
+    def notification_tick():
+        if not mailer.ready:return jsonify(error='邮件服务尚未配置'),503
+        notification_worker.trigger()
+        return jsonify(accepted=True),202
 
     @app.get("/api/ready")
     def readiness():
@@ -662,7 +735,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/<path:filename>")
     def static_file(filename: str):
-        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js", "ticker-search.js", "symbol-directory.json", "news.js"}:
+        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js", "ticker-search.js", "symbol-directory.json", "news.js", "notifications.js"}:
             abort(404)
         return send_from_directory(ROOT / "frontend", STATIC_ASSETS[filename])
 

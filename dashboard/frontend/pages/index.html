@@ -5,7 +5,7 @@
   <meta name="description" content="FinFeed 私人关注列表与持仓：行情、季度财务、成本、市值和未实现盈亏。">
   <title>FinFeed · 市场研究</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f47729'/%3E%3Cpath d='M8 24V8h17M8 15h13' stroke='%23ffffff' stroke-width='4' fill='none'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/style.css"><script src="/motion.js" defer></script><script src="/auth-client.js" defer></script><script src="/cache.js" defer></script><script src="/positions.js" defer></script><script src="/macro.js" defer></script><script src="/home.js" defer></script><script src="/whale-analysis.js" defer></script><script src="/whales.js" defer></script><script src="/dropdowns.js" defer></script><script src="/ticker-search.js" defer></script><script src="/news.js" defer></script><script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/style.css"><script src="/motion.js" defer></script><script src="/auth-client.js" defer></script><script src="/cache.js" defer></script><script src="/positions.js" defer></script><script src="/macro.js" defer></script><script src="/home.js" defer></script><script src="/whale-analysis.js" defer></script><script src="/whales.js" defer></script><script src="/dropdowns.js" defer></script><script src="/ticker-search.js" defer></script><script src="/news.js" defer></script><script src="/notifications.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body class="dashboard-page">
   <aside class="sidebar">
@@ -139,6 +139,22 @@
     <button id="export-state" class="secondary">导出记录</button><button id="choose-import" class="secondary">选择导入文件</button>
     <input id="import-state" type="file" accept="application/json,.json" hidden>
     <div id="import-preview" hidden><p id="import-summary"></p><button id="confirm-import" class="primary">确认替换云端记录</button></div>
+    <hr><section class="notification-settings" aria-labelledby="notification-title">
+      <h3 id="notification-title">邮件提醒</h3><p id="notification-email-current">尚未绑定收件邮箱</p>
+      <div class="notification-binding"><label>收件邮箱<input id="notification-email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com"></label><button id="notification-send-code" class="secondary" type="button">发送验证码</button></div>
+      <div class="notification-binding"><label>六位验证码<input id="notification-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></label><button id="notification-verify" class="secondary" type="button">验证邮箱</button></div>
+      <label class="notification-check"><input id="notification-enabled" type="checkbox">开启邮件提醒</label>
+      <div class="notification-options">
+        <label class="notification-check"><input id="notification-jobs" type="checkbox">NFP：发布前约 24 小时、计划发布时刻及数据更新</label>
+        <label class="notification-check"><input id="notification-pce" type="checkbox">PCE：发布前约 24 小时、计划发布时刻及数据更新</label>
+        <label class="notification-check"><input id="notification-treasury" type="checkbox">十年美债：达到或回落预警线</label>
+        <label>收益率预警线（%）<input id="notification-threshold" type="number" min="0.1" max="20" step="0.01" value="5.1"></label>
+        <label class="notification-check"><input id="notification-whales" type="checkbox">巨鲸：最新持仓申报及修订</label>
+        <label class="notification-check"><input id="notification-news" type="checkbox">我的 Watchlist：新财报电话会和 SEC 披露</label>
+      </div><p class="notification-help">十年美债使用 H.15 日度收益率，不能提供盘中触线提醒。巨鲸与 News 每小时检查；首次启用建立基线，避免发送历史消息。定时器或数据源延迟会影响提醒到达时间。</p>
+      <button id="notification-save" class="primary" type="button">保存提醒设置</button><button id="notification-unbind" class="secondary" type="button" hidden>解绑邮箱</button>
+      <p id="notification-status" class="feedback" role="status" aria-live="polite"></p>
+    </section>
     <p id="account-error" class="feedback" role="status" hidden></p><hr><button id="logout" class="secondary">退出登录</button>
   </dialog>
 </body></html>

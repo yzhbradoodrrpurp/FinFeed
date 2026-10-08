@@ -573,6 +573,7 @@ let pendingImport=null,usersTimer=null,usersLoading=false;
 function accountFeedback(message){el("account-error").textContent=message;el("account-error").hidden=!message;}
 el("account-button").addEventListener("click",async()=>{
   el("account-dialog").showModal();el("account-title").focus({preventScroll:true});accountFeedback("");
+  window.FinFeedNotifications?.open();
   if(!el("admin-controls").hidden){
     loadAdminAccounts().catch(e=>accountFeedback(e.message));
     clearInterval(usersTimer);usersTimer=setInterval(()=>loadAdminAccounts().catch(e=>accountFeedback(e.message)),60_000);

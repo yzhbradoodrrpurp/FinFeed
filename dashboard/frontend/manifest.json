@@ -15,5 +15,6 @@
   "news.js": "js/views/news.js",
   "macro.js": "js/views/macro.js",
   "motion.js": "js/components/motion.js",
-  "app.js": "js/core/app.js"
+  "app.js": "js/core/app.js",
+  "notifications.js": "js/components/notifications.js"
 }

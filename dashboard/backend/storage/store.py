@@ -19,6 +19,7 @@ from psycopg_pool import ConnectionPool
 
 from backend.domain.state_validation import validate
 from backend.infrastructure.failure_log import failure
+from backend.storage.notifications import SCHEMA as NOTIFICATION_SCHEMA
 
 
 class BoundedConnection(psycopg.Connection):
@@ -120,7 +121,7 @@ class Store:
                 connection.execute("CREATE SCHEMA IF NOT EXISTS finfeed_private")
                 connection.execute("REVOKE ALL ON SCHEMA finfeed_private FROM PUBLIC")
                 connection.execute("SET search_path TO finfeed_private")
-            for statement in SCHEMA.split(";"):
+            for statement in (SCHEMA + NOTIFICATION_SCHEMA).split(";"):
                 if statement.strip():
                     connection.execute(statement)
             if not sqlite_path:

@@ -81,5 +81,18 @@ window.FinFeedMotion=(()=>{
     animation.onfinish=()=>{if(running.get(element)===animation)running.delete(element);};
   }
   document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('cancel',event=>{event.preventDefault();close(dialog);}));
-  return {enter,capture,settle,close,removeRow};
+  // Native dragover repeats slowly (or stops while stationary); RAF keeps scrolling.
+  function edgeScroll(container){
+    let frame=0,y=null,last=0;
+    const page=container===document.scrollingElement;
+    function tick(now){
+      const bounds=page?{top:0,bottom:window.innerHeight}:container.getBoundingClientRect();
+      const top=Math.max(0,bounds.top),bottom=Math.min(window.innerHeight,bounds.bottom),edge=64;
+      const speed=y===null?0:y<top+edge?-Math.min(1,(top+edge-y)/edge):y>bottom-edge?Math.min(1,(y-bottom+edge)/edge):0;
+      container.scrollTop+=speed*650*Math.min(32,last?now-last:16)/1000;
+      last=now;frame=requestAnimationFrame(tick);
+    }
+    return {move(clientY){y=clientY;if(!frame)frame=requestAnimationFrame(tick);},stop(){cancelAnimationFrame(frame);frame=0;y=null;last=0;}};
+  }
+  return {enter,capture,settle,close,removeRow,edgeScroll};
 })();

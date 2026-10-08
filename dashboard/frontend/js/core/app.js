@@ -427,7 +427,17 @@ el("order-list").addEventListener("click",event=>{
     (same&&!same.disabled?same:row?.querySelector("button:not(:disabled)"))?.focus();
   }
 });
-let draggingTicker=null;
+let draggingTicker=null,orderScroll=null;
+el("order-dialog").addEventListener("dragover",event=>{
+  if(!draggingTicker)return;
+  event.preventDefault();
+  orderScroll ||= window.FinFeedMotion.edgeScroll(el("order-dialog"));
+  orderScroll.move(event.clientY);
+});
+function stopOrderScroll(){orderScroll?.stop();}
+el("order-dialog").addEventListener("dragleave",event=>{if(!el("order-dialog").contains(event.relatedTarget))stopOrderScroll();});
+for(const event of ['drop','dragend','close'])el("order-dialog").addEventListener(event,stopOrderScroll);
+window.addEventListener('blur',stopOrderScroll);
 function clearDropMarks(){el("order-list").querySelectorAll(".drop-before,.drop-after").forEach(row=>row.classList.remove("drop-before","drop-after"));}
 el("order-list").addEventListener("dragstart",event=>{const row=event.target.closest("[data-order-ticker]");if(!row)return;draggingTicker=row.dataset.orderTicker;event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain",draggingTicker);row.classList.add("dragging");});
 el("order-list").addEventListener("dragover",event=>{const row=event.target.closest("[data-order-ticker]");if(!row||!draggingTicker)return;event.preventDefault();event.dataTransfer.dropEffect="move";clearDropMarks();if(row.dataset.orderTicker!==draggingTicker)row.classList.add(tickers.indexOf(draggingTicker)<tickers.indexOf(row.dataset.orderTicker)?"drop-after":"drop-before");});

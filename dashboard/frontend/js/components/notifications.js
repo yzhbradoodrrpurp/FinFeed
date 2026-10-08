@@ -10,8 +10,8 @@ window.FinFeedNotifications=(()=>{
   function render(data){
     el('notification-email-current').textContent=data.verified?'已验证邮箱：'+data.email:'尚未绑定收件邮箱';
     el('notification-email').value=data.pending_email||data.email||'';
-    el('notification-enabled').checked=data.preferences.enabled;
-    categories.forEach(k=>el('notification-'+k).checked=data.preferences[k]);
+    el('notification-binding-fields').hidden=Boolean(data.verified);
+    categories.forEach(k=>el('notification-'+k).checked=Boolean(data.preferences.enabled&&data.preferences[k]));
     el('notification-threshold').value=data.preferences.treasury_threshold;
     el('notification-unbind').hidden=!data.verified&&!data.pending_email;
     if(data.configured===false)status('邮件服务尚未配置。配置后即可验证邮箱并启用提醒。');
@@ -27,8 +27,9 @@ window.FinFeedNotifications=(()=>{
     render(await request('/api/notifications/verify','POST',{code:el('notification-code').value.trim()}));el('notification-code').value='';status('邮箱验证成功。选择提醒后点击保存设置。');
   }));
   el('notification-save').addEventListener('click',event=>action(event.currentTarget,async()=>{
-    const preferences={enabled:el('notification-enabled').checked,treasury_threshold:Number(el('notification-threshold').value)};
+    const preferences={treasury_threshold:Number(el('notification-threshold').value)};
     categories.forEach(k=>preferences[k]=el('notification-'+k).checked);
+    preferences.enabled=categories.some(k=>preferences[k]);
     render(await request('/api/notifications','PUT',preferences));status('提醒设置已保存。首次检查建立基线，后续新事件才发送。');
   }));
   el('notification-unbind').addEventListener('click',event=>action(event.currentTarget,async()=>{

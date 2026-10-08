@@ -636,10 +636,18 @@ el("create-invite").addEventListener("click",async()=>{
   el("create-invite").disabled=true;
   try{
     const response=await FinFeedAuth.post("/api/invitations");
-    el("invite-result").textContent=`${response.code}（有效至 ${new Date(response.expires*1000).toLocaleString("zh-CN")}）`;
+    el("invite-result").textContent=response.code;
+    el("invite-copy-status").textContent="点击邀请码复制";
     el("invite-result").hidden=false;
   }catch(error){accountFeedback(error.message);}
   finally{el("create-invite").disabled=false;}
+});
+
+el("invite-result").addEventListener("click",async()=>{
+  try{
+    await navigator.clipboard.writeText(el("invite-result").textContent);
+    el("invite-copy-status").textContent="已复制";
+  }catch(error){el("invite-copy-status").textContent="复制失败，请手动选中邀请码复制";}
 });
 
 async function loadAdminAccounts(){

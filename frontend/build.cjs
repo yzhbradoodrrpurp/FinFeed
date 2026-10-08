@@ -5,6 +5,6 @@ fs.rmSync(out,{recursive:true,force:true});fs.mkdirSync(out);
 const assets=require("../dashboard/frontend/manifest.json");
 for(const name of ["index.html","style.css","app.js","positions.js","macro.js","whales.js","home.js","cache.js","auth-client.js","login.js","dropdowns.js","motion.js","whale-analysis.js","ticker-search.js","symbol-directory.json","news.js","notifications.js"])
   fs.copyFileSync(path.join(__dirname,"../dashboard/frontend",assets[name]),path.join(out,name));
-for(const name of ["bridge.html","callback.html","bridge.js"])
+for(const name of ["bridge.html","callback.html","bridge.js","privacy.html"])
   fs.copyFileSync(path.join(__dirname,name),path.join(out,name));
 console.log("Built FinFeed static frontend; credentials and account data remain on the backend.");

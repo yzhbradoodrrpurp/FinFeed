@@ -6,7 +6,7 @@ class Element{
  get innerHTML(){return this.html||'';}addEventListener(){}setAttribute(){}
  querySelector(){return this.notice;}append(node){this.notice=node;}
 }
-for(const id of ['home-indices','home-market-status','home-countdown','home-countdown-label','home-session-time','home-update-status','home-refresh','home-surface','page-title','macro-grid','macro-fed','macro-refresh','macro-surface'])elements.set(id,new Element(id));
+for(const id of ['home-sectors','home-indices','home-market-status','home-countdown','home-countdown-label','home-session-time','home-update-status','home-refresh','home-surface','page-title','macro-grid','macro-fed','macro-refresh','macro-surface'])elements.set(id,new Element(id));
 const context={window:{},navigator:{},AbortController,DOMException,setTimeout:()=>1,clearTimeout(){},TextDecoder,Uint8Array,document:{getElementById:id=>elements.get(id)||null,createElement:()=>new Element('notice'),addEventListener(){}},localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)},Date,Intl,performance:{now:()=>0},setInterval(){},FinFeedAuth:{request:url=>new Promise(resolve=>pending.set(url,data=>resolve({ok:true,json:async()=>data})))}};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(__dirname+'/../../frontend/js/core/cache.js','utf8'),context);context.FinFeedCache=context.window.FinFeedCache;
@@ -20,7 +20,7 @@ assert(elements.get('home-index-0').innerHTML.includes('100.00'));
 assert(elements.get('home-index-0').innerHTML.includes('缓存'));
 assert(elements.get('macro-jobs').innerHTML.includes('100'));
 assert(elements.get('macro-jobs').notice.textContent.includes('缓存'));
-assert.equal(pending.size,9); // Calendar + 3 indices + 4 Macro cards + Fed.
+assert.equal(pending.size,20); // Calendar + 3 indices + 11 sectors + 4 Macro cards + Fed.
 pending.get('/api/home?symbol=%5EGSPC&stream=1')({index:{name:'S&P 500',label:'标普 500',price:105,source:'https://finance.yahoo.com/',quoted_at:timestamp},retrieved_at:timestamp});
 pending.get('/api/macro/jobs?stream=1')({metrics:[],errors:['unavailable'],retrieved_at:timestamp});
 setImmediate(()=>{

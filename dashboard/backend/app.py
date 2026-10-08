@@ -575,6 +575,17 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
                 return jsonify(error=str(error)), 400
         return jsonify(calendar_snapshot())
 
+    @app.get("/api/home/sectors/<symbol>")
+    def home_sector(symbol):
+        from backend.services.home import SECTORS, sector_snapshot
+        if symbol not in {item[0] for item in SECTORS}:
+            return jsonify(error='未知板块 ETF'), 400
+        return refresh_jobs.response('sector:' + symbol, lambda publish: sector_snapshot(symbol),
+            60, lambda value: value.get('sector', {}).get('price') is not None
+                and len(value.get('sector', {}).get('history', [])) >= 2
+                and not value.get('sector', {}).get('error'),
+            stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
+
     @app.get("/api/macro/<kind>")
     def macro_data(kind):
         if kind == "fed":

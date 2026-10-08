@@ -30,7 +30,7 @@ def finite(value):
     return number if math.isfinite(number) else None
 
 
-def quote(index):
+def quote(index, *, daily_history=False):
     symbol, name, label = index
     result = {'symbol': symbol, 'name': name, 'label': label,
               'source': 'https://finance.yahoo.com/quote/'+symbol.replace('^', '%5E')+'/',
@@ -42,7 +42,7 @@ def quote(index):
         from backend.services.securities import LIMIT
         with LIMIT:
             ticker = yf.Ticker(symbol)
-            frame = ticker.history(period='5d', interval='1d', auto_adjust=False, timeout=30, raise_errors=True)
+            frame = ticker.history(period='1y' if daily_history else '5d', interval='1d', auto_adjust=False, timeout=30, raise_errors=True)
             metadata = ticker.get_history_metadata()
         price = finite(metadata.get('regularMarketPrice'))
         previous = finite(metadata.get('previousClose'))
@@ -54,6 +54,18 @@ def quote(index):
             quote_day = datetime.fromtimestamp(timestamp, ZoneInfo('America/New_York')).date()
             offset = -2 if frame.index[-1].date() == quote_day else -1
             previous = finite(frame['Close'].iloc[offset])
+        if daily_history:
+            if metadata.get('currency') != 'USD':
+                raise ValueError('Sector ETF currency is not USD')
+            rows = [{'date': day.date().isoformat(), 'value': finite(value)}
+                    for day, value in frame['Close'].sort_index().items()
+                    if finite(value) is not None and finite(value) > 0]
+            if len(rows) < 2:
+                raise ValueError('Daily history missing')
+            quote_day = datetime.fromtimestamp(timestamp, ZoneInfo('America/New_York')).date().isoformat()
+            prior = [row for row in rows if row['date'] < quote_day]
+            previous = prior[-1]['value'] if prior else None
+            result.update(history=rows, currency='USD', unit=' USD')
         result.update(price=price, previous_close=previous,
                       quoted_at=datetime.fromtimestamp(timestamp, timezone.utc).isoformat())
         if previous is not None and previous > 0:
@@ -106,3 +118,29 @@ def index_snapshot(symbol):
             result = {'index': quote(index), 'retrieved_at': datetime.now(timezone.utc).isoformat()}
             _index_cache[symbol] = (time.monotonic()+60, result)
         return dict(_index_cache[symbol][1])
+
+
+# Select Sector SPDR ETFs: investable proxies, not the sector indices themselves.
+SECTORS = [
+    ('XLC', 'Communication Services', '通信服务'),
+    ('XLY', 'Consumer Discretionary', '可选消费'),
+    ('XLP', 'Consumer Staples', '必需消费'),
+    ('XLE', 'Energy', '能源'),
+    ('XLF', 'Financials', '金融'),
+    ('XLV', 'Health Care', '医疗保健'),
+    ('XLI', 'Industrials', '工业'),
+    ('XLB', 'Materials', '原材料'),
+    ('XLRE', 'Real Estate', '房地产'),
+    ('XLK', 'Technology', '信息技术'),
+    ('XLU', 'Utilities', '公用事业'),
+]
+
+
+def sector_snapshot(symbol):
+    sector = next((item for item in SECTORS if item[0] == symbol), None)
+    if sector is None:
+        raise ValueError('未知板块 ETF')
+    # RefreshJobs owns the 60-second cache and coalesces concurrent callers.
+    result = quote(sector, daily_history=True)
+    return {'sector': result, 'retrieved_at': datetime.now(timezone.utc).isoformat(),
+            'errors': [result['error']] if result['error'] else []}

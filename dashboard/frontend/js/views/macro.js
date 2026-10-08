@@ -222,5 +222,5 @@ window.FinFeedMacro=(()=>{
   setInterval(()=>{if(started)refresh(true);},3600000);
   setInterval(()=>{if(started)refreshFed(true);},3600000);
   document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=3600000)refreshFed(true);}});
-  return {open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=3600000)refreshFed(true);}};
+  return {chart,bindChart,open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=3600000)refreshFed(true);}};
 })();

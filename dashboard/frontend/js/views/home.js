@@ -26,6 +26,44 @@ window.FinFeedHome=(()=>{
   function renderIndex(index,slot,state=""){
     document.getElementById('home-index-'+slot).innerHTML=`<span class="eyebrow">${esc(index.name)}</span><h2>${esc(index.label)}</h2><strong class="home-index-price">${format(index.price)}</strong><p class="${index.change>0?'positive':index.change<0?'negative':''}">${index.change>0?'+':''}${format(index.change)} / ${index.change_percent>0?'+':''}${format(index.change_percent)}%</p><p class="home-quote-time">${state?esc(state)+' · ':''}${index.quoted_at?'报价于 '+date(index.quoted_at,'America/New_York')+' 美国东部':esc(index.error||'暂无报价')}</p><a class="home-source" href="${esc(index.source)}" target="_blank" rel="noreferrer">Yahoo Finance ↗</a>`;
   }
+  const sectors=[['XLC','通信服务'],['XLY','可选消费'],['XLP','必需消费'],['XLE','能源'],['XLF','金融'],['XLV','医疗保健'],['XLI','工业'],['XLB','原材料'],['XLRE','房地产'],['XLK','信息技术'],['XLU','公用事业']];
+  const sectorGood=new Map(),sectorBusy=new Set();
+  function renderSector(data,state=''){
+    const card=document.getElementById('home-sector-'+data.symbol);if(!card)return;
+    const chart=window.FinFeedMacro.chart(data);
+    card.innerHTML=`<span class="eyebrow">${esc(data.symbol)}</span><h3>${esc(data.label)}</h3><strong class="home-index-price">${format(data.price)}<small>USD</small></strong><p class="${data.change>0?'positive':data.change<0?'negative':''}">${data.change>0?'+':''}${format(data.change)} / ${data.change_percent>0?'+':''}${format(data.change_percent)}%</p>${chart||'<div class="home-sector-chart-empty">日线数据暂不可用</div>'}<p class="home-quote-time">${esc(state)}${state?'<br>':''}${data.quoted_at?'报价于 '+date(data.quoted_at,'America/New_York')+' 美国东部':'等待报价'}</p><a class="home-source" href="https://finance.yahoo.com/quote/${esc(data.symbol)}/" target="_blank" rel="noreferrer">Yahoo Finance ↗</a>`;
+    window.FinFeedMacro.bindChart(card,data);
+  }
+  async function refreshSector([symbol,label]){
+    if(sectorBusy.has(symbol))return;sectorBusy.add(symbol);
+    try{
+      await FinFeedCache.market('/api/home/sectors/'+symbol+'?stream=1&refresh=1',data=>{
+        const old=sectorGood.get(symbol),item=data.sector;
+        if(!item||item.price==null||item.error||!item.history?.length){
+          if(data.pending)return;
+          throw new Error('Sector unavailable');
+        }
+        // A delayed response must never replace a newer quote already displayed.
+        if(old&&Date.parse(item.quoted_at)<Date.parse(old.sector.quoted_at))return;
+        if(old&&Date.parse(data.retrieved_at)<Date.parse(old.retrieved_at))return;
+        sectorGood.set(symbol,data);
+        renderSector(item,data.refreshing?'缓存 · 正在更新':data.stale?'旧数据 · 更新失败':'每分钟检查更新');
+        FinFeedCache.write('sector-v1-'+symbol,data);
+      },{refresh:true,staleTtl:7*86400000,validate:data=>!!data.sector?.history?.length&&data.sector.price!=null&&!data.sector.error});
+    }catch{
+      renderSector(sectorGood.get(symbol)?.sector||{symbol,label},'更新失败，稍后自动重试');
+    }finally{sectorBusy.delete(symbol);}
+  }
+  function refreshSectors(){sectors.forEach(item=>refreshSector(item));}
+  function startSectors(){
+    document.getElementById('home-sectors').innerHTML=sectors.map(([symbol])=>`<article class="home-sector" id="home-sector-${symbol}"></article>`).join('');
+    sectors.forEach(([symbol,label])=>{
+      const saved=FinFeedCache.read('sector-v1-'+symbol,7*86400000);
+      if(saved?.data?.sector?.price!=null){sectorGood.set(symbol,saved.data);renderSector(saved.data.sector,'缓存 · 正在更新');}
+      else renderSector({symbol,label},'正在加载…');
+    });
+    refreshSectors();
+  }
   async function fetchData(url){
     const response=await FinFeedAuth.request(url);if(!response.ok)throw new Error();return response.json();
   }
@@ -51,11 +89,11 @@ window.FinFeedHome=(()=>{
     await Promise.allSettled([calendar,...quotes]);
     updated=Date.now();busy=false;document.getElementById('home-refresh').disabled=false;
   }
-  document.getElementById('home-refresh').addEventListener('click',refresh);
+  document.getElementById('home-refresh').addEventListener('click',()=>{refresh();refreshSectors();});
   setInterval(clock,1000);
-  setInterval(()=>{if(started)refresh();},60000);
-  document.addEventListener('visibilitychange',()=>{if(started&&Date.now()-updated>=60000)refresh();});
-  function start(){if(!started){started=true;
+  setInterval(()=>{if(started){refresh();refreshSectors();}},60000);
+  document.addEventListener('visibilitychange',()=>{if(started&&Date.now()-updated>=60000){refresh();refreshSectors();}});
+  function start(){if(!started){started=true;startSectors();
     document.getElementById('home-indices').innerHTML=indices.map((index,slot)=>`<article class="home-index" id="home-index-${slot}"></article>`).join('');
     indices.forEach((index,slot)=>{const saved=FinFeedCache.read('home-'+index[0],86400000);
       if(saved){lastGood.set(slot,saved.data.index);renderIndex(saved.data.index,slot,'缓存 · 正在更新');}

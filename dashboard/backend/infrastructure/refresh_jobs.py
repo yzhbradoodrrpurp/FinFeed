@@ -18,7 +18,7 @@ class RefreshJobs:
         self.guard = threading.Lock()
         self.entries = {}
         self.capacity = threading.BoundedSemaphore(256)
-        self.limits = limits or {'security': 4, 'news': 2, 'whales': 2, 'macro': 2, 'home': 2}
+        self.limits = limits or {'security': 4, 'news': 2, 'whales': 2, 'macro': 2, 'home': 2, 'sector': 2}
         self.queues = {}
 
     def submit(self, key, work):

@@ -246,3 +246,5 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 
 #invite-result{display:block;width:100%;text-align:left;border:1px solid var(--line);cursor:pointer;margin:16px 0 6px;color:inherit}#invite-result[hidden]{display:none}#invite-copy-status{font-size:12px;color:var(--muted,#918b82)}
 .macro-chart svg:focus,.macro-chart svg:focus-visible,.fed-chart svg:focus,.fed-chart svg:focus-visible{outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent}
+
+#notification-threshold:focus,#notification-threshold:focus-visible{outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent}

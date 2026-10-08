@@ -31,6 +31,8 @@ const groups = [
 ];
 const allColumns=groups.flatMap(g=>g.columns);
 const records=new Map();
+let watchlistFavorites=[];
+const favoritePending=new Set();
 let tickers=[], view="all",sortKey=null,sortAsc=true,running=0, queue=[];
 const el=id=>document.getElementById(id);
 let sidebarWidth=184,sidebarCollapsed=false;
@@ -102,6 +104,7 @@ function patchRows(body,html,key){
         for(const attr of cell.attributes)if(current.getAttribute(attr.name)!==attr.value)current.setAttribute(attr.name,attr.value);
       });
     }
+    row.className=fresh.className;
     keep.add(row);
     if(body.children[index]!==row)body.insertBefore(row,body.children[index]||null);
   });
@@ -200,7 +203,7 @@ async function changeViewedAccount(name,id){
   viewedUserId=id;rememberSurfaceAccount(name,id);
   if(surface===name){el("view-account").value=id;window.FinFeedDropdowns?.sync();}
   readOnly=true;document.body.classList.toggle("read-only",true);
-  cancelRecordLoads();tickers=[];holdings=[];initialLoading=true;
+  cancelRecordLoads();tickers=[];watchlistFavorites=[];holdings=[];initialLoading=true;
   sortKey=null;cellValues.clear();cellFlashes.clear();feedback("");render();
   if(surface===name)window.FinFeedMotion?.enter(el(`${name}-surface`),{kind:'account'});
   if(surface===name)history.replaceState(history.state,"",accountViewURL(name,id));
@@ -213,7 +216,7 @@ async function changeViewedAccount(name,id){
     if(!response.ok)throw new Error(data.error||"记录读取失败");
     const state=data.state||{watchlist:[],positions:[]};
     readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
-    tickers=state.watchlist;holdings=state.positions;initialLoading=false;
+    tickers=state.watchlist;watchlistFavorites=state.watchlistFavorites||[];holdings=state.positions;initialLoading=false;
     seedQuoteSnapshots(data.quotes);
     feedback("");render();load(trackedTickers());
     if(surface===name)window.FinFeedMotion?.enter(el(`${name}-surface`),{kind:'account'});
@@ -252,7 +255,7 @@ async function switchSurface(next){
   }
 }
 function feedback(s){el("feedback").textContent=s;el("feedback").hidden=!s;}
-function save(){persistState({watchlist:tickers}).catch(error=>feedback(`关注列表尚未保存：${error.message}。请重试操作。`));}
+function save(){watchlistFavorites=watchlistFavorites.filter(t=>tickers.includes(t));persistState({watchlist:tickers,watchlistFavorites}).catch(error=>feedback(`关注列表尚未保存：${error.message}。请重试操作。`));}
 function renderOrder(){
   el("order-list").innerHTML=tickers.map((ticker,index)=>`<li draggable="true" data-order-ticker="${escapeHTML(ticker)}"><span class="drag-handle" aria-hidden="true">⠿</span><span class="order-security"><strong>${escapeHTML(ticker)}</strong><span>${escapeHTML(records.get(ticker)?.name||ticker)}</span></span><span class="order-actions"><button class="secondary" data-move="up" data-order-symbol="${escapeHTML(ticker)}" aria-label="上移 ${escapeHTML(ticker)}" ${index===0?"disabled":""}>上移</button><button class="secondary" data-move="down" data-order-symbol="${escapeHTML(ticker)}" aria-label="下移 ${escapeHTML(ticker)}" ${index===tickers.length-1?"disabled":""}>下移</button></span></li>`).join("")||'<li class="order-empty">尚未添加标的。</li>';
 }
@@ -293,7 +296,7 @@ function render(){
   if(el("table-head").innerHTML!==headerHTML)el("table-head").innerHTML=headerHTML;
   const watchHTML=tickers.length?sortedTickers().map(t=>{
     const record=records.get(t);const m=record?.metrics||{};
-    return `<tr data-ticker="${escapeHTML(t)}" tabindex="0" aria-label="查看 ${escapeHTML(t)} 数据详情"><td class="sticky"><div class="security-cell"><div><span class="symbol">${escapeHTML(t)}</span><div class="security-name" title="${escapeHTML(record?.name||"等待数据")}">${escapeHTML(record?.name||"等待数据")}</div></div><button class="remove" data-remove="${escapeHTML(t)}" aria-label="移除 ${escapeHTML(t)}">×</button></div></td>${cols.map(([key,,,type])=>{
+    return `<tr data-ticker="${escapeHTML(t)}" class="${watchlistFavorites.includes(t)?"watchlist-favorite":""}" tabindex="0" aria-label="查看 ${escapeHTML(t)} 数据详情"><td class="sticky"><div class="security-cell"><button class="favorite-heart" data-favorite="${escapeHTML(t)}" aria-pressed="${watchlistFavorites.includes(t)}" aria-label="${watchlistFavorites.includes(t)?"取消特别关注":"特别关注"} ${escapeHTML(t)}" ${readOnly||favoritePending.size>0?"disabled":""}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button><div class="security-label"><span class="symbol">${escapeHTML(t)}</span><div class="security-name" title="${escapeHTML(record?.name||"等待数据")}">${escapeHTML(record?.name||"等待数据")}</div></div><button class="remove" data-remove="${escapeHTML(t)}" aria-label="移除 ${escapeHTML(t)}">×</button></div></td>${cols.map(([key,,,type])=>{
       const metric=m[key];if(!record)return `<td><span class="skeleton"></span></td>`;
       const value=format(metric,type);const color=value==="—"?"missing":type==="growth"?(metric.value>=0?"positive":"negative"):"";
       return `<td ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}${fetchingTickers.has(t)?" cell-fetching":""}">${value}${value==="—"?`<span class="missing-label">${shortMissing(metric)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
@@ -439,7 +442,23 @@ document.querySelectorAll("[data-view]").forEach(button=>button.addEventListener
   render();
   window.FinFeedMotion?.enter(el("watchlist"),{kind:"tab",direction});
 }));
-el("watchlist").addEventListener("click",event=>{
+el("watchlist").addEventListener("click",async event=>{
+  const heart=event.target.closest("[data-favorite]");
+  if(heart){
+    if(readOnly||favoritePending.size>0)return;
+    const ticker=heart.dataset.favorite,wasFavorite=watchlistFavorites.includes(ticker),version=accountStateVersion;
+    watchlistFavorites=wasFavorite?watchlistFavorites.filter(t=>t!==ticker):[...watchlistFavorites,ticker];
+    favoritePending.add(ticker);render();
+    try{await persistState({watchlistFavorites:[...watchlistFavorites]});}
+    catch(error){
+      if(version===accountStateVersion&&tickers.includes(ticker)){
+        watchlistFavorites=watchlistFavorites.filter(t=>t!==ticker);
+        if(wasFavorite)watchlistFavorites.push(ticker);
+        feedback(`特别关注尚未保存：${error.message}`);
+      }
+    }finally{favoritePending.delete(ticker);if(version===accountStateVersion)render();}
+    return;
+  }
   const remove=event.target.closest("[data-remove]");if(remove){if(readOnly)return;const before=window.FinFeedMotion?.capture(el("watchlist").querySelectorAll("tbody tr[data-ticker]"));window.FinFeedMotion?.removeRow(remove.closest("tr"));const t=remove.dataset.remove;tickers=tickers.filter(x=>x!==t);queue=queue.filter(task=>task.ticker!==t||holdings.some(p=>p.ticker===t));save();render();if(before)window.FinFeedMotion.settle(before,el("watchlist").querySelectorAll("tbody tr[data-ticker]"));return;}
   const sort=event.target.closest("[data-sort]");if(sort){sortAsc=sortKey===sort.dataset.sort?!sortAsc:true;sortKey=sort.dataset.sort;render();return;}
   const row=event.target.closest("tr[data-ticker]");if(row)detail(row.dataset.ticker);
@@ -497,7 +516,7 @@ async function initializeState(){
       if(!state&&readOnly)state={watchlist:[],positions:[]};
       if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
       if(stateVersion!==accountStateVersion)return;
-      initialLoading=false;tickers=state.watchlist;holdings=state.positions;
+      initialLoading=false;tickers=state.watchlist;watchlistFavorites=state.watchlistFavorites||[];holdings=state.positions;
       if(viewedUserId===currentUser.id)window.FinFeedNews?.setWatchlist(tickers);
       seedQuoteSnapshots(data.quotes);
       render();load(trackedTickers());
@@ -563,7 +582,7 @@ el("logout").addEventListener("click",async()=>{
   catch(e){accountFeedback(FinFeedAuth.message(e));}
 });
 el("export-state").addEventListener("click",()=>{
-  const blob=new Blob([JSON.stringify({watchlist:tickers,positions:holdings},null,2)],{type:"application/json"});
+  const blob=new Blob([JSON.stringify({watchlist:tickers,positions:holdings,watchlistFavorites},null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob),link=document.createElement("a");
   link.href=url;link.download="finfeed-research-records.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
@@ -578,7 +597,9 @@ el("import-state").addEventListener("change",async()=>{
     state.positions.forEach(p=>FinFeedPositions.validate(p));
     const positionSymbols=state.positions.map(p=>p.ticker);
     if(new Set(positionSymbols).size!==positionSymbols.length||new Set([...state.watchlist,...positionSymbols]).size>128)throw new Error("标的重复或关注列表与持仓合计超过 128 个");
-    pendingImport={watchlist:state.watchlist,positions:state.positions};
+    const favorites=state.watchlistFavorites||[];
+    if(!Array.isArray(favorites)||favorites.some(t=>!state.watchlist.includes(t))||new Set(favorites).size!==favorites.length)throw new Error("特别关注列表格式不正确");
+    pendingImport={watchlist:state.watchlist,positions:state.positions,watchlistFavorites:favorites};
     el("import-summary").textContent=`将导入 ${state.watchlist.length} 个自选标的与 ${state.positions.length} 项持仓。现有云端记录会被替换，并保留历史备份。`;
     el("import-preview").hidden=false;accountFeedback("");
   }catch(e){accountFeedback(e.message||"无法读取导入文件");}
@@ -588,7 +609,7 @@ el("confirm-import").addEventListener("click",async()=>{
   if(!pendingImport)return;el("confirm-import").disabled=true;
   try{
     const state=await persistState(pendingImport);
-    initialLoading=false;tickers=state.watchlist;holdings=state.positions;
+    initialLoading=false;tickers=state.watchlist;watchlistFavorites=state.watchlistFavorites||[];holdings=state.positions;
       if(viewedUserId===currentUser.id)window.FinFeedNews?.setWatchlist(tickers);pendingImport=null;
     el("import-preview").hidden=true;sortKey=null;queue=[];records.clear();cellValues.clear();cellFlashes.clear();
     render();load(trackedTickers());accountFeedback("关注列表与持仓已保存到云端。");

@@ -6,11 +6,14 @@ SYMBOL = re.compile(r'^[A-Z0-9][A-Z0-9.^=-]{0,19}$')
 
 
 def validate(state):
-    if not isinstance(state, dict) or set(state) != {'watchlist', 'positions'}:
+    if not isinstance(state, dict) or not {'watchlist', 'positions'} <= set(state) or set(state) - {'watchlist', 'positions', 'watchlistFavorites'}:
         raise ValueError('无效保存格式')
     watchlist, positions = state['watchlist'], state['positions']
     if not isinstance(watchlist, list) or len(watchlist) > 128 or any(not isinstance(t, str) or not SYMBOL.fullmatch(t) for t in watchlist) or len(set(watchlist)) != len(watchlist):
         raise ValueError('无效自选股列表')
+    favorites = state.get('watchlistFavorites', [])
+    if not isinstance(favorites, list) or len(favorites) > 128 or any(not isinstance(t, str) or t not in watchlist for t in favorites) or len(set(favorites)) != len(favorites):
+        raise ValueError('无效特别关注列表')
     if not isinstance(positions, list) or len(positions) > 128:
         raise ValueError('无效持仓列表')
     symbols = []

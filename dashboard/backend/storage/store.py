@@ -382,7 +382,7 @@ class Store:
                 for key, (payload, updated) in values.items() if time.time() - updated <= 7 * 86400}
 
     def update_state(self, patch: dict, *, require_empty: bool = False, user_id=None) -> dict:
-        if not isinstance(patch, dict) or set(patch) - {"watchlist", "positions", "initialize"}:
+        if not isinstance(patch, dict) or set(patch) - {"watchlist", "positions", "watchlistFavorites", "initialize"}:
             raise ValueError("无效保存字段")
         with self.transaction() as connection:
             owner = self.account(connection, user_id)
@@ -391,8 +391,12 @@ class Store:
                 raise ValueError("云端已有记录，拒绝覆盖；请通过登录后的导入功能操作")
             if patch.get("initialize") and current is not None:
                 return current
-            state = validate({**(current or {"watchlist": [], "positions": []}),
-                              **{key: value for key, value in patch.items() if key != "initialize"}})
+            merged = {**(current or {"watchlist": [], "positions": []}),
+                      **{key: value for key, value in patch.items() if key != "initialize"}}
+            # Older clients can remove a ticker without sending the optional field.
+            if isinstance(patch.get('watchlist'), list) and 'watchlistFavorites' not in patch and 'watchlistFavorites' in merged:
+                merged['watchlistFavorites'] = [t for t in merged['watchlistFavorites'] if t in merged['watchlist']]
+            state = validate(merged)
             if current == state:
                 return state
             revision = owner["revision"] + 1

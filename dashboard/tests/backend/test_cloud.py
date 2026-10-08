@@ -375,6 +375,21 @@ class CloudCases(unittest.TestCase):
             response = second.post("/api/auth/register/verify", json={"id": "second"}, headers=HEADERS)
         self.assertEqual(response.status_code, 403)
 
+    def test_watchlist_favorites_persist_and_follow_watchlist(self):
+        self.enroll()
+        self.client.put('/api/state', json={'watchlist': ['AAPL', 'VOO'], 'positions': []}, headers=HEADERS)
+        response = self.client.put('/api/state', json={'watchlistFavorites': ['AAPL']}, headers=HEADERS)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Store(sqlite_path=self.path).read_state()['watchlistFavorites'], ['AAPL'])
+        self.client.put('/api/state', json={'positions': []}, headers=HEADERS)
+        self.assertEqual(self.client.get('/api/state').json['state']['watchlistFavorites'], ['AAPL'])
+        for invalid in [['MISSING'], ['AAPL', 'AAPL'], [True], 'AAPL']:
+            response = self.client.put('/api/state', json={'watchlistFavorites': invalid}, headers=HEADERS)
+            self.assertEqual(response.status_code, 400)
+        response = self.client.put('/api/state', json={'watchlist': ['VOO']}, headers=HEADERS)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['state']['watchlistFavorites'], [])
+
     def test_state_survives_restart_partial_patch_keeps_positions_and_backup(self):
         self.enroll()
         position = {"ticker": "AAPL", "quantity": 2, "averageCost": 100, "currency": "USD"}

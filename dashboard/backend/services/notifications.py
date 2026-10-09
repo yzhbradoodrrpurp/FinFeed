@@ -36,11 +36,13 @@ def macro_events(kind, data, previous, now, since):
     source=data.get('calendar_source','')
     for release in sorted(releases):
         stamp=instant(release)
-        body=f'{name}\n官方计划发布时间：{times(stamp)}\n官方日历：{source}\n'
+        basis = data.get('calendar_time_basis')
+        body=(f'{name}\n计划发布时间：{times(stamp)}\n日历来源：{source}\n时间口径：{basis}\n'
+              if basis else f'{name}\n官方计划发布时间：{times(stamp)}\n官方日历：{source}\n')
         if stamp-86400<=now<stamp and since<=now:
             events.append(event(kind,f'{kind}:before:{release}',name+' 将于 24 小时内发布',body+'提醒以官方日历为准，发布时间可能调整。'))
         if stamp<=now<stamp+21600 and since<=stamp:
-            events.append(event(kind,f'{kind}:release:{release}',name+' 已到计划发布时刻',body+'已到官方计划发布时刻；如原始机构临时延迟，以原始公告为准。FRED 数值可能稍后更新。'))
+            events.append(event(kind,f'{kind}:release:{release}',name+' 已到计划发布时刻',body+'已到上述计划发布时刻；如原始机构临时延迟，以原始公告为准。FRED 数值可能稍后更新。'))
     latest=[m.get('latest') for m in data.get('metrics',[]) if m.get('latest')]
     period=min((m['date'] for m in latest),default='')
     old_period=(previous or {}).get('period','')

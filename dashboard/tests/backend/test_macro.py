@@ -7,6 +7,24 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 import backend.services.macro as macro
 class MacroCases(unittest.TestCase):
+    def test_bls_fallback_uses_announced_dates_and_eastern_dst(self):
+        from backend.providers import bls
+        dates = ['2026-10-02', '2026-11-06', '2026-12-04']
+        with patch.object(bls, 'official_schedule', side_effect=TimeoutError()), \
+                patch('backend.providers.fred.release_dates', return_value=dates) as release:
+            result = bls.schedule(datetime(2026, 10, 10, tzinfo=timezone.utc))
+        release.assert_called_once_with(50)
+        self.assertEqual(result['last_release'], '2026-10-02T08:30:00-04:00')
+        self.assertEqual(result['next_release'], '2026-11-06T08:30:00-05:00')
+        self.assertIn('未提供时刻', result['calendar_time_basis'])
+
+    def test_bls_fallback_never_invents_future_dates(self):
+        from backend.providers import bls
+        with patch.object(bls, 'official_schedule', side_effect=TimeoutError()), \
+                patch('backend.providers.fred.release_dates', return_value=['2026-10-02']):
+            with self.assertRaises(ValueError):
+                bls.schedule(datetime(2026, 10, 10, tzinfo=timezone.utc))
+
     def test_treasury_fetches_three_years_without_row_limit(self):
         rows=[{'date':'2023-10-05','value':'4.7'},{'date':'2023-10-06','value':'.'}]
         with patch.dict(os.environ, {'FRED_API_KEY':'test'}), patch('backend.services.macro.history_start',return_value='2023-10-05'), patch('backend.providers.fred.fetch',return_value=json.dumps({'observations':rows})) as fetch:

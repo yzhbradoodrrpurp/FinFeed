@@ -4,6 +4,19 @@ import json
 from urllib.parse import urlencode
 from backend.providers.http import fetch
 
+
+def release_dates(release_id):
+    """Publisher release dates, including announced dates without observations."""
+    key = os.environ.get('FRED_API_KEY', '')
+    if not key:
+        raise ValueError('FRED_API_KEY 未配置')
+    query = urlencode({'api_key': key, 'file_type': 'json', 'release_id': release_id,
+                       'sort_order': 'desc', 'limit': 36,
+                       'include_release_dates_with_no_data': 'true'})
+    data = json.loads(fetch('https://api.stlouisfed.org/fred/release/dates?' + query))
+    return sorted({row['date'] for row in data['release_dates']
+                   if int(row['release_id']) == release_id})
+
 def observations(series, *, observation_start=None):
     key = os.environ.get('FRED_API_KEY', '')
     if not key:

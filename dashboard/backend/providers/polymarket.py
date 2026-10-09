@@ -1,6 +1,7 @@
 """Read-only public Polymarket event prices; shared cache across accounts."""
 from backend.infrastructure.failure_log import failure
 import json
+import os
 import math
 import threading
 import time
@@ -22,7 +23,8 @@ _history = {}
 def get(url, **params):
     started = time.monotonic()
     try:
-        response = requests.get(url, params=params, impersonate='chrome', timeout=30)
+        options = {'proxy': os.environ['POLYMARKET_PROXY_URL']} if os.environ.get('POLYMARKET_PROXY_URL') else {}
+        response = requests.get(url, params=params, impersonate='chrome', timeout=30, **options)
         response.raise_for_status()
         return response.json()
     except Exception as exc:

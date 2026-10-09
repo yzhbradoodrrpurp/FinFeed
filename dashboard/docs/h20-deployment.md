@@ -1,7 +1,8 @@
 # h20 后端迁移
 
 分支：`h20-backend`。前端继续使用 Vercel，数据库继续使用原 Supabase PostgreSQL。
-迁移准备期间，生产前端和外部邮件调度仍指向 Render；验证通过后才切换。
+2026-10-10 已将 Vercel 生产部署和 cron-job.org 每分钟提醒任务切换到 h20。
+Render 暂保留作回滚备用，未删除服务或数据库。
 
 ## 项目范围
 
@@ -54,3 +55,18 @@ HTTPS 地址，Gmail 在本机通过 `GMAIL_PROXY_URL=http://127.0.0.1:17890` �
 5. 验证前端实际请求、邮件提醒和刷新后再停止旧 Render 服务。
 
 回滚时将 Vercel 转发和邮件调度恢复到 Render；数据库不需要回迁，因为始终是同一数据库。
+
+## 迁移验证记录（2026-10-10 北京）
+
+- Supabase 客户端 TLS 已验证；同一数据库，无需迁移账户和 Passkey。
+- Yahoo 三年日线、SEC、FRED、BEA、Gmail 令牌更新及 Polymarket 已在 h20 验证。
+- `GMAIL_PROXY_URL`、`POLYMARKET_PROXY_URL` 显式指向项目代理；SEC 和 FRED 可直接连接。
+- BLS 官方日历当前返回 403；备用使用 FRED release 50 的 BLS 公布日期，不按首个周五推算。
+  FRED 未提供时刻，按 BLS 常规 08:30 美国东部转换，邮件保留时间口径说明；若没有已公布未来日期则报错。
+  官方接口与口径：[FRED release dates](https://fred.stlouisfed.org/docs/api/fred/release_dates.html)、
+  [BLS 日程](https://www.bls.gov/schedule/news_release/empsit.htm)。
+- 公网未登录返回 401；错误 Host/Origin 返回 403。Vercel 登录选项保留原 RP ID。
+- cron-job.org 新入口测试返回 202 Accepted。项目本地 scheduler 仍关闭，避免重复调度。
+- 生产前端从 h20 读取板块、关注列表数据已在后端访问日志确认。
+- Vercel 生产部署从 h20-backend 手动提升；默认生产 Git 分支仍为 main。
+  后续发布 main 前必须同步新转发地址，避免恢复到旧 Render。

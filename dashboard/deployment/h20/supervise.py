@@ -16,9 +16,7 @@ def commands():
         'tailscale': [str(ROOT / '.tailscale/tailscaled'), '--tun=userspace-networking',
                       '--state=' + str(ROOT / '.tailscale/state'), '--statedir=' + str(ROOT / '.tailscale'),
                       '--socket=@finfeed-h20-control', '--port=0'],
-        'backend': [str(ROOT / '.venv/bin/python'), str(ROOT / 'app/dashboard/deployment/worker.py'),
-                    'backend.app:create_app()', '--bind', '127.0.0.1:18765', '--workers', '1',
-                    '--threads', '64', '--timeout', '180', '--access-logfile', '-', '--error-logfile', '-'],
+        'backend': [str(ROOT / '.venv/bin/python'), str(ROOT / 'app/dashboard/deployment/h20/backend.py')],
     }
     if (ROOT / '.private/scheduler-enabled').exists():
         services['scheduler'] = [str(ROOT / '.venv/bin/python'), str(ROOT / 'app/dashboard/deployment/h20/scheduler.py')]
@@ -57,6 +55,8 @@ def main():
                 if child is not None and child.poll() is None:
                     continue
                 child_env = dict(env)
+                if name == 'proxy':
+                    child_env = dict(os.environ)
                 if name == 'tailscale':
                     # Only this daemon's control connections use the project proxy.
                     child_env = dict(os.environ)

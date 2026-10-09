@@ -6,7 +6,7 @@ exec 9>/run/finfeed-deploy.lock
 flock -n 9 || { echo 'Another deployment is running'; exit 1; }
 repo_dir=${1:?Usage: sudo bash deploy.sh /path/to/FinFeed [revision]}
 revision=${2:-aliyun-server}
-commit=$(git -C "$repo_dir" rev-parse --verify "$revision^{commit}")
+commit=$(git -c safe.directory="$repo_dir" -C "$repo_dir" rev-parse --verify "$revision^{commit}")
 release=$(mktemp -d "/opt/finfeed/releases/$commit.XXXXXX")
 previous=$(readlink -f /opt/finfeed/current || true)
 activated=false
@@ -20,7 +20,7 @@ rollback() {
 }
 trap rollback ERR
 # Archive committed source only; no .env, local credentials, or private records.
-git -C "$repo_dir" archive "$commit" | tar -x -C "$release"
+git -c safe.directory="$repo_dir" -C "$repo_dir" archive "$commit" | tar -x -C "$release"
 chmod 755 "$release"
 install -d -o finfeed -g finfeed -m 700 /opt/finfeed/shared/cache
 ln -s /opt/finfeed/shared/cache "$release/dashboard/.cache"

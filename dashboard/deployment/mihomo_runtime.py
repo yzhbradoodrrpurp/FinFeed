@@ -17,11 +17,17 @@ PORT = 17890
 
 
 def install():
-    if platform.system() != "Linux" or platform.machine() not in {"x86_64", "amd64"}:
-        raise RuntimeError("Mihomo build currently requires Linux amd64")
-    with urllib.request.urlopen(URL, timeout=30) as response:
+    machine = platform.machine().lower()
+    if platform.system() != "Linux" or machine not in {"x86_64", "amd64", "aarch64", "arm64"}:
+        raise RuntimeError("Mihomo build requires Linux amd64 or arm64")
+    url, checksum = URL, SHA256
+    if machine in {"aarch64", "arm64"}:
+        url = f"https://github.com/MetaCubeX/mihomo/releases/download/{VERSION}/mihomo-linux-arm64-{VERSION}.gz"
+        # Pinned from the official release asset retrieved on 2026-10-09.
+        checksum = "9dd862e28b46ff7d775f169cceebc28deccaa0a9e804237d421cd2571e0caba0"
+    with urllib.request.urlopen(url, timeout=30) as response:
         archive = response.read(50_000_001)
-    if len(archive) > 50_000_000 or hashlib.sha256(archive).hexdigest() != SHA256:
+    if len(archive) > 50_000_000 or hashlib.sha256(archive).hexdigest() != checksum:
         raise RuntimeError("Mihomo download checksum mismatch")
     BINARY.parent.mkdir(exist_ok=True)
     temporary = BINARY.with_suffix(".tmp")

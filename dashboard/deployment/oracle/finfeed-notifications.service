@@ -1,0 +1,15 @@
+[Unit]
+Description=Check FinFeed subscribed email notifications
+After=finfeed.service
+
+[Service]
+Type=oneshot
+User=finfeed
+Group=finfeed
+EnvironmentFile=/etc/finfeed/backend.env
+ExecStart=/opt/finfeed/current/.venv/bin/python /opt/finfeed/current/dashboard/deployment/oracle/tick.py
+TimeoutStartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

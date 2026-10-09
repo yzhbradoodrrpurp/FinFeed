@@ -1,0 +1,11 @@
+[Unit]
+Description=Check FinFeed notifications every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+AccuracySec=1s
+Unit=finfeed-notifications.service
+
+[Install]
+WantedBy=timers.target

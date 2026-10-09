@@ -15,7 +15,7 @@ from deployment.mihomo_runtime import BINARY, PORT, private_config
 def main():
     from backend.paths import DASHBOARD_ROOT
     os.chdir(DASHBOARD_ROOT)
-    gunicorn = [sys.executable, str(Path(__file__).with_name("worker.py")), "backend.app:create_app()", "--bind", "0.0.0.0:" + os.environ.get("PORT", "10000"),
+    gunicorn = [sys.executable, str(Path(__file__).with_name("worker.py")), "backend.app:create_app()", "--bind", os.environ.get("FINFEED_BIND", "0.0.0.0:" + os.environ.get("PORT", "10000")),
                 "--workers", "1", "--threads", "64", "--timeout", "180"]
     encoded = os.environ.get("MIHOMO_CONFIG_B64", "")
     if not encoded:

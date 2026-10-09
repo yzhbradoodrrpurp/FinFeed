@@ -1,5 +1,7 @@
 # 网站部署：Render + Supabase + Passkey
 
+Oracle 迁移在 `oracle-backend` 分支准备，步骤见 [Oracle 后端迁移](oracle-backend.md)。正式 API 切换前继续使用下方 Render 部署。
+
 唯一服务入口为 `cloud:create_app()`。部署需要 HTTPS origin 和 PostgreSQL；不提供本机无登录模式。线上后端为 <https://finfeed-research.onrender.com>，Render 跟踪 `main` 分支；Vercel 前端将 `/api/*` 转发到该后端。
 
 旧后端已退役，前端不再提供原域名 Passkey 迁移入口。登录使用 Vercel 域名绑定的 Passkey。新后端继续连接原数据库；内部 `finfeed_private` schema 名称保持稳定，不执行数据库重命名或删除。

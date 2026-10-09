@@ -1,0 +1,31 @@
+[Unit]
+Description=FinFeed Oracle backend
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=finfeed
+Group=finfeed
+WorkingDirectory=/opt/finfeed/current/dashboard
+EnvironmentFile=/etc/finfeed/backend.env
+Environment=FINFEED_BIND=127.0.0.1:10000
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/finfeed/current/.venv/bin/python start_cloud.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=200
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/finfeed/current/dashboard/.cache
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

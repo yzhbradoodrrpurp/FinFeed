@@ -72,5 +72,5 @@ HTTPS 地址，Gmail 在本机通过 `GMAIL_PROXY_URL=http://127.0.0.1:17890` �
 - cron-job.org 新入口已保存并重新加载核实；h20 日志确认每分钟自动请求返回 202 Accepted。
   项目本地 scheduler 仍关闭，避免重复调度。
 - 生产前端从 h20 读取板块、关注列表数据已在后端访问日志确认。
-- Vercel 生产部署从 h20-backend 手动提升；默认生产 Git 分支仍为 main。
-  后续发布 main 前必须同步新转发地址，避免恢复到旧 Render。
+- 首次 Vercel 生产部署从 h20-backend 手动提升；2026-10-10 已将迁移分支合并到 main。
+  main 的 `/api/*` 转发地址已指向 h20，后续 main 发布沿用新后端。

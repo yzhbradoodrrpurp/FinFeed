@@ -32,6 +32,17 @@ sudo bash dashboard/deployment/aliyun/deploy.sh "$PWD" aliyun-server
 
 `setup.sh` 安装 Python、venv、Caddy 和 systemd unit，生成 root 所有、权限 600 的环境文件。它会替换专用实例的 Caddy 配置，不应直接用于已有其他网站的服务器。Caddy 自动证书要求 DNS 指向此实例、80/443 公网可达：[Caddy 官方说明](https://caddyserver.com/docs/automatic-https)。
 
+私有仓库不能匿名克隆时，可在已登录 Git 的本机生成提交包，再通过 SSH 传输，避免向服务器复制 GitHub 私钥或账户令牌：
+
+```sh
+git bundle create /tmp/finfeed-deploy.bundle aliyun-server
+scp /tmp/finfeed-deploy.bundle admin@SERVER_IP:/home/admin/finfeed-deploy.bundle
+# 在服务器上执行；目标目录须尚不存在。
+git clone --branch aliyun-server /home/admin/finfeed-deploy.bundle /home/admin/FinFeed
+```
+
+提交包只包含 Git 已提交内容，不包含被忽略的本机环境文件。后续更新需要生成并传输新的提交包，或另行配置仅能读取本仓库的部署权限。
+
 环境文件使用 systemd `EnvironmentFile` 语法，不写 `export`，包含空格等特殊字符的值要正确引用。填写：
 
 - `PUBLIC_ORIGIN=https://实际后端DNS名称`，不含路径或末尾 `/`。

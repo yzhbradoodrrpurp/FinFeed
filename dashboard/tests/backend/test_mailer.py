@@ -65,3 +65,18 @@ class MailerCases(unittest.TestCase):
     def test_unknown_provider_and_missing_config_not_ready(self):
         self.assertFalse(Mailer({}).ready)
         self.assertFalse(Mailer({'FINFEED_EMAIL_PROVIDER':'unknown','FINFEED_EMAIL_FROM':'a@b.com'}).ready)
+
+    def test_project_proxy_carries_token_and_send_without_global_transport(self):
+        config = {'FINFEED_EMAIL_FROM': 'sender@gmail.com', 'GMAIL_CLIENT_ID': 'client',
+                  'GMAIL_CLIENT_SECRET': 'secret', 'GMAIL_REFRESH_TOKEN': 'refresh',
+                  'GMAIL_PROXY_URL': 'http://127.0.0.1:17890'}
+        with patch('backend.infrastructure.mailer.build_opener') as build, \
+                patch('backend.infrastructure.mailer.urlopen') as direct:
+            build.return_value.open.side_effect = [
+                self.response({'access_token': 'access', 'expires_in': 3600}),
+                self.response({'id': 'sent'})]
+            mailer = Mailer(config)
+            self.assertEqual(mailer.send('user@example.com', 'subject', 'body', 'proxy-test'), 'sent')
+            direct.assert_not_called()
+            self.assertEqual(build.return_value.open.call_count, 2)
+            self.assertEqual(build.call_args.args[0].proxies, {'https': config['GMAIL_PROXY_URL']})

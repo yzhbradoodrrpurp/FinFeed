@@ -4,7 +4,7 @@
   "buildCommand": "node build.cjs",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://finfeed-research.onrender.com/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://finfeed.tail03a68f.ts.net/api/:path*" },
     { "source": "/login", "destination": "/bridge.html" },
     { "source": "/auth/callback", "destination": "/callback.html" }
   ],

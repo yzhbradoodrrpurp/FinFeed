@@ -10,7 +10,7 @@ import threading
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 _send_lock = threading.Lock()
 _last_send = 0.0
@@ -37,6 +37,8 @@ class Mailer:
         self.client_id = config.get('GMAIL_CLIENT_ID', '')
         self.client_secret = config.get('GMAIL_CLIENT_SECRET', '')
         self.refresh_token = config.get('GMAIL_REFRESH_TOKEN', '')
+        proxy = config.get('GMAIL_PROXY_URL', '')
+        self._opener = build_opener(ProxyHandler({'https': proxy})) if proxy else None
         self._token = ''
         self._token_until = 0
         self._token_lock = threading.Lock()
@@ -56,7 +58,7 @@ class Mailer:
                 'refresh_token': self.refresh_token, 'grant_type': 'refresh_token',
             }).encode(), headers={'Content-Type': 'application/x-www-form-urlencoded'})
             try:
-                with urlopen(request, timeout=15) as response:
+                with (self._opener.open if self._opener else urlopen)(request, timeout=15) as response:
                     result = json.load(response)
                 token = result['access_token']
                 lifetime = float(result.get('expires_in', 3600))
@@ -94,7 +96,7 @@ class Mailer:
                 before_send()  # Durable reservation before an irreversible network send.
             _last_send = time.monotonic()
             try:
-                with urlopen(request, timeout=15) as response:
+                with (self._opener.open if self._opener else urlopen)(request, timeout=15) as response:
                     result = json.load(response)
                 if not result.get('id'):
                     raise ValueError('missing message id')

@@ -21,13 +21,15 @@ rollback() {
 trap rollback ERR
 # Archive committed source only; no .env, local credentials, or private records.
 git -C "$repo_dir" archive "$commit" | tar -x -C "$release"
+chmod 755 "$release"
+install -d -o finfeed -g finfeed -m 700 /opt/finfeed/shared/cache
+ln -s /opt/finfeed/shared/cache "$release/dashboard/.cache"
 python3 -m venv "$release/.venv"
 "$release/.venv/bin/python" -m pip install --no-cache-dir -r "$release/dashboard/requirements-cloud.txt"
 # Install the pinned optional proxy on both supported Linux architectures.
 (cd "$release/dashboard" && "$release/.venv/bin/python" -c 'from deployment.mihomo_runtime import install; install()')
 chown -R root:root "$release"
-install -d -o finfeed -g finfeed -m 700 /opt/finfeed/shared/cache
-ln -s /opt/finfeed/shared/cache "$release/dashboard/.cache"
+chown finfeed:finfeed /opt/finfeed/shared/cache/mihomo
 ln -s "$release" /opt/finfeed/next
 mv -Tf /opt/finfeed/next /opt/finfeed/current
 activated=true

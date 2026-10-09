@@ -1,6 +1,6 @@
 # 网站部署：Render + Supabase + Passkey
 
-Oracle 迁移在 `oracle-backend` 分支准备，步骤见 [Oracle 后端迁移](oracle-backend.md)。正式 API 切换前继续使用下方 Render 部署。
+阿里云迁移在 `aliyun-server` 分支准备，步骤见 [阿里云后端迁移](aliyun-server.md)。正式 API 切换前继续使用下方 Render 部署。
 
 唯一服务入口为 `cloud:create_app()`。部署需要 HTTPS origin 和 PostgreSQL；不提供本机无登录模式。线上后端为 <https://finfeed-research.onrender.com>，Render 跟踪 `main` 分支；Vercel 前端将 `/api/*` 转发到该后端。
 

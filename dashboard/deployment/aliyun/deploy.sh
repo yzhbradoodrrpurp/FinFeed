@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Deploy a committed revision from an existing checkout on the Oracle VM.
+# Deploy a committed revision from an existing checkout on the Aliyun VM.
 set -euo pipefail
-[[ $EUID -eq 0 ]] || { echo 'Run with sudo on the Oracle instance'; exit 1; }
+[[ $EUID -eq 0 ]] || { echo 'Run with sudo on the Aliyun instance'; exit 1; }
 exec 9>/run/finfeed-deploy.lock
 flock -n 9 || { echo 'Another deployment is running'; exit 1; }
 repo_dir=${1:?Usage: sudo bash deploy.sh /path/to/FinFeed [revision]}
-revision=${2:-oracle-backend}
+revision=${2:-aliyun-server}
 commit=$(git -C "$repo_dir" rev-parse --verify "$revision^{commit}")
 release=$(mktemp -d "/opt/finfeed/releases/$commit.XXXXXX")
 previous=$(readlink -f /opt/finfeed/current || true)
@@ -22,12 +22,12 @@ trap rollback ERR
 # Archive committed source only; no .env, local credentials, or private records.
 git -C "$repo_dir" archive "$commit" | tar -x -C "$release"
 python3 -m venv "$release/.venv"
-"$release/.venv/bin/python" -m pip install -r "$release/dashboard/requirements-cloud.txt"
+"$release/.venv/bin/python" -m pip install --no-cache-dir -r "$release/dashboard/requirements-cloud.txt"
 # Install the pinned optional proxy on both supported Linux architectures.
 (cd "$release/dashboard" && "$release/.venv/bin/python" -c 'from deployment.mihomo_runtime import install; install()')
 chown -R root:root "$release"
-install -d -o finfeed -g finfeed -m 700 "$release/dashboard/.cache"
-chown -R finfeed:finfeed "$release/dashboard/.cache"
+install -d -o finfeed -g finfeed -m 700 /opt/finfeed/shared/cache
+ln -s /opt/finfeed/shared/cache "$release/dashboard/.cache"
 ln -s "$release" /opt/finfeed/next
 mv -Tf /opt/finfeed/next /opt/finfeed/current
 activated=true

@@ -1,4 +1,4 @@
-"""Oracle transport/startup contracts without infrastructure or real mail."""
+"""Aliyun transport/startup contracts without infrastructure or real mail."""
 import gzip
 import hashlib
 import io
@@ -8,10 +8,10 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 from deployment import start, mihomo_runtime
-from deployment.oracle import tick
+from deployment.aliyun import tick
 
 
-class OracleDeploymentCases(unittest.TestCase):
+class AliyunDeploymentCases(unittest.TestCase):
     def test_loopback_bind_keeps_single_worker_and_existing_threads(self):
         with patch.dict(os.environ, {'FINFEED_BIND': '127.0.0.1:10000', 'MIHOMO_CONFIG_B64': ''}), patch.object(start.os, 'chdir'), patch.object(start.os, 'execvp', side_effect=SystemExit) as execute, self.assertRaises(SystemExit):
             start.main()

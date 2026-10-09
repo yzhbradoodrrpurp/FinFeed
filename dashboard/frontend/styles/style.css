@@ -255,3 +255,7 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 .notification-skeleton .skeleton{height:15px;width:85%}
 .notification-skeleton .skeleton:first-child{width:65%}
 .notification-skeleton .skeleton:last-child{width:45%}
+
+#notification-save{min-width:112px;transition:opacity .28s ease,background-color .28s ease}
+#notification-save:disabled{cursor:default}
+@media(prefers-reduced-motion:reduce){#notification-save{transition:none}}

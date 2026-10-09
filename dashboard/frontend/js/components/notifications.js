@@ -4,6 +4,28 @@ window.FinFeedNotifications=(()=>{
   const categories=['jobs','pce','treasury','whales','news'];
   let resendUntil=0,resendTimer=null,sendingCode=false,verifying=false;
   let loadVersion=0,bindingAnimation=null;
+  let saving=false,savedPreferences=null,saveAnimation=null;
+  function preferencesFromForm(){
+    const preferences={treasury_threshold:Number(el('notification-threshold').value)};
+    categories.forEach(k=>preferences[k]=el('notification-'+k).checked);
+    preferences.enabled=categories.some(k=>preferences[k]);
+    return preferences;
+  }
+  const preferenceKey=preferences=>JSON.stringify([preferences.treasury_threshold,...categories.map(k=>Boolean(preferences.enabled&&preferences[k]))]);
+  function updateSave(animate=true){
+    const button=el('notification-save');
+    const saved=savedPreferences!==null&&savedPreferences===preferenceKey(preferencesFromForm());
+    const label=saving?'保存中…':saved?'提醒已设置':'保存提醒设置';
+    button.disabled=saving||saved;
+    if(button.textContent===label)return;
+    button.textContent=label;
+    saveAnimation?.cancel();
+    if(animate&&button.animate&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      saveAnimation=button.animate([{opacity:.45,transform:'translateY(3px)'},{opacity:1,transform:'none'}],{duration:280,easing:'cubic-bezier(.22,1,.36,1)'});
+    }
+  }
+  categories.forEach(k=>el('notification-'+k).addEventListener('change',()=>updateSave()));
+  el('notification-threshold').addEventListener('input',()=>updateSave());
   function updateResend(){
     const seconds=Math.max(0,Math.ceil((resendUntil-Date.now())/1000));
     const button=el('notification-send-code');
@@ -34,6 +56,7 @@ window.FinFeedNotifications=(()=>{
     categories.forEach(k=>el('notification-'+k).checked=Boolean(data.preferences.enabled&&data.preferences[k]));
     el('notification-threshold').value=data.preferences.treasury_threshold;
     el('notification-unbind').hidden=!data.verified&&!data.pending_email;
+    savedPreferences=null;updateSave(false);
     if(data.configured===false)status('邮件服务尚未配置。配置后即可验证邮箱并启用提醒。');
     else if((data.deliveries?.uncertain||0)+(data.deliveries?.sending||0)>0)status('部分邮件发送状态待核实，已暂停这些邮件的自动重发。');
     else if(data.scheduler_configured===false)status('后台定时调度尚未配置，网页关闭后的提醒需要完成服务器配置。');
@@ -99,12 +122,20 @@ window.FinFeedNotifications=(()=>{
       el('notification-code').value='';status('邮箱验证成功。选择提醒后点击保存设置。');feedbackMotion('notification-email-current');feedbackMotion('notification-status');
     }catch(e){status(e.message);}finally{verifying=false;updateVerify();}
   });
-  el('notification-save').addEventListener('click',event=>action(event.currentTarget,async()=>{
-    const preferences={treasury_threshold:Number(el('notification-threshold').value)};
-    categories.forEach(k=>preferences[k]=el('notification-'+k).checked);
-    preferences.enabled=categories.some(k=>preferences[k]);
-    render(await request('/api/notifications','PUT',preferences));status('提醒设置已保存。首次检查建立基线，后续新事件才发送。');feedbackMotion('notification-status');feedbackMotion('notification-save');
-  }));
+  el('notification-save').addEventListener('click',async()=>{
+    if(saving||el('notification-save').disabled)return;
+    const version=loadVersion,preferences=preferencesFromForm();
+    saving=true;updateSave();
+    try{
+      const data=await request('/api/notifications','PUT',preferences);
+      if(version!==loadVersion)return;
+      // Preserve edits made while the request was in flight; only acknowledge
+      // the preferences actually accepted by the server.
+      savedPreferences=preferenceKey(data.preferences);
+      status('提醒设置已保存。首次检查建立基线，后续新事件才发送。');feedbackMotion('notification-status');
+    }catch(e){if(version===loadVersion)status(e.message);}
+    finally{saving=false;updateSave();}
+  });
   el('notification-unbind').addEventListener('click',event=>action(event.currentTarget,async()=>{
     await request('/api/notifications/email','DELETE');await renderBindingChange(await request('/api/notifications'));el('notification-code').value='';updateVerify();status('邮箱已解绑，待发提醒已取消。');feedbackMotion('notification-status');
   }));

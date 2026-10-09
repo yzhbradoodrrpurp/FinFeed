@@ -14,7 +14,7 @@ function element(id){
   return elements.get(id);
 }
 const data=verified=>({verified,email:verified?'test@example.com':'',preferences:{enabled:true,jobs:true,treasury_threshold:5.1}});
-const context={document:{getElementById:element},window:{matchMedia:()=>({matches:false})},FinFeedAuth:{request:()=>new Promise(resolve=>queue.push(value=>resolve({ok:true,json:async()=>value})))},setInterval:()=>1,clearInterval(){},Date};
+const context={document:{getElementById:element},window:{matchMedia:()=>({matches:false})},FinFeedAuth:{request:()=>new Promise(resolve=>queue.push((value,ok=true)=>resolve({ok,json:async()=>value})))},setInterval:()=>1,clearInterval(){},Date};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../frontend/js/components/notifications.js'),'utf8'),context);
 const ui=context.window.FinFeedNotifications;
 (async()=>{
@@ -43,5 +43,26 @@ const ui=context.window.FinFeedNotifications;
   assert.equal(element('notification-binding-fields').hidden,false);
   assert.equal(element('notification-binding-fields').inert,false);
   assert.equal(animations.at(-1).frames[0].height,'0px');
-  console.log('Notification loading, stale responses, binding collapse and unbinding expansion passed.');
+  const saveButton=element('notification-save');
+  const save=saveButton.listeners.click();
+  assert.equal(saveButton.textContent,'保存中…');assert.equal(saveButton.disabled,true);
+  queue.shift()(data(false));await save;
+  assert.equal(saveButton.textContent,'提醒已设置');assert.equal(saveButton.disabled,true);
+  await saveButton.listeners.click();assert.equal(queue.length,0);
+  element('notification-news').checked=true;element('notification-news').listeners.change();
+  assert.equal(saveButton.textContent,'保存提醒设置');assert.equal(saveButton.disabled,false);
+  const failed=saveButton.listeners.click();queue.shift()({error:'保存失败'},false);await failed;
+  assert.equal(saveButton.disabled,false);assert.equal(saveButton.textContent,'保存提醒设置');
+  const pending=saveButton.listeners.click();
+  element('notification-threshold').value='5.2';element('notification-threshold').listeners.input();
+  const accepted=data(false);accepted.preferences.news=true;
+  queue.shift()(accepted);await pending;
+  assert.equal(element('notification-threshold').value,'5.2');
+  assert.equal(saveButton.disabled,false); // Newer edits still need saving.
+  const finalSave=saveButton.listeners.click();accepted.preferences.treasury_threshold=5.2;
+  queue.shift()(accepted);await finalSave;
+  assert.equal(saveButton.textContent,'提醒已设置');assert.equal(saveButton.disabled,true);
+  element('notification-threshold').value='5.3';element('notification-threshold').listeners.input();
+  assert.equal(saveButton.disabled,false);
+  console.log('PASS: notification loading, binding transitions, save confirmation, retry and in-flight edits.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

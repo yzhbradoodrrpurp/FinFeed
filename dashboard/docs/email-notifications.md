@@ -4,11 +4,11 @@
 
 ## Gmail 发信配置（无需自有域名）
 
-发件人使用自己的 Gmail 账户，后台通过 HTTPS Gmail API 发信；不使用 Render 免费实例限制的 SMTP 端口。只申请 `gmail.send` 权限，不读取邮箱内容。普通收件人不需要 Google 授权。
+发件人使用自己的 Gmail 账户，后台通过 HTTPS Gmail API 发信；不依赖 SMTP 端口。当前后端运行在 h20，配置位置见 [部署说明](deployment.md)和 [h20 运维说明](h20-deployment.md)。只申请 `gmail.send` 权限，不读取邮箱内容。普通收件人不需要 Google 授权。
 
 1. 在 Google Cloud 创建专用项目，启用 Gmail API，配置 Google Auth Platform。创建桌面 OAuth 客户端，用本机回环地址完成一次发件人授权。
-2. 下载桌面客户端 JSON 后，在本机运行 `python3 dashboard/deployment/authorize_gmail.py --client /完整路径/client.json --sender 发件人@gmail.com`，在 Safari 打开工具打印的本机地址并完成授权。工具使用 PKCE、随机 state、离线访问，凭据保存在 Git 忽略的 `dashboard/.local/gmail-mailer.json`，文件权限为 600。将配置转存 Render 后妥善管理本机凭据，不提交代码。
-3. 配置 `FINFEED_EMAIL_PROVIDER=gmail`、`FINFEED_EMAIL_FROM`（授权的 Gmail 邮箱）、`GMAIL_CLIENT_ID`、`GMAIL_CLIENT_SECRET`、`GMAIL_REFRESH_TOKEN`。
+2. 下载桌面客户端 JSON 后，在本机运行 `python3 dashboard/deployment/authorize_gmail.py --client /完整路径/client.json --sender 发件人@gmail.com`，在 Safari 打开工具打印的本机地址并完成授权。工具使用 PKCE、随机 state、离线访问，凭据保存在 Git 忽略的 `dashboard/.local/gmail-mailer.json`，文件权限为 600。将配置转存 h20 的 `.private/backend.json` 后妥善管理本机凭据，不提交代码。
+3. 在 h20 私密配置中配置 `FINFEED_EMAIL_PROVIDER=gmail`、`FINFEED_EMAIL_FROM`（授权的 Gmail 邮箱）、`GMAIL_CLIENT_ID`、`GMAIL_CLIENT_SECRET`、`GMAIL_REFRESH_TOKEN`。
 4. Google 外部应用处于 Testing 时，相关 refresh token 通常七天失效；长期运行需按 Google 要求调整发布状态及验证，不能把测试授权当成永久授权。用户撤销授权等情况仍会导致失效。
 5. 继续配置下方的 `FINFEED_NOTIFICATION_CRON_TOKEN` 和外部调度，再完成实际邮件验证。Gmail 个人账户有发送限额；渠道接受不代表一定进入收件箱。
 
@@ -18,9 +18,9 @@ Gmail 不提供发送幂等键承诺。发送前持久化为 `sending`；明确�
 
 ## 外部调度与收件邮箱验证
 
-1. 在 Render 设置 `FINFEED_NOTIFICATION_CRON_TOKEN`：独立随机字符串，至少 32 字符。可在本机运行 `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` 生成。不要提交到 Git 或贴入聊天。
-2. 重新部署后端。在外部定时服务中设置每分钟执行一次 HTTP POST：
-   - URL：实际 **Render 后端域名** 的 `/api/notifications/tick`，不是 Vercel 静态站点域名。
+1. 在 h20 的 `.private/backend.json` 设置 `FINFEED_NOTIFICATION_CRON_TOKEN`：独立随机字符串，至少 32 字符。可在本机运行 `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` 生成。不要提交到 Git 或贴入聊天。
+2. 让 FinFeed 后端重新加载配置。在外部定时服务中设置每分钟执行一次 HTTP POST：
+   - URL：`https://finfeed.tail03a68f.ts.net/api/notifications/tick`，直接调用 h20 后端。
    - Header `Authorization: Bearer <上一步生成的调度密钥>`。
    - Header `Content-Type: application/json`。
    - Body：`{}`。
@@ -36,7 +36,7 @@ Gmail 不提供发送幂等键承诺。发送前持久化为 `sending`；明确�
 
 ## 提醒口径
 
-- **NFP / PCE**：按 BLS / BEA 官方日历，在发布前 24 小时窗口提醒一次；到计划发布时刻再提醒一次。计划时刻提醒明确区别于实际数据已经取得。取得新的完整数据对应期后另发数据更新邮件。启用时距发布不足 24 小时，首次检查会补发即将发布提醒。来源故障可能延迟提醒；发布时刻补发窗口为六小时。
+- **NFP / PCE**：优先按 BLS / BEA 官方日历；BLS 日历不可用时使用 FRED release 50 的已公布日期，按 BLS 常规 08:30 美国东部转换，并在邮件中注明日期来源与时刻口径，不推算未公布日期。取得可用日历后，发布前 24 小时窗口提醒一次；到计划发布时刻再提醒一次。计划时刻提醒明确区别于实际数据已经取得。取得新的完整数据对应期后另发数据更新邮件。启用时距发布不足 24 小时，首次检查会补发即将发布提醒。来源故障可能延迟提醒；发布时刻补发窗口为六小时。
 - **十年美债**：目前沿用 H.15 / FRED DGS10 日度十年恒定期限收益率。比较连续成功读取的数据，在从低于预警线到达到/超过，或从达到/超过回落至下方时发送。默认 5.1%，可修改。首次读取或修改阈值建立基线，不把当前已在线上的状态当作新穿越。**不是实时盘中预警**。
 - **巨鲸**：每小时检查网站现有机构的最新 13F 报告及修订。邮件附持仓报告期、申报时间和 SEC 原文件；不能视为实时交易。
 - **News**：每小时检查收件人自己 Watchlist 中的 Earnings Calls 和 SEC Filings。沿用页面的最近两个已发布季度筛选口径。新增股票首次成功读取建立基线，之后的新条目才通知。无新内容不发邮件。
@@ -45,19 +45,20 @@ Gmail 不提供发送幂等键承诺。发送前持久化为 `sending`；明确�
 
 任务在服务器后台执行，网页无需打开。宏观检查与公司数据抓取分开运行，分别最多两个源任务并发；相同数据源按数据库租约合并。正常源间隔一小时，NFP/PCE 临近发布时检查间隔一分钟，失败五分钟后重试。复用已有成功市场缓存，发布前五分钟至发布后半小时内加快宏观源刷新。上游发布、外部定时器、平台唤醒、抓取和邮件渠道都可能产生延迟，不能保证整点零延迟。
 
-[Render 免费实例](https://render.com/docs/free)会休眠，必须使用独立于网页的外部调度；不要依赖浏览器定时器。实际准点程度受平台可用性影响。外部调度与Gmail 渠道的额度、限制以各自账户面板为准。
+当前 cron-job.org 每分钟调用 h20，项目本地 scheduler 默认关闭，避免重复调度。h20 监督进程不依赖浏览器或 SSH 会话；服务器/容器重启后仍需项目启动钩子或人工启动。代理与 Funnel 可用性也会影响调度。外部调度与 Gmail 渠道的额度、限制以各自账户面板为准。
 
-订阅、已见事件和发件队列持久化到私人数据库。新内容入队和游标更新在同一事务中完成，唯一事件键防止重复排队。失败指数退避，超过 23 小时停止重试，避免发送过时提醒。故障不会把旧数据当作新事件。关闭类别或总开关、解绑、换邮箱会取消相应待发邮件；已经提交到邮件渠道的消息无法撤回。
+订阅、已见事件和发件队列持久化到私人数据库。新内容入队和游标更新在同一事务中完成，唯一事件键防止重复排队。失败指数退避，超过 23 小时停止重试，避免发送过时提醒。故障不会把旧数据当作新事件。关闭类别（全部取消即停用）、解绑、换邮箱会取消相应待发邮件；已经提交到邮件渠道的消息无法撤回。
 
 账户与通知数据库可用性是执行前提。没有配置发送服务时不启动监控，不额外抓取市场数据。监控不开启网站登录链路中的同步数据请求。
 
-### 实际配置进度（2026-10-09，北京时间）
+### 实际配置进度（2026-10-10，北京时间）
 
-- 已完成：Google Cloud 专用项目、Gmail API、桌面 OAuth 客户端，以及仅含 `gmail.send` 的发件人授权。应用已切换为正式版，并重新授权；新凭据已保存到 Render，配置部署成功。正式版不等于 Google 已完成应用验证；撤销授权、账户或平台策略变化仍可能导致失效。
-- 已验证：正式模式刷新令牌可以成功取得访问令牌。此前生产网站发送的邮箱验证码已被收件人实际收到，邮箱绑定验证完成。
-- 已完成：cron-job.org 的 `FinFeed email reminders` 任务已启用，每分钟 POST 到后端 `/api/notifications/tick`，使用独立 Bearer 调度密钥，密钥不放在 URL。试运行返回 202，耗时约 597 毫秒；03:02 和 03:03 的自动运行均显示 Successful，其中 03:02 耗时约 1.22 秒。202 仅代表后台接受检查任务。
-- 已完成：账户提醒总开关及各类别开关已启用，当前账户十年美债预警线为 5.05%。普通新账户仍使用代码默认值，用户可自行修改。
-- 验收边界：真实验证码收件及自动调度已验证；尚未观察到配置后自然发生的新市场事件完成提醒投递，因此不宣称所有事件类别均已在生产触发验收。首次成功读取建立基线，避免群发历史内容。
-- 发信代码仅支持 Gmail；旧渠道代码、配置说明及 Render 的旧渠道密钥环境变量已移除，不再依赖 Resend。
+- Google Cloud 专用项目、Gmail API、桌面 OAuth 客户端及仅含 `gmail.send` 的授权已配置。应用已切换正式模式；发信配置已迁至 h20 私密文件，令牌更新已验证成功。正式模式不等于 Google 已完成应用验证，撤销授权及平台策略变化仍可能导致失效。
+- 此前真实邮箱验证码已被收件人收到并完成绑定；迁移沿用原数据库，不要求重新绑定。未在此文档公布具体收件地址或令牌。
+- cron-job.org 的 `FinFeed email reminders` 已启用，每分钟 POST 到 `https://finfeed.tail03a68f.ts.net/api/notifications/tick`，独立 Bearer 密钥保留在配置中，不放入 URL。保存后已重新加载核对，h20 日志连续记录自动请求返回 202。202 代表任务已接受，不代表邮件已送达。
+- 提醒类别由账户分别选择，全部不选即关闭；没有独立总开关。代码默认十年美债预警线 5.1%，每个账户的实际设置以数据库和“我的账户”为准，迁移不覆盖用户值。
+- Gmail 令牌更新、历史验证码收件和当前自动调度已验证；尚未逐类观察新市场事件完成真实投递，不能宣称全部事件类别已通过生产投递验收。首次成功读取仍建立基线，避免发送历史内容。
+- 发信代码仅支持 Gmail，不依赖 Resend。当前 `GMAIL_PROXY_URL=http://127.0.0.1:17890` 显式使用 FinFeed 项目代理；BLS 和 Polymarket 也分别使用项目代理变量。
+- 解绑与验证成功时平滑切换界面；发送后倒计时只显示数字和 `s`。空邮箱/空验证码对应按钮禁用。保存成功显示“提醒已设置”并禁用按钮，更改类别或阈值后恢复“保存提醒设置”。
 
-此进度记录不包含密钥、令牌或本地凭据文件内容。后续部署和验收应同步更新本节。
+此记录不包含密钥或凭据内容。真实提醒投递验收结果应在发生后补充，不能以 202 或代码测试替代。

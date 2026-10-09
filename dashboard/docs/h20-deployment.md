@@ -1,6 +1,6 @@
 # h20 后端迁移
 
-分支：`h20-backend`。前端继续使用 Vercel，数据库继续使用原 Supabase PostgreSQL。
+生产分支：`main`（`h20-backend` 已合并，保留用于追溯）。前端继续使用 Vercel，数据库继续使用原 Supabase PostgreSQL。
 2026-10-10 已将 Vercel 生产部署和 cron-job.org 每分钟提醒任务切换到 h20。
 Render 暂保留作回滚备用，未删除服务或数据库。
 
@@ -35,7 +35,7 @@ CPFS 不支持文件系统 Unix socket，因此 Tailscale 控制通道使用 Lin
 
 先安装项目依赖：`.venv/bin/python -m pip install -r app/dashboard/requirements-cloud.txt`。
 所有凭据仅写入 `.private/backend.json`，不得提交 Git。设置 `PUBLIC_ORIGIN` 为实际 Funnel
-HTTPS 地址，Gmail 在本机通过 `GMAIL_PROXY_URL=http://127.0.0.1:17890` 单独走代理，`FRONTEND_ORIGIN` 保持 `https://finfeed-research.vercel.app`，保留原数据库连接。
+HTTPS 地址。`BLS_PROXY_URL`、`POLYMARKET_PROXY_URL` 和 `GMAIL_PROXY_URL` 均设为项目代理。Gmail 在服务器上通过 `GMAIL_PROXY_URL=http://127.0.0.1:17890` 单独走代理，`FRONTEND_ORIGIN` 保持 `https://finfeed-research.vercel.app`，保留原数据库连接。
 
 使用 `.venv/bin/python app/dashboard/deployment/h20/supervise.py` 启动项目监督进程，
 后台运行时将输出重定向到 `.runtime/supervisor.log`。监督进程仅管理自己启动的子进程，
@@ -45,6 +45,12 @@ HTTPS 地址，Gmail 在本机通过 `GMAIL_PROXY_URL=http://127.0.0.1:17890` �
 进程可以在 SSH 断开后继续运行；容器重建或整机重启后需要在平台允许的项目启动钩子中
 重新启动监督进程。没有安装系统级自启动服务，也未承诺平台重启后自动恢复。
 
+## 代码更新与日志
+
+GitHub `main` 推送会触发 Vercel 前端构建，但不会自动更新 h20 的 `app/dashboard` 快照。更新 h20 时只同步应用代码，保留 `.private`、`.proxy`、`.tailscale`、`.venv` 和 `.runtime`；不得对项目根目录执行清空或覆盖私密状态。依赖变化时在项目虚拟环境安装，并只重启 FinFeed 后端或项目监督进程。
+
+当前日志为 `.runtime/backend.log`、`proxy.log`、`tailscale.log` 和 `supervisor.log`；应用失败搜索 `request_failure`。程序尚未自动轮转日志，维护时只处理本项目日志。`/api/health` 仅检查存活；登录后的 `/api/ready` 检查数据库及队列。健康检查成功不能替代登录、保存记录或真实邮件投递验收。
+
 ## 切换检查
 
 1. 验证 Supabase TLS、只读账户记录、FRED、Yahoo 三年日线、SEC、Polymarket 和 Gmail 授权。
@@ -52,7 +58,7 @@ HTTPS 地址，Gmail 在本机通过 `GMAIL_PROXY_URL=http://127.0.0.1:17890` �
 3. 更新 Vercel `/api/*` 转发地址，前端来源及 Passkey RP ID 保持原 Vercel 域名。
 4. 将邮件检查调度迁移到新后端。若使用项目本地调度，关闭旧外部调度后创建
    `.private/scheduler-enabled` 并重启项目监督进程；默认不开启本地调度。
-5. 验证前端实际请求、邮件提醒和刷新后再停止旧 Render 服务。
+5. 验证前端实际请求、邮件提醒和刷新；旧 Render 目前仍保留，停止或删除必须作为独立操作处理。
 
 回滚时将 Vercel 转发和邮件调度恢复到 Render；数据库不需要回迁，因为始终是同一数据库。
 

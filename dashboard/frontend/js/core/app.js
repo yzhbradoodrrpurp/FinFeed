@@ -640,6 +640,7 @@ el("create-invite").addEventListener("click",async()=>{
     el("invite-result").textContent=response.code;
     el("invite-copy-status").textContent="点击邀请码复制";
     el("invite-result").hidden=false;
+    window.FinFeedMotion?.enter(el("invite-result"),{kind:"account"});
   }catch(error){accountFeedback(error.message);}
   finally{el("create-invite").disabled=false;}
 });

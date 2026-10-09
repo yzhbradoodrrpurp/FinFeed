@@ -140,7 +140,9 @@
     <input id="import-state" type="file" accept="application/json,.json" hidden>
     <div id="import-preview" hidden><p id="import-summary"></p><button id="confirm-import" class="primary">确认替换云端记录</button></div>
     <hr><section class="notification-settings" aria-labelledby="notification-title">
-      <h3 id="notification-title">邮件提醒</h3><p id="notification-email-current">尚未绑定收件邮箱</p>
+      <h3 id="notification-title">邮件提醒</h3>
+      <div id="notification-loading" role="status"><span class="sr-only">正在读取邮件设置…</span><div class="notification-skeleton" aria-hidden="true"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div></div>
+      <div id="notification-content" hidden><p id="notification-email-current"></p>
       <div id="notification-binding-fields"><div class="notification-binding"><label>收件邮箱<input id="notification-email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com"></label><button id="notification-send-code" disabled class="secondary" type="button">发送验证码</button></div>
       <div class="notification-binding"><label>六位验证码<input id="notification-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></label><button id="notification-verify" disabled class="secondary" type="button">验证邮箱</button></div>
       </div>
@@ -153,6 +155,8 @@
         <label class="notification-check"><input id="notification-news" type="checkbox">我的 Watchlist：新财报电话会和 SEC 披露</label>
       </div>
       <button id="notification-save" class="primary" type="button">保存提醒设置</button><button id="notification-unbind" class="secondary" type="button" hidden>解绑邮箱</button>
+      </div>
+      <button id="notification-retry" class="secondary" type="button" hidden>重新加载</button>
       <p id="notification-status" class="feedback" role="status" aria-live="polite"></p>
     </section>
     <p id="account-error" class="feedback" role="status" hidden></p><hr><button id="logout" class="secondary">退出登录</button>

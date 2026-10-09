@@ -248,3 +248,10 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 .macro-chart svg:focus,.macro-chart svg:focus-visible,.fed-chart svg:focus,.fed-chart svg:focus-visible{outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent}
 
 #notification-threshold:focus,#notification-threshold:focus-visible{outline:none;box-shadow:none;-webkit-tap-highlight-color:transparent}
+
+/* Account email loading and binding transitions are scoped to this section. */
+#notification-binding-fields{display:flow-root;overflow:hidden}
+.notification-skeleton{display:grid;gap:24px;padding:16px 0 24px;min-height:280px;align-content:start}
+.notification-skeleton .skeleton{height:15px;width:85%}
+.notification-skeleton .skeleton:first-child{width:65%}
+.notification-skeleton .skeleton:last-child{width:45%}

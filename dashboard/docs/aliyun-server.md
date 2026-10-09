@@ -43,6 +43,22 @@ git clone --branch aliyun-server /home/admin/finfeed-deploy.bundle /home/admin/F
 
 提交包只包含 Git 已提交内容，不包含被忽略的本机环境文件。后续更新需要生成并传输新的提交包，或另行配置仅能读取本仓库的部署权限。
 
+在小内存实例上，依赖也可先在本机下载，再上传安装。以下参数针对当前实例的 Linux x86_64 / Python 3.12；换架构或 Python 版本时需要重新下载：
+
+```sh
+python3 -m pip download --dest /tmp/finfeed-wheels --only-binary=:all: \
+  --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 \
+  --platform manylinux_2_28_x86_64 --platform manylinux_2_34_x86_64 \
+  --python-version 3.12 --implementation cp --abi cp312 \
+  --index-url https://pypi.org/simple -r dashboard/requirements-cloud.txt
+scp -r /tmp/finfeed-wheels admin@SERVER_IP:/home/admin/finfeed-wheels
+# 在服务器上执行，仍按原 requirements 安装并检查依赖关系。
+sudo env FINFEED_WHEELHOUSE=/home/admin/finfeed-wheels \
+  bash /home/admin/FinFeed/dashboard/deployment/aliyun/deploy.sh /home/admin/FinFeed aliyun-server
+```
+
+此模式只改变安装时取得软件包的方式，不改变应用功能、数据源或刷新频率。缺少兼容 wheel 时安装会失败，不回退到编译或偷偷更换依赖版本。
+
 环境文件使用 systemd `EnvironmentFile` 语法，不写 `export`，包含空格等特殊字符的值要正确引用。填写：
 
 - `PUBLIC_ORIGIN=https://实际后端DNS名称`，不含路径或末尾 `/`。

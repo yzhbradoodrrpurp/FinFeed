@@ -25,7 +25,15 @@ chmod 755 "$release"
 install -d -o finfeed -g finfeed -m 700 /opt/finfeed/shared/cache
 ln -s /opt/finfeed/shared/cache "$release/dashboard/.cache"
 python3 -m venv "$release/.venv"
-"$release/.venv/bin/python" -m pip install --no-cache-dir -r "$release/dashboard/requirements-cloud.txt"
+if [[ -n ${FINFEED_WHEELHOUSE:-} ]]; then
+  # Resolve/download compatible wheels on the operator's machine first when
+  # installing over a slow connection on a small VM. Requirements stay identical.
+  [[ -d $FINFEED_WHEELHOUSE ]] || { echo 'Wheel directory does not exist'; exit 1; }
+  "$release/.venv/bin/python" -m pip install --no-cache-dir --no-index --find-links "$FINFEED_WHEELHOUSE" -r "$release/dashboard/requirements-cloud.txt"
+else
+  "$release/.venv/bin/python" -m pip install --no-cache-dir --index-url https://pypi.org/simple -r "$release/dashboard/requirements-cloud.txt"
+fi
+"$release/.venv/bin/python" -m pip check
 # Install the pinned optional proxy on both supported Linux architectures.
 (cd "$release/dashboard" && "$release/.venv/bin/python" -c 'from deployment.mihomo_runtime import install; install()')
 chown -R root:root "$release"

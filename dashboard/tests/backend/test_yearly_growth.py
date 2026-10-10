@@ -16,10 +16,16 @@ class YearlyGrowthCases(unittest.TestCase):
     def test_53_week_year_and_nonpositive_fcf_base(self):
         s={'2026-01-03':data.field(20,'2026-01-03','FCF','source'),'2024-12-28':data.field(10,'2024-12-28','FCF','source')}
         self.assertEqual(data.growth(s,'2026-01-03',yearly=True)['value'],1)
-        for old in [0,-10]:
+        for old in [0]:
             m=data.growth(self.series(old),'2026-06-30',yearly=True)
             self.assertIsNone(m['value'])
             self.assertIn('去年同财季',m['reason'])
+
+    def test_negative_yearly_base_keeps_value_status_and_provenance(self):
+        m=data.growth(self.series(-100),'2026-06-30',yearly=True)
+        self.assertEqual(m['value'],2.5)
+        self.assertEqual(m['change_status'],'转正')
+        self.assertEqual(m['comparison_period'],'2025-06-30')
 
     def test_existing_daily_cache_gets_yoy_without_network(self):
         saved={'schema_version':data.SCHEMA_VERSION,'financial_checked_at':data.now(),'quarter_0':'2026-06-30','metrics':{},'series':{k:self.series() for k in ['revenue','debt','fcf']}}
@@ -28,6 +34,7 @@ class YearlyGrowthCases(unittest.TestCase):
             r=data.security('YOYTEST',store=store)
         fetch.assert_not_called()
         for k in ['revenue','debt','fcf']:
+            self.assertAlmostEqual(r['metrics'][k+'_qoq_q0']['value'],.25)
             self.assertEqual(r['metrics'][k+'_yoy_q0']['value'],.5)
 
     def test_etf_preserves_not_applicable(self):

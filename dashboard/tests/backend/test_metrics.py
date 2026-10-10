@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from backend.services.securities import epoch
 
-from backend.domain.metrics import prior_quarter_period, trailing_pe, volume_metrics, qoq
+from backend.domain.metrics import prior_quarter_period, trailing_pe, volume_metrics, qoq, change_status
 
 
 class FinancialCases(unittest.TestCase):
@@ -13,12 +13,23 @@ class FinancialCases(unittest.TestCase):
         self.assertEqual(epoch(close), close.timestamp())
         self.assertEqual(epoch("2026-10-02 16:00:00-04:00"), close.timestamp())
 
-    def test_loss_to_profit_is_not_a_positive_base_growth_rate(self):
+    def test_negative_base_uses_absolute_denominator(self):
         value, reason = qoq(50, -25)
-        self.assertIsNone(value)
-        self.assertIn("负值", reason)
+        self.assertEqual(value, 3)
+        self.assertIsNone(reason)
         self.assertIsNone(qoq(50, 0)[0])
         self.assertAlmostEqual(qoq(125, 100)[0], 0.25)
+
+    def test_all_sign_branches_and_unknown_values(self):
+        cases = [(100,150,.5,None),(100,50,-.5,None),(100,0,-1,None),(100,-50,-1.5,"转负"),
+                 (-100,-50,.5,"负值收窄"),(-100,-150,-.5,"负值扩大"),(-100,-100,0,"持平"),
+                 (-100,0,1,"归零"),(-100,50,1.5,"转正"),(0,50,None,"由零转正"),
+                 (0,-50,None,"由零转负"),(0,0,None,"持平"),(None,50,None,None)]
+        for previous,current,expected,status in cases:
+            with self.subTest(previous=previous,current=current):
+                self.assertEqual(qoq(current,previous)[0],expected)
+                self.assertEqual(change_status(current,previous),status)
+        self.assertIsNone(qoq(float('nan'),100)[0])
 
     def test_fiscal_quarter_matches_but_missing_quarter_does_not(self):
         self.assertEqual(prior_quarter_period("2026-06-27", ["2025-06-28", "2026-03-28"]), "2026-03-28")

@@ -15,9 +15,9 @@ def qoq(current, previous):
     current, previous = number(current), number(previous)
     if current is None or previous is None:
         return None, "缺少本期或上一财季数据"
-    if previous <= 0:
-        return None, "上一财季为零或负值，百分比增长不具可比性"
-    return current / previous - 1, None
+    if previous == 0:
+        return None, "上一财季为零，百分比变化无法计算"
+    return (current - previous) / abs(previous), None
 
 
 def prior_quarter_period(period, periods):
@@ -53,3 +53,16 @@ def volume_metrics(rows, quote_date, complete):
     if current is None or avg <= 0:
         return avg, None, "缺少当日成交量或此前均量为零", previous
     return avg, current / avg, None, previous
+
+
+def change_status(current, previous):
+    current, previous = number(current), number(previous)
+    if current is None or previous is None:
+        return None
+    if previous == 0:
+        return "由零转正" if current > 0 else "由零转负" if current < 0 else "持平"
+    if current == 0:
+        return "归零" if previous < 0 else None
+    if previous < 0:
+        return "转正" if current > 0 else "负值收窄" if current > previous else "负值扩大" if current < previous else "持平"
+    return "转负" if current < 0 else None

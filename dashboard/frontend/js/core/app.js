@@ -28,8 +28,8 @@ const groups = [
   {name:"营收",view:"financial",columns:[["revenue_q0","Total Revenue","Q0 · 单季","money"],["revenue_yoy_q0","Revenue Growth","Q0 · 季度同比","growth"],["revenue_qoq_q0","Revenue Growth","Q0 · 季度环比","growth"],["revenue_qoq_q1","Revenue Growth","Q−1 · 季度环比","growth"]]},
   {name:"债务",view:"financial",columns:[["debt_q0","Total Debt","Q0 · 季末","money"],["debt_yoy_q0","Debt Growth","Q0 · 季度同比","growth"],["debt_qoq_q0","Debt Growth","Q0 · 季度环比","growth"],["debt_qoq_q1","Debt Growth","Q−1 · 季度环比","growth"]]},
   {name:"自由现金流",view:"financial",columns:[["fcf_q0","Free Cash Flow","Q0 · 单季","money"],["fcf_yoy_q0","FCF Growth","Q0 · 季度同比","growth"],["fcf_qoq_q0","FCF Growth","Q0 · 季度环比","growth"],["fcf_qoq_q1","FCF Growth","Q−1 · 季度环比","growth"]]},
-  {name:"毛利率",view:"financial",columns:[["gross_margin_q0","Gross Margin","Q0 · 单季","percent"],["gross_margin_yoy_q0","Gross Margin Growth","Q0 · 季度同比","growth"],["gross_margin_qoq_q0","Gross Margin Growth","Q0 · 季度环比","growth"],["gross_margin_qoq_q1","Gross Margin Growth","Q−1 · 季度环比","growth"]]},
-  {name:"营业利润率",view:"financial",columns:[["operating_margin_q0","Operating Margin","Q0 · 单季","percent"],["operating_margin_yoy_q0","Operating Margin Growth","Q0 · 季度同比","growth"],["operating_margin_qoq_q0","Operating Margin Growth","Q0 · 季度环比","growth"],["operating_margin_qoq_q1","Operating Margin Growth","Q−1 · 季度环比","growth"]]},
+  {name:"毛利率",view:"financial",columns:[["gross_margin_q0","Gross Margin","Q0 · 单季","percent"],["gross_margin_yoy_q0","Gross Margin Change","Q0 · 季度同比","pp"],["gross_margin_qoq_q0","Gross Margin Change","Q0 · 季度环比","pp"],["gross_margin_qoq_q1","Gross Margin Change","Q−1 · 季度环比","pp"]]},
+  {name:"营业利润率",view:"financial",columns:[["operating_margin_q0","Operating Margin","Q0 · 单季","percent"],["operating_margin_yoy_q0","Operating Margin Change","Q0 · 季度同比","pp"],["operating_margin_qoq_q0","Operating Margin Change","Q0 · 季度环比","pp"],["operating_margin_qoq_q1","Operating Margin Change","Q−1 · 季度环比","pp"]]},
   {name:"资本开支",view:"financial",columns:[["capex_q0","Capital Expenditure","Q0 · 单季","money"],["capex_yoy_q0","CapEx Growth","Q0 · 季度同比","growth"],["capex_qoq_q0","CapEx Growth","Q0 · 季度环比","growth"],["capex_qoq_q1","CapEx Growth","Q−1 · 季度环比","growth"]]}
 ];
 const groupIds=['security','price','eps','valuation','volume','revenue','debt','fcf','gross_margin','operating_margin','capex'];
@@ -283,11 +283,12 @@ function format(metric,type){
   if(type==="money"){const abs=Math.abs(n);return abs>=1e12?(n/1e12).toFixed(2)+"T":abs>=1e9?(n/1e9).toFixed(2)+"B":abs>=1e6?(n/1e6).toFixed(2)+"M":n.toLocaleString("en-US",{maximumFractionDigits:0});}
   if(type==="volume")return n.toLocaleString("en-US",{maximumFractionDigits:0});
   if(type==="growth")return (n>0?"+":"")+(n*100).toFixed(1)+"%";
+  if(type==="pp")return (n>0?"+":"")+(n*100).toFixed(1)+" pp";
   if(type==="percent")return (n*100).toFixed(2)+"%";
   if(type==="ratio")return n.toFixed(1)+"×";
   return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 }
-function shortMissing(metric){const reason=metric?.reason||"数据缺失";return reason.includes("不适用")?"不适用":reason.includes("收盘")?"待收盘":reason.includes("负值")?"基期非正":reason.includes("连续 4")?"预期不完整":"缺失";}
+function shortMissing(metric){const reason=metric?.reason||"数据缺失";return reason.includes("不适用")?"不适用":reason.includes("收盘")?"待收盘":reason.includes("为零")?"零基期":reason.includes("连续 4")?"预期不完整":"缺失";}
 function sortedTickers(){
   return [...tickers].sort((a,b)=>{
     if(!sortKey)return 0;
@@ -309,8 +310,8 @@ function render(){
     const record=records.get(t);const m=record?.metrics||{};
     return `<tr data-ticker="${escapeHTML(t)}" class="${watchlistFavorites.includes(t)?"watchlist-favorite":""}" tabindex="0" aria-label="查看 ${escapeHTML(t)} 数据详情"><td class="sticky"><div class="security-cell"><button class="favorite-heart" data-favorite="${escapeHTML(t)}" aria-pressed="${watchlistFavorites.includes(t)}" aria-label="${watchlistFavorites.includes(t)?"取消特别关注":"特别关注"} ${escapeHTML(t)}" ${readOnly||favoritePending.size>0?"disabled":""}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button><div class="security-label"><span class="symbol">${escapeHTML(t)}</span><div class="security-name" title="${escapeHTML(record?.name||"等待数据")}">${escapeHTML(record?.name||"等待数据")}</div></div><button class="remove" data-remove="${escapeHTML(t)}" aria-label="移除 ${escapeHTML(t)}">×</button></div></td>${cols.map(([key,,,type])=>{
       const metric=m[key];if(!record)return `<td><span class="skeleton"></span></td>`;
-      const value=format(metric,type);const color=value==="—"?"missing":type==="growth"?(metric.value>=0?"positive":"negative"):"";
-      return `<td data-group="${groups.find(g=>g.columns.some(c=>c[0]===key)).id}" data-column="${key}" ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}${fetchingTickers.has(t)?" cell-fetching":""}">${value}${value==="—"?`<span class="missing-label">${shortMissing(metric)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
+      const value=format(metric,type);const color=value==="—"?"missing":["growth","pp"].includes(type)&&!["debt","capex"].some(label=>key.startsWith(label+"_"))?(metric.value>=0?"positive":"negative"):"";
+      return `<td data-group="${groups.find(g=>g.columns.some(c=>c[0]===key)).id}" data-column="${key}" ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}${fetchingTickers.has(t)?" cell-fetching":""}">${value}${value==="—"?`<span class="missing-label">${escapeHTML(metric?.change_status||shortMissing(metric))}</span>`:metric?.change_status?`<span class="missing-label">${escapeHTML(metric.change_status)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
     }).join("")}<td class="status-cell">${escapeHTML(record?.quote_date||"—")}<div class="missing-label">${record?.partial?"行情已取得 · 正在补充数据":record?.refreshing?"缓存 · 正在更新":record?.stale?"旧快照 · 刷新失败":record?.errors?.length?"部分数据未取得":record?record.volume_complete?"完整交易日":"部分数据待确认":"读取中"}</div></td></tr>`;
   }).join(""):initialLoading?Array.from({length:8},()=>`<tr class="initial-loading"><td class="sticky"><span class="skeleton"></span></td>${cols.map(()=>`<td><span class="skeleton"></span></td>`).join("")}<td><span class="skeleton"></span></td></tr>`).join(""):`<tr class="empty-row"><td colspan="${cols.length+2}"></td></tr>`;
   patchRows(el("table-body"),watchHTML,"ticker");
@@ -328,18 +329,33 @@ function render(){
 async function getRecord(ticker,refresh=false,signal,onUpdate=()=>{}){
   return FinFeedCache.market(`/api/security/${encodeURIComponent(ticker)}?stream=1${refresh?"&refresh=1":""}`,onUpdate,{signal,refresh,staleTtl:7*86400000,validate:value=>value?.schema_version===8&&value.metrics?.price?.value!=null});
 }
+function normalizeFinancialComparisons(record){
+  for(const [key,metric] of Object.entries(record?.metrics||{})){
+    if(!/^(revenue|debt|fcf|capex|gross_margin|operating_margin)_(yoy_q0|qoq_q0|qoq_q1)$/.test(key)||metric.calculation_version===2)continue;
+    const a=metric.inputs?.current,b=metric.inputs?.previous_year_quarter??metric.inputs?.previous_quarter;
+    if(!Number.isFinite(a)||!Number.isFinite(b))continue;
+    const margin=key.startsWith('gross_margin_')||key.startsWith('operating_margin_');
+    metric.value=margin?a-b:b===0?null:(a-b)/Math.abs(b);
+    metric.reason=metric.value===null?'比较财季为零，百分比变化无法计算':null;
+    metric.change_status=margin?null:b===0?(a>0?'由零转正':a<0?'由零转负':'持平'):b<0?(a>0?'转正':a===0?'归零':a>b?'负值收窄':a<b?'负值扩大':'持平'):a<0?'转负':null;
+    metric.basis=margin?'利润率变化 = 本期利润率 − 比较期利润率；显示为百分点（pp）':'金额变化率 =（本期 − 比较期）/ |比较期|；零基期无法计算百分比';
+    metric.change_unit=margin?'pp':'%';metric.calculation_version=2;
+  }
+  return record;
+}
 function seedQuoteSnapshots(quotes={}){
   for(const ticker of trackedTickers()){
     const key=`request:/api/security/${encodeURIComponent(ticker)}`;
     const local=FinFeedCache.read(key,7*86400000)?.data;
     const candidates=[records.get(ticker),local,quotes[ticker]].filter(value=>value?.schema_version===8&&value.metrics?.price?.value!=null);
     candidates.sort((a,b)=>(Date.parse(b.fetched_at||b.retrieved_at)||0)-(Date.parse(a.fetched_at||a.retrieved_at)||0));
-    const latest=candidates[0];if(!latest)continue;
+    const latest=normalizeFinancialComparisons(candidates[0]);if(!latest)continue;
     records.set(ticker,{...latest,cached:true,refreshing:Date.now()-(Date.parse(latest.fetched_at||latest.retrieved_at)||0)>=60000});
     if(!latest.stale&&!latest.partial)FinFeedCache.write(key,latest);
   }
 }
 function acceptRecord(ticker,incoming){
+  normalizeFinancialComparisons(incoming);
   const saved=records.get(ticker);
   const savedTime=Date.parse(saved?.fetched_at||saved?.retrieved_at||''),incomingTime=Date.parse(incoming?.fetched_at||incoming?.retrieved_at||'');
   if(saved?.metrics?.price?.value!=null&&incoming?.metrics?.price?.value!=null&&Number.isFinite(savedTime)&&Number.isFinite(incomingTime)&&incomingTime<savedTime)return;

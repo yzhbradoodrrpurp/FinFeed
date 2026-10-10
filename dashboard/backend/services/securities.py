@@ -16,7 +16,7 @@ from backend.providers.yahoo.diagnostic import balance_with_diagnostics, provide
 from backend.providers.yahoo.probe import isolated_probe, REVISION as PROBE_REVISION
 from backend.providers.alpha_vantage import estimate_data, next_four_eps, SOURCE as ALPHA_SOURCE
 
-from backend.domain.metrics import number, prior_quarter_period, trailing_pe, volume_metrics, qoq
+from backend.domain.metrics import number, prior_quarter_period, trailing_pe, volume_metrics, qoq, change_status
 
 from backend.paths import DASHBOARD_ROOT as ROOT
 CACHE = ROOT / ".cache"
@@ -79,7 +79,7 @@ def frame_values(frame, labels, currency, source_url):
     return output
 
 
-def growth(series, period, yearly=False):
+def growth(series, period, yearly=False, margin=False):
     if not period or period not in series:
         return empty_metric("缺少该财季数据", period=period)
     if yearly:
@@ -90,12 +90,17 @@ def growth(series, period, yearly=False):
         old = prior_quarter_period(period, series)
     a = series[period]
     b = series.get(old, {})
-    value, reason = qoq(a["value"], b.get("value"))
+    current, previous = number(a["value"]), number(b.get("value"))
+    value, reason = qoq(current, previous)
+    if margin and current is not None and previous is not None:
+        value, reason = current - previous, None
     if yearly and reason:
         reason = reason.replace("上一财季", "去年同财季")
     cached = [entry for entry in (a, b) if entry.get("historical_cache")]
     return {"value": value, "reason": reason, "period": period, "comparison_period": old,
-            "basis": ("季度同比 = 本期 / 去年同财季 − 1；同比财季间隔须为 350–380 天，基期必须大于零" if yearly else "季度环比 = 本期 / 上一财季 − 1；上一财季必须大于零"), "source": a["source"],
+            "basis": ("利润率变化 = 本期利润率 − 比较期利润率；显示为百分点（pp）" if margin else "金额变化率 =（本期 − 比较期）/ |比较期|；零基期无法计算百分比") + ("；同比财季间隔须为 350–380 天" if yearly else "；环比财季间隔须为 65–120 天"),
+            "change_status": None if margin else change_status(current, previous),
+            "change_unit": "pp" if margin else "%", "calculation_version": 2, "source": a["source"],
             "historical_cache": bool(cached),
             "cache_fetched_at": min((entry["fetched_at"] for entry in cached if entry.get("fetched_at")), default=None),
             "inputs": {"current": a["value"], "previous_year_quarter" if yearly else "previous_quarter": b.get("value")}}
@@ -134,7 +139,7 @@ def add_quarter_metrics(result):
     for label in ("gross_margin", "operating_margin", "capex"):
         values = series.get(label)
         for suffix, period, yearly in (("yoy_q0", q0, True), ("qoq_q0", q0, False), ("qoq_q1", q1, False)):
-            result["metrics"][f"{label}_{suffix}"] = growth(values, period, yearly=yearly) if values is not None else empty_metric(
+            result["metrics"][f"{label}_{suffix}"] = growth(values, period, yearly=yearly, margin=label.endswith("margin")) if values is not None else empty_metric(
                 result["metrics"].get(f"{label}_q0", {}).get("reason") or "数据源未提供该财季值", period=period)
     return result
 
@@ -149,6 +154,10 @@ def add_yearly_growth(result):
         series = result.get("series", {}).get(label)
         if series is not None:
             result["metrics"][key] = growth(series, result.get("quarter_0"), yearly=True)
+            q0 = result.get("quarter_0")
+            q1 = result.get("quarter_1") or (prior_quarter_period(q0, series) if q0 else None)
+            for suffix, period in (("qoq_q0", q0), ("qoq_q1", q1)):
+                result["metrics"][f"{label}_{suffix}"] = growth(series, period)
         elif key not in result["metrics"]:
             result["metrics"][key] = empty_metric(result["metrics"].get(f"{label}_q0", {}).get("reason") or "缺少同比财季数据")
     return add_quarter_metrics(result)

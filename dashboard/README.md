@@ -1,190 +1,74 @@
-> 更新于 2026-10-10（北京时间）。当前结构和统一验证命令见 [架构说明](docs/architecture.md)，生产部署见 [部署说明](docs/deployment.md)及 [服务器运维说明](docs/server-deployment.md)。带历史日期的实测记录仅供追溯。
+# FinFeed Application Guide
 
-# FinFeed 自选股与持仓网站
+This document describes current behavior; operational details are in [the technical documentation](docs/architecture.md). Documentation is English; the application interface and alert bodies currently remain primarily Chinese.
 
-邮件提醒入口为“我的账户”；Gmail 配置、服务器调度及迁移验收见 [邮件提醒说明](docs/email-notifications.md)。
+## Views and refresh behavior
 
-应用工厂为 `backend.app:create_app()`，生产后端在 `47.114.43.129` 的 `/mnt/data/users/shx/FinFeed` 独立运行。使用 当前服务器项目内 PostgreSQL 保存记录及应用缓存，账户数据访问和修改仍要求 Passkey 登录。不提供无登录的本机服务或浏览器本地记录模式。
+| View | Content | Normal browser polling |
+| --- | --- | --- |
+| Home | S&P 500, Nasdaq Composite, Dow Jones, eleven sector ETFs | Every minute |
+| Watchlist / Portfolio | Quotes, financial statements, quarterly forecasts, valuation | Every minute |
+| Macro | NFP, PCE, DXY, ten-year Treasury yields | Every hour |
+| Polymarket | Meeting-specific outcome prices and history | Every minute |
+| Whale Holdings | Supported institutions' SEC 13F reports | Every hour |
+| News | Company earnings calls and SEC filing indexes | Every hour |
 
-线上入口：<https://finfeed-research.vercel.app>；后端 HTTPS 入口：<https://finfeed.tail03a68f.ts.net>。Vercel 从 GitHub `main` 自动构建前端并转发 `/api/*`；后端服务器使用代码快照，需要单独更新部署，不会随 Git push 自动更新。迁移分支 `h20-backend` 已合并到 `main`。原 Render 服务暂保留作为回滚备用，不是当前生产转发目标。
+Background tabs can be throttled; due requests resume when the browser returns. Email monitoring is independent of open pages. Polling frequency is not upstream publication frequency.
 
-登录继续使用 Vercel 域名绑定的 Passkey；账户、持仓、缓存及邮件设置已完整迁移到项目 PostgreSQL，无需重新注册或绑定邮箱。旧 Render 域名 Passkey 的迁移入口已移除。当前允许来源、凭据绑定和维护步骤见部署说明。
+## Accounts and access
 
-表格进入时先显示列标题和占位动画，标的记录返回后显示 ticker 与已有公司名称；数据请求期间对应单元格显示轻微流动效果。“我的账户”用户列表首次加载显示占位动画，窗口打开期间每 60 秒自动刷新，关闭时停止。
+Passkeys use the production Vercel origin and RP ID. New accounts require a single-use invitation, valid for seven days. Names are fixed after registration; each account supports up to ten Passkeys. A recently authenticated user can add a backup Passkey within five minutes of login.
 
-登录后的页面打开期间，各视图独立更新：Home 指数和板块、Watchlist/Portfolio 行情、Polymarket 每分钟检查；Macro、巨鲸、News 每小时检查。后台标签页可能被浏览器节流，恢复后补查到期数据。后端共享刷新队列合并相同请求；行情队列并发 4，浏览器 Watchlist 并发 4。失败保留上次成功快照并标记旧数据，不把旧值标作新报价。关闭网页后，独立邮件调度仍会检查已启用的提醒。
+Every authenticated user can view other enabled accounts' watchlists and complete portfolios, including quantities and costs. Only the owner can edit records. This is authenticated sharing, not private visibility between registered users. Database administrators can access records; they are not end-to-end encrypted.
 
-## 刷新频率
+The administrator can disable and restore accounts or revoke and restore credentials. Disabling preserves records but hides shared state and invalidates sessions. Self-removal and removal of the final administrator credential are prevented.
 
-- 行情每 60 秒请求一次：价格、市值、52 周高低点、成交量及量比。
-- 季度财务、增长率、实际 EPS 与 trailing EPS、Yahoo 盈利预测与行情一起每分钟检查；频率不表示上游每分钟发布新财报。邮件任务按自己的调度间隔运行。
-- P/E 使用最近已披露季度实际 EPS，Forward P/E 使用紧接着的下一财季预测 EPS；两列都按 `价格 /（单季 EPS × 4）` 简单年化，每分钟重新计算。单季乘以 4 不代表全年盈利预测，也不等于 LTM / NTM。缺少下一财季、EPS 非正或币种不同均明确留空。Forward EPS 与 Forward P/E 使用同一预测期，优先 Yahoo（通过 yfinance），缺失或财季不匹配时使用 Alpha Vantage。
-- Alpha Vantage Key 仅从后端私密环境变量 `ALPHAVANTAGE_API_KEY` 读取。预测响应和每日配额计数保存在私人数据库；按 UTC 日设置 25 次请求上限，供应商限制会明确处理。密钥不传入浏览器或来源链接。
-- 更新失败保留已有成功快照并标记旧数据；从未取得的字段留空。详情分别显示行情、财务和预测检索时间。
-- 2026-10-04 实测 Alpha Vantage AAPL 响应不足以计算未来四季 NTM；后续按用户要求改为最近实际季度 / 紧接下一预测季度的简单年化估值。
+## Watchlists and portfolios
 
-## 数据来源与限制（核验于 2026-10-04，Asia/Shanghai）
+Watchlists support persistent manual ordering and temporary column sorting. Holdings are separate from watchlists; removing a watched symbol does not delete a position. The union is limited to 128 distinct symbols per account. Each position is an aggregate quantity, average unit cost, and cost currency, not a transaction ledger.
 
-- 行情、财务和分析师预期：Yahoo Finance，经 [yfinance](https://ranaroussi.github.io/yfinance/) 读取。该项目并非 Yahoo 官方 SDK，数据的使用范围受供应商条款约束；不承诺实时、持续可用或覆盖所有市场。
-- 原始来源入口：[SEC EDGAR](https://www.sec.gov/edgar/search/)、[SEC API 文档](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)。当前网络对 SEC Company Facts 的实际测试返回 HTTP 403，所以第一版使用 C 级 Yahoo 聚合财务值，不把它们标为直接提取的 SEC 数据。
-- 每个标的提供北京时间检索时间、报价原始 UTC 时间、交易所时区、财季结束日期和逐字段来源。申报日期未从免费源可靠获得，因此明确缺失并提供 SEC 核对入口；数据期末不是公告日期。
-- ETF 的公司 EPS、公司债务、营收和 FCF 不适用；ETF 的 P/E 也未用持仓加权或基金商估值替代。`BTC` 是 Grayscale Bitcoin Mini Trust 的 ETF 代码；BTC 现货应使用 `BTC-USD`，两者不能混用。
-- 海外上市证券需输入 Yahoo 的完整代码，例如 `000660.KS`。报价币种和财务币种分别显示，金额不自动换成美元。不得把不同股票类别 / ADR / 本地上市证券静默合并。
-
-## Home 与 Macro 图表
-
-Home 展示三个美国主要指数及 S&P 500 的 11 个 Select Sector SPDR 板块 ETF：XLC、XLY、XLP、XLE、XLF、XLV、XLI、XLK、XLB、XLRE、XLU。报价每分钟检查，历史曲线为最近三年日线，可悬停、触摸或用方向键查看；收盘价不做股息总回报复权，当日未收盘值可能变化。卡片右上角手柄支持拖动排序、位置过渡及键盘移动；板块排序保存在当前浏览器的 localStorage（不属于账户私人记录），行情更新不覆盖顺序。
-
-Macro 展示 NFP、PCE、DXY 和十年美债，另有 Polymarket 对具体美联储会议的市场定价图。图表支持交互，不显示点击后的蓝色焦点框。Polymarket 仅为市场隐含预期，十年美债 H.15 日度收益率不是盘中行情；个人预警线不是官方风险阈值。数据来源、币种、时间和缺失状态继续显示。
-
-## 持仓视图
-
-切换到“Portfolio · 持仓”，点击“添加持仓”，每个 Ticker 填写总数量、每单位平均成本和成本币种。支持小数数量、编辑和删除记录；同一个 Ticker 只保存一条汇总持仓，已有记录通过“编辑”更新。持仓与 Watchlist 独立，移除自选股不会删除持仓，也不会停止该持仓行情更新。两者合计最多 128 个不同标的，每分钟共用同一次行情刷新。
-
-计算口径：成本总额 = 数量 × 平均成本；市值 = 数量 × 最近常规时段价格；未实现盈亏 = 市值 − 成本总额；收益率 = 未实现盈亏 / 成本总额。零成本持仓的金额盈亏仍可计算，收益率不适用。不同币种分别汇总，不自动换汇。报价币种不符或报价缺失时，盈亏留空；汇总明确标出已估值项数，收益率仅使用已估值持仓的成本，仓位占比仅在同币种已估值持仓内计算。行情刷新失败时保留已有成功报价并显示旧数据状态；没有可用报价的持仓估值留空。
-
-Watchlist（含手动排序）和持仓通过登录后的 `/api/state` 保存到私人数据库，每次修改保留历史备份。页面不使用 localStorage 保存或恢复记录。可在“我的账户”导出备份、导入记录文件。平均成本按券商口径填写，买卖、拆股后需更新数量和成本；不记录交易流水，不计算已实现盈亏、股息、现金余额或汇率收益。
-
-## 手动排列 Ticker
-
-点击“手动排序”，拖动列表中的标的，或使用“上移 / 下移”。调整立即保存到私人数据库，页面重开和每分钟数据刷新都会保留顺序。点击列名仍可临时按指标排序；再点击“手动排序”恢复自定义顺序。新增标的追加到末尾。
-
-## 指标口径
-
-| 指标 | 数据或计算方式 |
-| --- | --- |
-| Ticker / Name / Market Cap | Yahoo 证券信息和公司市值；ETF 不用 AUM 替代市值 |
-| Last Price / 52W High / Low | 常规交易时段最近成交价和供应商 52 周高低点，不混入盘后价 |
-| Diluted EPS Q0 / Q−1 | 最新已披露财季与紧接的上一财季利润表 `DilutedEPS`；通常为 GAAP，实际取供应商口径 |
-| Forward EPS Q0 | 紧接最近已披露财季的分析师平均 EPS；根据财季结束日期匹配 Yahoo 预测，缺失时尝试 Alpha Vantage。可能为调整后 EPS，提供预测财季与分析师数量 |
-| P/E · 已披露季度年化 | Last Price /（最近已披露单季 diluted EPS × 4）；EPS≤0 或币种不同时不适用 |
-| Forward P/E · 下一季度年化 | Last Price /（紧接下一财季分析师平均 EPS × 4）；预测可能采用调整后盈利，不保证与实际 GAAP 口径相同 |
-| Avg Volume 10 | 比较日以前 10 个完整交易日成交股数均值，排除比较日本身 |
-| Volume vs. 10 | 比较日完整日成交股数 / 此前 10 日均量；盘中待收盘，非交易日明确显示最近交易日期 |
-| Revenue Q0 | 最新披露单季 TotalRevenue |
-| Debt Q0 | 最新披露财季末 TotalDebt；取供应商分类，租赁负债等口径跨公司可能不同 |
-| FCF Q0 | 单季 OperatingCashFlow − 单季资本支出（支出取正数）；计算的非 GAAP 指标 |
-| 各项 Growth Q0 / Q−1 | 全部为季度环比（QoQ）：Q0 / Q−1 − 1，以及 Q−1 / Q−2 − 1；营收和 FCF 比较单季金额，债务比较财季末存量；上一财季≤0或缺失时不计算 |
-
-Yahoo 日线请求 `auto_adjust=False`，不做股息总回报调整，拆股处理遵循供应商。Q0 和 Q−1 的季度环比只需最近三个连续财季。财季间隔要求为 65–120 天，缺少上一财季时不跨季替代；绝不将缺失值设为零，也不混用不同财务口径。缓存 schema 已升级，旧版同比快照会失效并重新读取。
-
-表格点击行可查看计算输入、日期、币种、来源和缺失原因。网页里的“本季度”统一解释为最近已披露财季，并不假设当前日历季度已经发布。
-
-## 验证与结构
-
-```sh
-cd dashboard
-.venv/bin/python tests/run.py
-node --check frontend/js/core/app.js
+```text
+Cost = quantity × average unit cost
+Market value = quantity × latest regular-session price
+Unrealized P/L = market value − cost
+Return = unrealized P/L ÷ cost
 ```
 
-- `backend/app.py`：网站服务、Passkey 登录及接口权限检查。
-- `backend/storage/store.py`：私人数据库、历史记录和缓存。
-- `backend/services/securities.py`：数据源适配、日期与币种、逐项来源、缓存和失败恢复。
-- `backend/domain/metrics.py`：季度环比、上一财季匹配、P/E 和完整日量比。
-- `frontend/`：原生网页，不依赖前端构建。
+Zero-cost returns are unavailable. Missing quotes or differing quote/cost currencies leave valuation unavailable. Totals are grouped by currency without FX conversion; allocation uses valued holdings in the same currency. Closed trades, dividends, cash balances, and realized gains are not calculated.
 
-后续可接 SEC 财务解析或有授权的四季预测 API。公开部署之前需要重新核对数据许可、服务器访问控制和缓存范围；当前版本不作为对外公共数据接口。
+State saves use authenticated `/api/state`, with revision and transaction controls and the latest fifty prior states retained. Import/export is available in the account dialog. Browser localStorage is not the source of account records.
 
-2026-10-03 本地验证：8 个默认标的全部取得真实行情；另外检查了 ASML 的币种差异和 MSFT 的添加 / 移除 / 持久化。5 项财务边界测试通过；浏览器完成了桌面 / 390px 小屏检查、添加格式校验、行详情、视图切换和排序验证，未发现控制台错误。页面内表格可横向滚动，小屏正文没有横向溢出。可选 WebMCP 功能仅在浏览器支持时注册；本次验证浏览器没有可用的 WebMCP 上下文，该项未验证。
+## Financial definitions
 
-## 多账户与共享查看
+| Field | Definition |
+| --- | --- |
+| Price | Latest regular-session quote; not a blended after-hours price |
+| Market capitalization | Provider company market cap; ETF AUM is not substituted |
+| Actual diluted EPS | Latest reported quarter and adjacent preceding quarter |
+| Forward EPS | Analyst estimate for the quarter immediately after the latest reported quarter |
+| P/E | Price / (latest actual quarterly EPS × 4) |
+| Forward P/E | Price / (next-quarter estimated EPS × 4) |
+| Revenue | Reported quarterly revenue |
+| Debt | Quarter-end total debt under provider classification |
+| Free cash flow | Quarterly operating cash flow minus positive capital expenditure |
+| Quarterly growth | Current / adjacent previous quarter − 1 |
+| Average volume | Mean of the ten complete trading days before the comparison day |
+| Relative volume | Complete comparison-day volume / that preceding mean |
 
-登录页点击“通过邀请码创建账户”，填写有效邀请码和名称并保存 Passkey。各账户独立保存 Watchlist、Portfolio 和历史备份；原始账户的密钥、会话和记录自动迁移并保留。每个账户最多绑定 10 把 Passkey，账户名称创建后不可修改。所有登录用户均可在“我的账户”生成单次邀请码，有效期 7 天，邀请码在 Passkey 验证成功后原子地消费，数据库仅保存其哈希。
+Annualizing a single quarter is not LTM earnings or an NTM forecast. Actual EPS may follow GAAP while forecasts may be adjusted; the denominator bases can differ. Nonpositive EPS, differing currencies, unavailable adjacent quarters, and invalid denominators are explicitly unavailable. Financial quarters must be consecutive, with a 65–120 day interval; missing values are not zero. Volume comparisons wait for a complete day rather than comparing partial-day volume with complete days.
 
-页面“查看账户”可切换到其他已注册账户。所有登录用户可以查看其他账户的自选股及完整持仓记录（包括数量、平均成本和盈亏），只有记录所属账户能修改。未登录不能访问账户目录或记录。写入接口仅从服务器验证的登录会话确定账户，不接受客户端指定其他记录所有者；跨账户 PUT 请求被拒绝。
+Company financial fields are not applied to ETFs. Use full exchange-qualified Yahoo symbols for international listings. `BTC` is an ETF ticker; Bitcoin spot is `BTC-USD`.
 
-行情和财务缓存按 ticker 共用，不包含持仓数量或成本。财务和行情每分钟检查，失败保留带检索时间的成功快照；浏览器 Watchlist 并发 4，后端行情队列并发 4。账户自选股和持仓合计最多 128 个不同标的。
+## Charts and research boundaries
 
-已有登录会话直接进入网站；会话失效后，登录页自动发起 Passkey 验证，仍需用户在设备上确认。新用户可直接访问 `/login?register=1`，避免登录验证弹窗。
+Home sector symbols are XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLK, XLB, XLRE, and XLU. Charts cover three years of daily closes, with `auto_adjust=False`; they are not dividend total-return series. Split handling follows the provider and the current day can change before close. Sector order is a browser preference, preserved through quote refreshes. Handles support dragging and keyboard moves; charts support pointer, touch, and keyboard inspection.
 
-原始 Liam 账户为管理员。所有登录用户可生成邀请码。管理员可停用其他账户、撤销 Passkey，并从管理面板恢复。停用账户隐藏其共享记录并撤销会话，记录保留；撤销 Passkey 也会撤销对应账户的现有会话。禁止删除管理员自己及最后一把管理员 Passkey。普通用户无权调用管理接口。
+NFP employment changes are derived from monthly PAYEMS levels. PCE monthly and annual growth are derived from price indexes. The previous observation reflects current revisions; pre-release consensus and original unrevised vintages are not supplied. DXY is Yahoo `DX-Y.NYB`, not a broad trade-weighted dollar index. DGS10 is H.15 daily constant-maturity yield, not an intraday bond quote. The application default observation line is 5.1%; each email subscriber can set their own threshold.
 
-## 性能优化（2026-10-05，Asia/Shanghai）
+Polymarket prices describe a specific contract and meeting, not an official commitment or QE forecast. Institution comparisons use quarterly 13F holdings, not trade times or a complete fund portfolio. News contains indexes and original links, not stored article bodies.
 
-- 账户状态、账户目录、当前账户记录并行加载；接口继续独立验证登录权限。
-- 请求完成后按浏览器动画帧合并渲染，保留现有表格行和单元格，只更新变化的内容；隐藏视图不重建，保留涨跌闪色与缺失值处理。
-- PostgreSQL 使用 1–4 条连接的小型池，归还连接前提交或回滚事务，取连接时检查可用性；连接使用 TLS，关闭预备语句，私人 schema 隔离保持。
-- 每个 ticker 继续限制并发和合并请求；60 秒内有效行情供不同账户复用，季度财务随分钟刷新一同检查；失败保留带日期的成功快照并标记旧数据。
-- 该次历史测试使用免费 Render；当前服务器不采用 Render 的空闲休眠机制，仍受用户网络、代理和 Yahoo 上游延迟影响。
+## Email and interface behavior
 
-## Vercel 前端与 服务器后端
+The account dialog loads notification settings before showing binding controls, avoiding a false unbound state. Verified accounts hide the verification form. Sending a code starts a sixty-second countdown displaying only the number and `s`; empty required fields disable their actions. Verification, unbinding, invitation generation, login/logout, and notification saving provide transition feedback. Saving produces a disabled saved-state button; editing categories or the threshold re-enables saving.
 
-Vercel 项目从同一 GitHub 仓库的 `main` 分支导入，Root Directory 为 `frontend`，Framework Preset 为 Other。
-`frontend/vercel.json` 使用 `node build.cjs` 构建静态页面到 `dist`，并将 `/api/*` 转发至 h20 的 HTTPS 入口。
-静态构建不包含数据库连接、Yahoo Cookie、代理凭据或 API Key；这些保存在 h20 的 `.private/backend.json`。
-`FRONTEND_ORIGIN=https://finfeed-research.vercel.app`，`PUBLIC_ORIGIN=https://finfeed.tail03a68f.ts.net`；不能改成访问者传入的 Host。
-
-已有 Passkey 仍验证 Vercel 的 origin 和 RP ID。数据库迁移保留原凭据和账户记录，没有转移用户私钥。服务端 Cookie、Origin 校验和账户写入权限继续生效，预览域名不自动加入生产允许来源。
-
-前端发布不等于后端代码发布。代码快照更新、监督进程、独立代理和回滚步骤见 [服务器运维说明](docs/server-deployment.md)。
-
-### 请求失败日志
-
-后端将失败写入 stderr 的 JSON 日志；h20 上查看 `/mnt/data/users/shx/FinFeed/.runtime/backend.log`，搜索
-`request_failure`。Render 备用部署仍可通过 **Logs → Application logs** 查看。覆盖行情、财务、预测、宏观数据与日历、Polymarket、
-登录/账户等后端 API 的 HTTP 错误，以及数据库异常；空数据和无效响应也记录。
-日志包含 UTC 时间、来源、操作/路由、ticker 或序列、异常类型、HTTP 状态及可用的耗时。
-返回旧快照时仍记录本次失败。客户端 HTTP/网络失败会尽力上报，主动取消不算失败；
-后端完全不可达时，上报也可能失败。客户端和后端 HTTP 请求通过请求 ID 关联。
-不记录请求正文、完整 URL、查询参数、Cookie 或账户标识，异常文本中的凭据脱敏。
-h20 日志保存在项目目录，当前监督程序没有自动轮转；需按项目范围管理日志空间。不会补录部署前没有保存的失败。
-
-### 分阶段加载和刷新缓存
-
-Home 的三个指数、Macro 的四个指标和证券接口支持 `?stream=1` 的 NDJSON 响应。
-每个响应独立显示缓存、行情阶段与最终结果；证券日线先完成时即可先显示价格，
-财务读取完成后补充指标。旧客户端仍可使用普通 JSON。
-Home 和 Macro 成功快照写入共享数据库，部署重启后继续使用。
-数据库缓存有最多 1024 项、60 秒的内存热缓存；账户初始化批量读取行情时预热。
-
-每个服务进程同一市场数据键只启动一个刷新任务。失败重试间隔为
-60、120、240、480、900 秒，成功后重置；错误不会用空字段覆盖已有成功快照。
-浏览器使用 Web Locks 和公共市场缓存协调多个标签页，账户列表、持仓、凭据不保存
-到该缓存；不支持 Web Locks 的浏览器仍由后端合并上游刷新。
-
-单次 NDJSON 订阅最多等待 25 秒；任务仍在排队或运行时返回 `pending`，浏览器每隔 1 秒重新订阅同一任务（不再强制创建刷新），总等待上限 125 秒。
-Python 无法安全强制终止已进入第三方库的线程；超时后该任务可继续补全缓存，
-新的请求复用同一任务，避免重复启动。Gunicorn 的 worker timeout 是进程健康保护，
-不能用它代替请求时限。Polymarket 历史采样与补全策略保持不变。
-
-### SEC 13F 巨鲸持仓
-
-`/api/whales/<机构>` 支持 Berkshire（1067983）、Pershing Square（1336528）、Appaloosa（1656456）、ARK（1697748）、Coatue（1135730）、Altimeter（1541617）、Tiger Global（1167483）、Polar（1837309）、Alkeon（1230239）、Westfield（1177719）、Light Street（1569049）、HMI（1469026）、Atika（1599731）、Dorsey（1671657）、AltaRock（1631014）和 Broad Run（1568621）。从 SEC submissions API 定位最近披露季度及相邻上季度的 13F-HR，再解析 EDGAR 完整申报文件中的 XML。同一 CUSIP、证券类别、期权方向和数量类型的记录合并，按季度末美元市值排序；占比为该证券市值除以本份披露市值合计。不猜股票代码，不把市值除股数称为成本。2023-01-03 起市值单位为美元，此前为千美元。封面条目数必须一致，明细市值之和必须与封面总额严格相等，不允许取整误差容差、不补造或调整明细；不一致时拒绝更新并记录封面、明细和差额。合计和占比使用通过核对的明细之和；重述修订替换，新增持仓修订追加。
-
-账户首屏读取后，十六家机构通过两个并发请求预加载，每家两季度并行读取，最新季度先完成即可显示。机构列表点击进入详情，分最新季度、上季度和数量变化三个标签；比较以 CUSIP、期权方向和数量类型匹配，包含退出持仓。ARK 是管理人季度 13F 汇总，不是单只 ETF 的每日持仓。没有平均成本或市值除股数的计算。每家独立返回；成功快照在共享数据库及浏览器缓存，每 1 小时检查更新，失败保留旧数据并记录 SEC 请求失败原因。单次订阅与后台任务分离；所有 SEC 请求共享每秒不超过 4 次的限速器。可用 `SEC_USER_AGENT` 指定项目名及有效联系邮箱，`SEC_PROXY_URL` 指定可选代理；默认从后端直接请求 SEC。13F 是季度末快照，通常季末后 45 天内披露，不包含完整组合、空头或实际买入成本。
-
-关注列表新增 Q0 营收、债务及 FCF 季度同比：本期 ÷ 去年同财季 − 1，比较期相隔 350–380 天（兼容 52/53 周财年），基期为零、负值或缺失时不计算。营收和 FCF 为单季金额，债务为财季末存量。复用已有季度序列及有效缓存，不增加 Yahoo 请求；Yahoo 通常最多返回五个季度，不保证指标完整。
-
-巨鲸机构列表按研究观察重点分为长期价值与优质企业、科技与创新成长、跨行业成长、逆向与困境投资四组；每家仅显示一次，风格可以交叉，分类不是排名或完整策略描述。机构及季度加载仍独立并发。
-
-巨鲸列表采用标题右侧分类下拉菜单、下方双列机构卡片（窄屏单列）；可选全部机构或任一分类，筛选只在浏览器执行，不触发额外数据请求。
-
-### 新闻视图
-
-`News` 默认显示全部 ticker、全部新闻类型，两组筛选均支持“全部”，切换 ticker 保留类型筛选。当前登录用户的 ticker 列表按账户 ID 保存在 sessionStorage（最多 7 天，关闭标签页清除）；自己的 Watchlist 读取或保存成功后同步列表。公开新闻结果保存在本地和数据库，进入时先显示成功快照，数据库快照一次批量读取，再按 1 小时有效期获取新结果；定时或手动刷新绕过有效期。刷新失败保留已有成功内容，较旧响应不覆盖新结果；失败来源一分钟后补重试一次，不重复获取成功来源。新闻缓存兼容原有索引版本，浏览器统一应用最新两次财季披露筛选。新闻请求的登录和观察列表权限通过同一次数据库查询核验。`News` 仅读取登录账户自己的 watchlist，不受 `?user=` 或当前正在查看的账户影响。浏览器最多同时获取 4 个 ticker/source 请求，SEC 披露与财报电话会独立逐条返回；后台合并相同请求，缓存 1 小时。登录后即预取新闻，每小时自动检查，不受当前视图或标签页可见性限制。更新期间保留已有列表，读取失败保留已取得结果；重新检查时重读自己的 watchlist。电话会只展示公司最新已披露财季及前一财季（跨年按相邻财季）；SEC 索引缺少所属财季，按最近两次原始 10-Q／10-K 的申报日确定窗口，保留较早一次申报日至今的文件，修订报告不作为新季度。新季度报告取得后窗口自动前移；不使用当前自然季度筛选，不补造所属财季。浏览器对成功缓存和失败兜底内容同样套用筛选。按发布时间排序，同链接合并 ticker；不保存文章或电话会全文。电话会通过 Yahoo `earningsCallTranscripts` 模块读取标题、财季、时间和文字稿链接；日期为电话会时间，非文字稿更新时间。未覆盖的标的（如部分 ETF）不补造记录。不再获取或展示新闻稿，旧的新闻稿缓存也不参与展示。两个来源均设置 6 秒请求超时，首次失败后切换 Yahoo 主机有限重试一次；HTTP 和响应结构错误不记为成功的空列表。SEC 索引来自 Yahoo secFilings，链接优先回到 SEC 原文件。申报日不补造具体时刻；新闻时间显示北京时间。供应商失败明确显示错误，不解释为零条新闻。
-
-Watchlist / Portfolio 在登录并取得账户标的后，优先显示最近成功的数据库或浏览器公共行情快照（浏览器保留最多 7 天，按 fetched_at 选择较新版本）；60 秒新鲜度不变，超过后后台更新。旧快照显示正在更新，失败保留旧数据并标注，不存储账户名单或凭据到行情缓存。数据库完整行情快照仍在成功获取后写入。
-
-定时更新并发执行，各视图内部按指标、机构或 ticker/source 并发获取；新闻保持最多 4 个请求的并发限制。定时请求绕过此前成功缓存，同一批请求与刚完成 5 秒内的请求共享更新结果；已有快照只用于先显示与失败兜底，失败或部分返回不覆盖成功缓存。供应商发布时间、延迟与配额仍生效，获取频率不表示数据每分钟发生变化。Alpha Vantage 备用预测受每日调用预算约束。
-
-缓存读取与强制更新分开：首次加载优先复用有效本地或服务器快照，只补取到期、缺失的数据；每分钟／每小时的定时更新和手动刷新仍获取新结果。所有本地快照写入检查检索时间，较旧响应不能覆盖较新快照；进行中的、部分返回及失败快照不替换成功缓存。持仓估值、新闻筛选与机构持仓分类仍在浏览器计算，账户和原始共享数据继续保留在服务器。
-
-### 数据库故障恢复
-
-连接池等待与连接建立限制为 8 秒，每次 PostgreSQL 事务设置查询超时 8 秒、锁等待 3 秒及空闲事务超时 15 秒。另在客户端限制已建立连接每次网络响应等待为 8 秒，覆盖连接池检查、查询及提交/回滚；TCP 仍可连接但数据库不再响应时，也会关闭失效连接，让连接池补建，避免永久占用名额。不自动重放结果未知的写操作。数据库不可用时返回 503 和 Retry-After，日志记录两个连接池的容量、可用数及等待数（不记录凭据），前端登录检查显示错误并重试，保留已有会话，不将临时数据库故障当作退出登录。`test_store_connection.py` 用本地 PostgreSQL 协议桩模拟无响应连接，验证查询超时、写操作不重放和连接池恢复。
-
-账户会话与私人记录保留独立连接池（4 个连接），公共行情与新闻缓存使用另一个连接池（2 个连接）。缓存繁忙或读取失败不阻断账户记录和新闻 ticker 列表，来源数据仍独立获取；未取得的报价保持缺失，不补造。
-
-### Worker-local connection pools
-
-`start_cloud.py` 通过 `cloud_worker.py` 启动 Gunicorn，强制关闭应用预加载（也覆盖环境变量 `GUNICORN_CMD_ARGS=--preload`）。PostgreSQL 连接池必须在处理请求的 worker 内创建：fork 会复制连接与队列，却不会复制连接池后台线程，导致初始连接失效后无法补建、缓存池永久排队。日志保留创建/当前进程 ID 和存活线程数用于核对。缓存数据库读写失败不再阻断新行情获取或把成功抓取的新行情退回旧快照。
-
-
-### 首屏与刷新隔离（2026-10-08）
-
-- 登录成功后优先取得 `/api/state` 的账户记录和批量报价快照，立即渲染；当前公共视图随后启动，其他视图按 1.5 秒间隔错峰启动。账户目录独立读取。隐藏视图仍自动刷新，Watchlist/Portfolio 每分钟、Macro/Whales/News 每小时检查；正在运行的一轮不叠加第二轮。
-- 单个 Gunicorn worker 使用 64 个 HTTP 线程。共享刷新队列按类型隔离：行情 4、新闻 2、巨鲸 2、Macro 2、Home 2 个 worker，总排队与执行任务上限 256。每个键在当前进程内只运行一次；浏览器 Watchlist 并发 4、巨鲸并发 2。SEC 全局速率限制继续生效。
-- 公共快照先发布到进程内存和客户端，再经一个后台线程合并写入数据库，每批最多 32 项、最多 1024 个待写键。数据库临时不可用时 15 秒后重试；这段时间若进程重启，尚未落库的新快照可能丢失，仍可使用数据库中的上次成功版本。私人账户/持仓保存仍同步确认提交，不走该队列。
-- 快照数据库写入以 `fetched_at`/`retrieved_at` 为版本时间，条件 UPSERT 拒绝较旧结果；内存同样拒绝旧版本。读取缓存不刷新源数据时间。行情和新闻启动批量读取只查询内存未命中的键。失败结果不写作成功快照。
-- `/api/health` 是不依赖数据库的存活检查；已登录的 `/api/ready` 检查数据库可用性并返回刷新队列长度。代理、公网入口、数据库或供应商限流仍可能造成等待，不能承诺每轮在一分钟内全部完成。
+Users select categories directly; saving with none selected disables alerts. See [email delivery](docs/email-notifications.md) for trigger definitions and operational limitations.

@@ -1,43 +1,63 @@
 # FinFeed
 
-FinFeed 是一个资本市场研究网站，集中查看美股行情、关注列表、持仓和宏观信息。
+FinFeed is a capital-market research dashboard with US market quotes, sector ETF charts, watchlists, portfolios, macroeconomic indicators, institutional holdings, company disclosures, Passkey accounts, and email alerts.
 
-## 功能
+## Production system
 
-- 主要美股指数及标普 500 的 11 个板块 ETF，支持交互式历史图表与板块排序。
-- 关注列表、持仓记录、财务指标与估值数据。
-- 非农就业、PCE、美元指数、十年期美债收益率及预测市场信息。
-- 机构 13F 持仓与新闻信息。
-- Passkey 账户登录，以及可选择类别的邮件提醒。
-
-数据更新受供应商延迟、发布频率及限流影响；历史持仓和日度统计不是实时交易数据。具体功能、数据口径与验证边界见 [网站说明](dashboard/README.md)。
-
-## 仓库结构
-
-| 路径 | 内容 |
+| Component | Current implementation |
 | --- | --- |
-| `frontend/` | Vercel 前端构建与转发配置 |
-| `dashboard/backend/` | Python 后端 |
-| `dashboard/public/` | 页面、样式与浏览器脚本 |
-| `dashboard/deployment/` | 部署及进程管理 |
-| `dashboard/tests/` | 回归验证 |
-| `dashboard/docs/` | 架构和运维文档 |
-| `AGENTS.md` | 开发与安全约定 |
+| Website | [finfeed-research.vercel.app](https://finfeed-research.vercel.app), static frontend on Vercel |
+| API | Python / Flask / Gunicorn on the dedicated project at `47.114.43.129` |
+| Public API entry | [finfeed.tail03a68f.ts.net](https://finfeed.tail03a68f.ts.net), Tailscale Funnel HTTPS |
+| Database | Project-owned PostgreSQL 17.11, loopback TLS, `finfeed_private` schema |
+| Outbound connectivity | Project-only Mihomo proxy; explicit provider routing |
+| Email | Gmail HTTPS API with send-only OAuth authorization |
+| Alert scheduling | External cron-job.org POST every minute |
+| Process management | Project Python supervisor, independent of interactive SSH sessions |
 
-公开仓库不包含用户账户数据、凭据或数据库备份。
+Production configuration was checked on October 10, 2026 (Asia/Shanghai). Runtime status and provider availability can change. Frontend publishing and backend deployment are separate operations.
 
-## 文档与验证
+## Features
 
-- [架构说明](dashboard/docs/architecture.md)
-- [生产部署](dashboard/docs/deployment.md)
-- [服务器运维](dashboard/docs/server-deployment.md)
-- [PostgreSQL 与数据库迁移](dashboard/docs/database-migration.md)
-- [邮件提醒](dashboard/docs/email-notifications.md)
+- Three major US equity indices and eleven Select Sector SPDR ETFs with three-year daily charts and draggable ordering.
+- Independent watchlists and portfolios, financial metrics, currency-aware valuation, imports, and exports.
+- NFP, PCE, DXY, ten-year Treasury yields, and meeting-specific Polymarket pricing.
+- SEC 13F institutional holdings and company earnings-call / filing indexes.
+- Passkey login, invitation registration, account sharing, administration, and verified email subscriptions.
 
-配置及依赖准备见部署文档。回归验证从仓库根目录运行：
+Market polling does not make upstream data real-time. Daily yields and quarterly holdings are not intraday quotes or trading records. See the [application guide](dashboard/README.md) for calculation and access boundaries.
 
-```bash
+## Repository layout
+
+| Path | Responsibility |
+| --- | --- |
+| `frontend/` | Vercel build wrapper, rewrites, and authentication bridge |
+| `dashboard/frontend/` | Canonical pages, styles, browser scripts, and asset manifest |
+| `dashboard/backend/` | API, business services, providers, calculations, storage, and transport |
+| `dashboard/deployment/` | Build tools, worker entry points, project service management |
+| `dashboard/tests/` | Backend and frontend regression checks |
+| `dashboard/docs/` | Technical documentation and operational runbooks |
+| `AGENTS.md` | Development and security instructions |
+
+Personal research under `personal/`, local credentials, runtime caches, and database archives are excluded from version control and deployments. Git history is not a private storage mechanism.
+
+## Technical documentation
+
+- [Architecture and authentication](dashboard/docs/architecture.md)
+- [Production configuration and deployment](dashboard/docs/deployment.md)
+- [Server operations and code synchronization](dashboard/docs/server-deployment.md)
+- [Database updates, backup, and restore](dashboard/docs/database-migration.md)
+- [Data providers, requests, and caching](dashboard/docs/data-and-caching.md)
+- [Gmail and notification delivery](dashboard/docs/email-notifications.md)
+
+## Development verification
+
+From the repository root, with the dashboard virtual environment prepared:
+
+```sh
 dashboard/.venv/bin/python dashboard/tests/run.py
+node frontend/build.cjs
+git diff --check
 ```
 
-前端由 Vercel 托管，后端与专用 PostgreSQL 在 `47.114.43.129` 的 FinFeed 项目内运行。数据库、代理、邮件及账户凭据只保存在私密配置中，不提交 Git。
+Use the unified test runner for code changes; documentation-only changes require link, configuration, and consistency checks. A passing health check is not a functional acceptance test.

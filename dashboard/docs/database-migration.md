@@ -1,78 +1,103 @@
-# FinFeed 项目 PostgreSQL 与迁移记录
+# PostgreSQL Storage, Updates, Backup, and Recovery
 
-更新于 2026-10-10（北京时间）。生产数据库先从 Supabase 切换到 h20 内的专用 `finfeed` 数据库，随后将完整数据库迁至 `47.114.43.129` 的同名项目路径，前端仍为 Vercel。应用协议、账户 ID、Passkey RP ID、会话和数据结构保持兼容。
+Production storage is a dedicated PostgreSQL 17.11 installation inside `/mnt/data/users/shx/FinFeed` on `47.114.43.129`. This document covers the current database and safe transfer procedures, not previous infrastructure.
 
-当前服务器部署与第二次迁移验收见 [服务器运维](server-deployment.md)。本页下方的表行数记录第一次 Supabase 迁移快照，后续线上清理及写入会正常改变计数。
+## Cluster and access
 
-## 安装范围
+The cluster listens only on `127.0.0.1:18766`, database `finfeed`, application schema `finfeed_private`. It does not expose a public database endpoint or a filesystem Unix socket. Client connections require TLS using `sslmode=require`. An independent CA identity-verification chain is not configured; do not describe this as `verify-full`.
 
-项目根目录为 `/mnt/data/users/shx/FinFeed`，未安装系统数据库服务、修改其他项目或修改 SSH 跳板机。
-
-| 路径/配置 | 用途 |
+| Identity | Role |
 | --- | --- |
-| `.postgres/engine` | conda-forge PostgreSQL 17.11 程序及依赖，通过官方 micromamba 安装 |
-| `.postgres/data` | 已初始化的数据集群；禁止覆盖、重新初始化或删除 |
-| `.postgres/tls` | 本机 TLS 证书和私钥 |
-| `.postgres/backups` | 包含私人数据的归档、逐表校验清单及迁移报告 |
-| `.private/postgresql.json` | 数据库身份、端口与密码，权限 600 |
-| `.private/backend.json` | 当前应用数据库连接和原有行情/Gmail 配置 |
-| `.private/backend-supabase.json` | 原连接配置，仅用于受控恢复，权限 600 |
-| `.private/postgresql-enabled` | 启用项目监督进程中的数据库和每日备份 |
+| `finfeed_app` | Application login, owns application objects; no superuser, role creation, or database creation |
+| `finfeed_admin` | Dedicated cluster administration and recovery |
+| OS UID/GID 65534 | Unprivileged PostgreSQL process identity selected by the project launcher |
 
-数据库仅监听 `127.0.0.1:18766`，不创建文件系统 Unix socket，不通过 Funnel 暴露数据库。客户端强制 TLS；本机证书未配置独立 CA 验证，因此不能将它描述为 `verify-full` 身份验证。`finfeed_app` 无超级用户、创建角色或创建数据库权限；`finfeed_admin` 仅用于项目集群管理。
+The existing OS identity is reused rather than creating a system account. Data directories are mode 700 and private keys mode 600. Shared root or same-UID processes remain outside a strong isolation guarantee. Unrelated PostgreSQL installations are not used by FinFeed.
 
-PostgreSQL 不能以 root 运行，启动器使用服务器已有 `nobody`（UID/GID 65534），没有新增或修改系统用户。项目数据目录权限 700，私钥 600。项目根目录允许穿越以便该进程访问数据；私密目录仍为 700。共享 root 和相同 UID 的进程不是严格安全隔离边界，资源也与其他项目共享。
+The cluster uses data checksums with `fsync`, `full_page_writes`, and `synchronous_commit` enabled. Current sizing is 24 maximum connections, 32 MB shared buffers, 2 MB work memory, 32 MB maintenance work memory, and 80–512 MB WAL sizing. Preserve durability settings; a successful crash-recovery check is not a hardware power-loss guarantee.
 
-集群启用了数据校验和，`fsync`、`full_page_writes`、`synchronous_commit` 保持开启。最大连接数 24，shared buffers 32 MB，单操作 work memory 2 MB。实际 CPFS 存储已通过写入、同步、目录同步及文件锁检查，并通过本项目 PostgreSQL 的崩溃恢复测试；这些检查不等于对存储断电持久性作保证。
+## Application schema
 
-## 迁移方法与验收
+| Table | Stored purpose |
+| --- | --- |
+| `owner` | Initial owner identity and compatibility state |
+| `accounts` | Account names, current record state, revision |
+| `account_history` | Per-account prior state snapshots |
+| `state_history` | Initial owner state history |
+| `credentials` | Public Passkey credentials, counters, RP metadata |
+| `sessions` | Hashed bearer sessions and expiry |
+| `flows` | Temporary authentication challenges and flow payloads |
+| `invitations` | Hashed invitations, expiry, consumption |
+| `disabled_accounts` | Administrative account disable markers |
+| `revoked_passkeys` | Revoked credential markers |
+| `cache` | Shared market snapshots and provider budgets |
+| `notification_settings` | Verified recipient and subscribed categories/thresholds |
+| `notification_cursors` | Previously seen event state and baselines |
+| `notification_sources` | Source polling state and coordination |
+| `notification_outbox` | Durable delivery queue and status |
 
-1. 保存完整 Supabase 数据库归档到本机私密目录，并保留原云数据库。
-2. 试恢复全部 `finfeed_private` 表，校验一致快照。
-3. 暂停 FinFeed 及提醒调度，对原库 15 张应用表增加 `finfeed_retired_source_readonly` 写保护触发器，阻止旧实例继续写入。
-4. 在只读源上导出最终一致快照，恢复至新专用数据库，并校验后才切换连接。
-5. 只解除本机目标库的迁移写保护，启动项目监督进程并恢复原每分钟提醒任务。
+These fifteen application tables include both user records and reusable market state. Counts change during normal saves, polling, and expiry cleanup; old row counts are not a permanent acceptance criterion.
 
-最终迁移快照包括：
+## Connections and transactions
 
-| 表 | 行数 |
-| --- | ---: |
-| account_history | 86 |
-| accounts | 7 |
-| cache | 231 |
-| credentials | 8 |
-| disabled_accounts | 1 |
-| flows | 2 |
-| invitations | 19 |
-| notification_cursors | 72 |
-| notification_outbox | 0 |
-| notification_settings | 4 |
-| notification_sources | 69 |
-| owner | 1 |
-| revoked_passkeys | 1 |
-| sessions | 3 |
-| state_history | 1 |
+The worker owns an account/session pool with 1–4 connections and a separate cache pool with 0–2 connections. Pool checkout/connect limits are eight seconds, connections are checked on checkout, and uncertain socket reads close the connection rather than replaying a possibly committed write. TCP keepalives and user timeout reduce silent connection retention. Prepared statements are disabled. Transactions commit or roll back before a connection is returned.
 
-这些是切换时的快照行数，线上运行后会变化。校验采用同一 PostgreSQL 导出快照；行转 JSONB 后按 C 排序，统一 UTC、`extra_float_digits=3`，对长度分隔的 UTF-8 内容计算 SHA-256，同时核对序列值。避免不同浮点显示设置造成误报；未通过校验时不切换。
+Application initialization serializes schema updates with a PostgreSQL advisory transaction lock, creates missing application objects, revokes public schema/table access, and applies compatibility updates. SQLite is a test injection, not production storage. Schema changes must be reviewed in `backend/storage/store.py` and `backend/storage/notifications.py`; there is no separate versioned migration framework to substitute for that review.
 
-Supabase Auth 用户、Storage 对象均为空；应用没有使用这些平台服务。其内部迁移元数据及平台扩展不加载进本机应用数据库，仍保存在完整源归档及原云数据库中。全部 FinFeed 应用数据位于已迁移的 15 张表，不是克隆整个 Supabase 平台。
+State writes validate content, use revision/row locking, and retain the latest fifty previous states. Notification enqueueing and cursor advancement are transactional. Unknown write outcomes must be resolved by reading durable state rather than blindly repeating writes.
 
-已验证本机数据库 TLS、7 个账户和 8 条凭据、原域名 Passkey 登录选项、公网健康检查、私人接口未登录拒绝访问、来源校验，以及每日备份进程。69 个字段、17 个索引及 16 个约束与源库匹配；Gmail 授权刷新成功，恢复后的 cron-job.org 自动 POST 返回 202。迁移前的后端 164 项回归与前端验证通过。这不等于由用户逐项重新操作所有页面，也不等于每类事件邮件均已真实投递。
+## Consistent archive creation
 
-## 备份与恢复
+`deployment/h20/database_tools.py` provides `snapshot(url, archive)` and `verify(url, manifest)`. A snapshot:
 
-`database_backup.py` 在监督进程下运行，每个 UTC 日创建一次事务一致的应用归档，失败后一小时重试。成功记录在 `.runtime/database-backup.json`；归档附带 `.manifest.json` 及日志。程序不自动删除旧备份，需监控磁盘容量和备份错误。
+1. Opens a read-only repeatable-read transaction and exports a PostgreSQL snapshot.
+2. Reads all application tables using UTC and `extra_float_digits=3`.
+3. Sorts JSONB row representations using C collation and computes length-framed UTF-8 SHA-256 digests and counts.
+4. Records sequence values and `is_called` flags.
+5. Runs project `pg_dump` in custom format using that same exported snapshot, restricted to `finfeed_private`, without owner/ACL restoration metadata.
+6. Writes a companion manifest and log, with private file permissions.
 
-最终源归档为 `.postgres/backups/supabase-final-retry.dump`，校验清单及报告在同目录；已另存本机 Git 忽略的 `dashboard/.local/database-migration/`，并核对归档 SHA-256。每日异地备份尚未自动配置，同机备份不能防御整台服务器或存储丢失。归档和配置文件禁止提交 Git 或公开分享。
+The archive refuses to overwrite an existing file. Credentials are supplied through private configuration/environment, not command arguments. Archives contain confidential records and must not enter Git or public downloads.
 
-恢复应先创建新的空数据库，用项目 `pg_restore` 配合 `--exit-on-error --single-transaction --no-owner --no-acl --role=finfeed_app` 恢复；连接凭据通过私密环境传入，不能放在命令行或日志。使用 `database_tools.verify` 校验对应清单后再安排切换。源迁移归档含写保护函数/触发器，目标验证后才可解除它们。不能对唯一线上数据库执行覆盖恢复。
+On the server, a manual archive can be created without printing credentials:
 
-项目监督进程启动时，存在 `.private/postgresql-enabled` 才会运行数据库及备份。不要直接重复启动 PostgreSQL，不要在已有数据目录重新运行 initdb。SSH 断开不停止进程；服务器/容器重启后仍需项目启动钩子或人工启动，尚未配置系统自启动。
+```python
+from pathlib import Path
+from datetime import datetime, timezone
+import json, sys
+root = Path('/mnt/data/users/shx/FinFeed')
+sys.path.insert(0, str(root / 'app/dashboard/deployment/h20'))
+from database_tools import snapshot
+config = json.loads((root / '.private/backend.json').read_text())
+name = datetime.now(timezone.utc).strftime('manual-%Y%m%dT%H%M%SZ.dump')
+snapshot(config['DATABASE_URL'], root / '.postgres/backups' / name)
+```
 
-## 回滚边界
+## Scheduled backups
 
-原 Supabase 的应用表保持写保护，旧 Render 服务不能继续作为可写生产后端。只读源是迁移时的快照，切换后 当前服务器上的新记录不自动回传。
+With `.private/postgresql-enabled`, the supervisor runs `database_backup.py`. It creates one consistent archive per UTC day, checks again every hour, retries failures on the next check, and atomically updates `.runtime/database-backup.json` after success. Archives, manifests, and logs are under `.postgres/backups`. There is no automatic deletion or off-server replication.
 
-需要回滚时：暂停应用与调度，另备份两端，导出 当前服务器最新一致快照，在恢复目标验证全部记录及结构后，再解除目标写保护并恢复应用和调度。保留原归档，避免两个可写后端并行。**不能只改回旧连接地址，否则切换后的新增或修改数据会丢失。**
+The October 10 production backup was checked successfully. A separate final transfer archive and manifest were copied off-server and SHA-256 checked during deployment. This does not constitute a continuing off-server backup policy. Configure and test a separate encrypted off-server copy if protection against host/storage loss is required; monitor archive growth meanwhile.
 
-来源：[PostgreSQL pg_dump](https://www.postgresql.org/docs/17/app-pgdump.html)、[pg_restore](https://www.postgresql.org/docs/17/app-pgrestore.html)。
+## Restore and host/database transfer
+
+Never restore over the sole production database or copy a live cluster directory as a consistent logical backup.
+
+1. Preserve current code/configuration and take consistent archives of relevant databases.
+2. Create a separate empty database under the project cluster administrator.
+3. Restore with the project `pg_restore`, `--exit-on-error --single-transaction --no-owner --no-acl --role=finfeed_app`, using a private connection environment.
+4. Compare all table counts/content hashes and sequences with the matching manifest using `verify`.
+5. Check schema/constraints, TLS, account directory, original Passkey RP ID, record saves, cache reads, and notification state.
+6. For a live transfer, stop/fence source writes and scheduling, take a final consistent archive, repeat restore and exact verification, then switch application configuration.
+7. Remove any transfer-only write fences from the target only after verification. Preserve source protection and archives.
+8. Resume one backend and one scheduler; verify actual frontend operations and observe subsequent writes.
+
+The last production transfer matched all fifteen application tables, including account records, credentials, histories, caches, and notification state. The seven accounts and eight public credential records were retained at that snapshot; normal transient expiry remains active.
+
+## Rollback and maintenance
+
+Database-aware rollback must preserve changes made after cutover. Stop writes and scheduling, archive the latest state, restore/verify it in the rollback target, and only then switch connections. Switching to a stale snapshot can lose newly saved holdings, accounts, or alert settings.
+
+Never run `initdb` on `.postgres/data`, overwrite it during code synchronization, or start two postmasters against it. Do not rotate SQL passwords without updating private application and backup configuration together. Test restore before relying on a backup. Retain manifests and off-server checksums with their corresponding archives.
+
+Implementation references: `backend/storage/store.py`, `backend/storage/notifications.py`, and `deployment/h20/database*.py`. Official operational references: [pg_dump](https://www.postgresql.org/docs/17/app-pgdump.html) and [pg_restore](https://www.postgresql.org/docs/17/app-pgrestore.html).

@@ -1,58 +1,109 @@
-# 当前后端服务器运维
+# Server Operations and Synchronization
 
-更新于 2026-10-10（北京时间）。生产后端与专用数据库已从 h20 迁至 `47.114.43.129`，前端仍在 Vercel。h20 的 FinFeed 进程已停止，原数据和备份保留。
+Current host: `47.114.43.129`. Project root: `/mnt/data/users/shx/FinFeed`. Frontend hosting remains on Vercel. This runbook manages only FinFeed; do not restart or reconfigure unrelated host services.
 
-## 隔离与路径
+## Filesystem layout
 
-所有 FinFeed 持久文件仍位于 `/mnt/data/users/shx/FinFeed`。这台服务器原有 PostgreSQL、代理、Redis、Nginx 及其他项目均未被接管或修改。FinFeed 不使用系统 Python 的包目录或原有数据库。
-
-| 路径 | 用途 |
+| Path under the project root | Content and handling |
 | --- | --- |
-| `app/dashboard` | 应用代码快照，不包含个人研究目录 |
-| `.python` | 项目 Python 3.12，服务器系统 Python 3.14 保持原样 |
-| `.venv` | 独立虚拟环境，47 个依赖版本与原 h20 环境一致 |
-| `.private` | 数据库、行情、代理及 Gmail 私密配置 |
-| `.postgres` | 独立 PostgreSQL 17.11 程序、集群、TLS 与备份 |
-| `.proxy` | FinFeed 专用代理程序及用户节点配置 |
-| `.tailscale` | 专用 Tailscale 程序、状态和证书 |
-| `.runtime` | 监督进程、各服务 PID、日志及备份成功记录 |
-| `.pip-cache` | 项目依赖缓存 |
+| `app/dashboard` | Deployed application snapshot; update explicitly |
+| `.python` | Project Python 3.12 runtime |
+| `.venv` | Independent application packages |
+| `.private/backend.json` | Private environment configuration, mode 600 |
+| `.private/postgresql.json` | Cluster administrator credentials and OS process identity, mode 600 |
+| `.private/postgresql-enabled` | Enables database and backup supervision |
+| `.private/scheduler-enabled` | Enables optional local scheduler; absent in current production |
+| `.private/retired-deployment` | Safety fence: supervisor refuses to start when this exists |
+| `.postgres/engine` | PostgreSQL 17.11 executables and libraries |
+| `.postgres/data` | Live cluster; never overwrite with application synchronization |
+| `.postgres/tls` | Database TLS certificate and private key |
+| `.postgres/backups` | Private consistent archives, manifests, and reports |
+| `.proxy` | Project Mihomo executable and private node configuration |
+| `.tailscale` | Portable Tailscale binaries, unique device state, and certificates |
+| `.runtime` | PID files, supervisor lock, logs, backup success marker |
+| `.pip-cache` | Project package download cache |
+| `app/dashboard/.cache` | Application/provider working cache; not user records |
 
-后端监听 `127.0.0.1:18765`，项目 PostgreSQL 监听 `127.0.0.1:18766`，代理监听 `127.0.0.1:17890`。没有开放数据库公网端口或修改系统防火墙、路由、DNS。PostgreSQL 沿用已有 nobody 身份及专用 SQL 角色，没有修改系统账户；共享 root 的安全和资源隔离边界见 [数据库说明](database-migration.md)。
+Private state is not in Git. A code checkout alone cannot reconstruct production credentials, live records, or tunnel identity.
 
-## 启动与更新
+## Supervision and startup
 
-启动入口保留兼容路径 `app/dashboard/deployment/h20/supervise.py`；目录名称不代表仍在 h20 运行。它管理代理、Tailscale、后端，以及启用 `.private/postgresql-enabled` 时的数据库和每日备份。
+The executable entry is `app/dashboard/deployment/h20/supervise.py`; its directory name is a compatibility path. The root can be overridden with `FINFEED_H20_ROOT` for a deliberately separate installation. Production uses the default root above.
 
-启动前确认本项目没有监督进程正在运行；使用项目 Python 启动入口，并脱离 SSH 会话、将输出写入 `.runtime/supervisor.log`。进程退出会由监督程序重启，SSH 断开不停止服务。未创建系统服务，整机重启后仍需项目启动钩子或人工启动。
+The supervisor takes an exclusive file lock, removes inherited global proxy variables from application environments, loads private configuration, and launches owned child processes. It restarts exited children. SIGTERM or SIGINT shuts down its child process groups, waiting before force termination. The database launcher drops root privileges to configured UID/GID 65534 before starting PostgreSQL.
 
-GitHub main 推送仅自动构建 Vercel 前端；服务器代码快照需单独同步。只同步明确的应用路径，不上传 `personal/`，不覆盖 `.private`、`.postgres`、`.tailscale` 等持久状态。依赖安装需使用项目虚拟环境及项目缓存；此服务器有既有全局 pip 镜像配置，维护时应为本次进程指定 `PIP_CONFIG_FILE=/dev/null` 和正确安装源，不改全局配置。
+To start an already provisioned, stopped deployment, first confirm no supervisor is running and no conflicting standalone FinFeed child remains. Run this on the server:
 
-## 网络与提醒
+```python
+from pathlib import Path
+import subprocess
+root = Path('/mnt/data/users/shx/FinFeed')
+with (root / '.runtime/supervisor.log').open('ab') as log:
+    subprocess.Popen(
+        [str(root / '.venv/bin/python'),
+         str(root / 'app/dashboard/deployment/h20/supervise.py')],
+        cwd=root / 'app/dashboard', stdin=subprocess.DEVNULL,
+        stdout=log, stderr=log, start_new_session=True)
+```
 
-公网入口仍为 `https://finfeed.tail03a68f.ts.net`，设备身份与证书已在 h20 停止后转移，因此 Vercel `/api/*` 转发及原每分钟 cron-job.org 任务无需改地址。
+The detached process survives SSH disconnection. This is not tmux and is not an installed system boot service. A host reboot requires a permitted project startup hook or manual startup. Do not promise automatic boot recovery until it is configured and tested.
 
-Tailscale 使用 userspace 模式、抽象控制 socket `@finfeed-h20-control`，关闭系统 DNS、路由接收和 SSH 功能。Funnel 仅转发 FinFeed。项目代理沿用服务器端香港节点连接美国节点的配置，Yahoo、BLS、Polymarket 和 Gmail 显式使用它；SEC、FRED 验证可直连，不依赖用户本机转发。原有代理进程保持独立。
+## Safe stopping and restart
 
-本地 scheduler 仍关闭，提醒由原外部每分钟任务触发，避免重复调度。
+PID files are hints, not authority: PIDs can be reused. Before signaling a PID from `.runtime`, inspect `/proc/<pid>/cmdline`, its working directory, and the expected project executable. Backend command lines contain the project `worker.py`; they need not contain the literal word `gunicorn`.
 
-## 数据迁移与旧实例
+- To reload only application code/configuration, terminate the verified backend process group and let the supervisor restart it. Existing requests can be interrupted; schedule disruptive changes.
+- To stop the whole project, signal the verified supervisor and wait for owned children to exit and the supervisor PID file to be removed.
+- Never use host-wide `pkill`, stop a system database, or kill an unfamiliar port owner.
+- Never start a second supervisor or clone an active Funnel identity.
 
-迁移前先试恢复一致快照并逐表校验，再将 h20 应用表设为只读，导出最终快照、停止 h20 全部 FinFeed 服务，恢复并校验新服务器后才接管公网身份。没有复制正在运行的 PostgreSQL 数据目录。
+## Code synchronization
 
-最终 15 张应用表逐表内容哈希和行数匹配，保留 7 个账户、8 条 Passkey 凭据及全部持仓、历史、缓存和提醒状态。流转挑战和会话有原定有效期；最终快照时分别为 1 条，过期记录正常清理，不是迁移丢失。
+GitHub `main`, Vercel's build, and the server snapshot are three distinct release states. Record the deployed commit in the release notes or operational record; inspect differences before replacing server files.
 
-最终归档及清单在 `.postgres/backups/root-transfer-final-*.dump`，报告为 `root-cutover-report.json`。已另存本机 Git 忽略的 `dashboard/.local/root-migration/` 并核对 SHA-256。新服务器每日一致快照备份继续运行；每日异地自动备份尚未配置。
+A safe release workflow is:
 
-h20 留有 `.private/retired-deployment` 标记，监督程序拒绝启动，防止两台机器争用同一 Funnel 身份。h20 数据库也保留写保护。**不要同时启动旧副本；回滚前必须先暂停新实例、同步切换后新增数据、校验并转移唯一公网身份，不能直接启用旧快照。** Supabase 同样仍是历史只读副本。
+1. Confirm a clean/scoped local diff and an accepted commit.
+2. Prepare a staging directory under the project root containing only deployable application files.
+3. Exclude `personal/`, `.local/`, `.cache/`, virtual environments, bytecode, logs, credentials, and archives.
+4. Compare the staged snapshot and validate dependencies before replacing application files.
+5. Synchronize only `dashboard` application source into `app/dashboard`; preserve runtime cache paths explicitly. Never apply deletion to the entire project root.
+6. Install changed dependencies into `.venv`, run `pip check`, and retain the previous code/dependency snapshot for rollback.
+7. Restart the verified backend, then check private/public requests and real feature behavior.
 
-## 验证记录
+For dependency installation, avoid the host's inherited package-manager configuration. Use process-local overrides, without changing global settings:
 
-- 新环境中 161 项后端回归测试通过；依赖版本一致，pip check 通过。
-- 试恢复及最终恢复的 15 张表内容校验通过，数据库客户端 TLS 正常。
-- 新服务器本机健康检查和原 Vercel RP ID 的登录选项正常；未登录私人接口返回 401。
-- BLS、Yahoo、SEC、FRED、Polymarket 网络检查及 Gmail 授权刷新成功。
-- 原 Funnel 和 Vercel 的健康接口返回 200；Vercel 登录选项保持原 RP ID，设备身份保持不变。
-- 新服务器日志确认原 cron-job.org 每分钟自动请求返回 202；新服务器每日备份已生成首份归档。
+```sh
+PIP_CONFIG_FILE=/dev/null PIP_INDEX_URL=https://pypi.org/simple   /mnt/data/users/shx/FinFeed/.venv/bin/python -m pip install   --cache-dir /mnt/data/users/shx/FinFeed/.pip-cache   -r /mnt/data/users/shx/FinFeed/app/dashboard/requirements-cloud.txt
+/mnt/data/users/shx/FinFeed/.venv/bin/python -m pip check
+```
 
-健康接口与网络检查不能替代用户逐项操作或每类提醒的真实投递验收；相关边界见 [邮件说明](email-notifications.md)。
+Use the explicit project proxy for this command only if the selected package source requires it. Do not weaken TLS verification. A failed dependency update must not be treated as a complete release.
+
+## Monitoring and maintenance
+
+Check only project PID files and paths. The expected active services are supervisor, database, proxy, Tailscale, backend, and database-backup. The external scheduler is separate.
+
+| Check | Meaning |
+| --- | --- |
+| `/api/health` locally, via Funnel, and via Vercel | Distinguishes app, tunnel, and frontend routing availability |
+| Authenticated `/api/ready` | Database/queue readiness, not every supplier's availability |
+| `.runtime/backend.log`, `request_failure` entries | Sanitized provider and API failures |
+| `.runtime/proxy.log`, `tailscale.log`, `supervisor.log` | Project networking and child lifecycle |
+| `.runtime/database-backup.log` and `database-backup.json` | Backup attempt and last successful UTC day |
+| Disk, memory, swap, database connections | Shared resource pressure and growth |
+| cron-job.org execution history | Trigger acceptance; not email delivery |
+| Notification queue counters | Pending, accepted, failed, or uncertain delivery work |
+
+Application failure logs include UTC time, operation/source, request ID, status, exception type, and available duration. They omit request bodies, full query URLs, cookies, and account identities; do not add secret-bearing exception dumps while debugging. Logs currently have no automatic rotation. Backups have no automatic retention deletion. Monitor growth and manage only scoped files after preserving needed evidence.
+
+## Recovery priorities
+
+1. Separate local backend failure from public tunnel or outbound provider failure.
+2. Check database TLS and readiness before changing unrelated infrastructure.
+3. Preserve successful caches during provider outages; do not replace missing data with zero.
+4. Confirm OAuth authorization and queue state before retrying uncertain mail.
+5. For database damage, restore into a separate database and verify a consistent manifest before switching.
+6. For host replacement, stop the old deployment, fence writes, transfer the final verified data, and move the unique tunnel identity only after the previous daemon stops.
+
+A rollback must include records written after release/cutover. See [database operations](database-migration.md). Daily off-server backups and automatic host-boot recovery are not yet configured.

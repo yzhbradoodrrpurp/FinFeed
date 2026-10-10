@@ -1,64 +1,94 @@
-# 邮件提醒配置与运行
+# Gmail Authorization and Notification Delivery
 
-入口：登录 → 我的账户 → 邮件提醒。每个账户独立绑定并验证邮箱，独立选择 NFP、PCE、十年美债、巨鲸及 News 类别。保存时选中任一类别即启用，全部取消即停用；默认不启用。验证码只保存哈希，10 分钟有效，最多尝试五次，每分钟最多发送一次。
+The account dialog owns recipient verification and category selection. The current server uses the Gmail HTTPS API with only `gmail.send` authorization; it does not require SMTP or a custom sender domain. Recipient accounts do not need Google OAuth authorization.
 
-## Gmail 发信配置（无需自有域名）
+## OAuth setup and private configuration
 
-发件人使用自己的 Gmail 账户，后台通过 HTTPS Gmail API 发信；不依赖 SMTP 端口。当前后端运行在 当前服务器，配置位置见 [部署说明](deployment.md)和 [服务器运维说明](server-deployment.md)。只申请 `gmail.send` 权限，不读取邮箱内容。普通收件人不需要 Google 授权。
+1. Create a dedicated Google Cloud project, enable Gmail API, and configure Google Auth Platform.
+2. Create a desktop OAuth client and download its private client JSON.
+3. Run the local authorization helper with the intended sender:
 
-1. 在 Google Cloud 创建专用项目，启用 Gmail API，配置 Google Auth Platform。创建桌面 OAuth 客户端，用本机回环地址完成一次发件人授权。
-2. 下载桌面客户端 JSON 后，在本机运行 `python3 dashboard/deployment/authorize_gmail.py --client /完整路径/client.json --sender 发件人@gmail.com`，在 Safari 打开工具打印的本机地址并完成授权。工具使用 PKCE、随机 state、离线访问，凭据保存在 Git 忽略的 `dashboard/.local/gmail-mailer.json`，文件权限为 600。将配置转存 当前服务器 的 `.private/backend.json` 后妥善管理本机凭据，不提交代码。
-3. 在 当前服务器 私密配置中配置 `FINFEED_EMAIL_PROVIDER=gmail`、`FINFEED_EMAIL_FROM`（授权的 Gmail 邮箱）、`GMAIL_CLIENT_ID`、`GMAIL_CLIENT_SECRET`、`GMAIL_REFRESH_TOKEN`。
-4. Google 外部应用处于 Testing 时，相关 refresh token 通常七天失效；长期运行需按 Google 要求调整发布状态及验证，不能把测试授权当成永久授权。用户撤销授权等情况仍会导致失效。
-5. 继续配置下方的 `FINFEED_NOTIFICATION_CRON_TOKEN` 和外部调度，再完成实际邮件验证。Gmail 个人账户有发送限额；渠道接受不代表一定进入收件箱。
+```sh
+python3 dashboard/deployment/authorize_gmail.py   --client /private/path/client.json --sender sender@example.com
+```
 
-Gmail 不提供发送幂等键承诺。发送前持久化为 `sending`；明确拒绝时退避重试，网络超时、服务端异常等接收状态未知时记为 `uncertain` 并暂停自动重发。进程中断留下的 `sending` 也不自动重发，需管理者核查发件箱和日志。固定 Message-ID 仅用于追踪，不宣称 Gmail 会据此去重。此策略优先避免重复邮件，状态不明时可能需要人工补发。
+4. Open the helper's local callback/login URL, authorize the sending account, and complete the loopback flow. The helper uses PKCE, random state, and offline access.
+5. Store the resulting ignored `dashboard/.local/gmail-mailer.json` privately and transfer the required values into server `.private/backend.json`, mode 600.
+6. Set `FINFEED_EMAIL_PROVIDER=gmail`, `FINFEED_EMAIL_FROM`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. The sender must be the authorized Gmail account; the example above is a placeholder.
+7. Reload only the FinFeed backend and validate token refresh plus an actual verification email.
 
-参考：[Gmail 发送接口](https://developers.google.com/workspace/gmail/api/guides/sending)、[桌面 OAuth 与 PKCE](https://developers.google.com/identity/protocols/oauth2/native-app)、[令牌有效期](https://developers.google.com/identity/protocols/oauth2#expiration)、[Gmail 发送限制](https://support.google.com/mail/answer/22839)。
+Current authorization uses a production-mode application. This is not a claim of completed Google app verification. Testing-mode authorizations can have short refresh-token lifetimes; production-mode tokens can still fail after revocation or policy changes. Monitor refresh failures and reauthorize when needed. Do not add mail-reading scopes to troubleshoot sending.
 
-## 外部调度与收件邮箱验证
+The transport refreshes access tokens server-side and caches them until shortly before expiry. `GMAIL_PROXY_URL=http://127.0.0.1:17890` routes token refresh and message sending through the project proxy. Browser code never receives OAuth secrets.
 
-1. 在 当前服务器 的 `.private/backend.json` 设置 `FINFEED_NOTIFICATION_CRON_TOKEN`：独立随机字符串，至少 32 字符。可在本机运行 `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` 生成。不要提交到 Git 或贴入聊天。
-2. 让 FinFeed 后端重新加载配置。在外部定时服务中设置每分钟执行一次 HTTP POST：
-   - URL：`https://finfeed.tail03a68f.ts.net/api/notifications/tick`，直接调用 服务器后端。
-   - Header `Authorization: Bearer <上一步生成的调度密钥>`。
-   - Header `Content-Type: application/json`。
-   - Body：`{}`。
-   - 不把密钥放进 URL。将调度密钥保存在定时服务的加密配置中。
-3. 在网站“我的账户”输入收件邮箱，发送验证码并验证，选择需要的提醒类别并保存；全部取消后保存即停用。已验证邮箱隐藏验证表单，解绑后恢复。
-4. 检查定时服务日志：202 表示任务已接受，403 表示密钥不匹配，503 表示邮件服务未配置。202 不代表邮件已送达。登录后的 `GET /api/notifications` 返回本人队列计数；`sent` 表示渠道已接受，不能等同收件箱送达。
+## Scheduler
 
-自动化测试使用模拟邮件渠道。每次首次配置渠道必须完成真实邮箱验证和一次实际触发验收；代码测试通过不代表生产邮件已送达。
+cron-job.org currently sends an HTTP POST every minute directly to:
 
-## 邮件格式
+```text
+https://finfeed.tail03a68f.ts.net/api/notifications/tick
+```
 
-验证码与各类提醒统一使用纯文本格式：`Dear {账户用户名},` 开头，随后为中文说明和实际验证码或提醒数据，末尾为 `Best regards,` 与 `FinFeed Team`。市场提醒保留来源、时间及通知设置说明；用户名取接收者自己的账户名称，不使用被查看账户的名称。
+Configure a JSON body `{}`, Content-Type `application/json`, and `Authorization: Bearer <private scheduler token>`. The matching `FINFEED_NOTIFICATION_CRON_TOKEN` is an independent high-entropy secret of at least 32 characters in server configuration. Never place it in a URL, Git, screenshots, or logs.
 
-## 提醒口径
+HTTP 202 means background work was accepted; 403 indicates an invalid scheduler token and 503 indicates unavailable mail configuration. Acceptance is not inbox delivery. The scheduler runs without an open browser or SSH connection.
 
-- **NFP / PCE**：优先按 BLS / BEA 官方日历；BLS 日历不可用时使用 FRED release 50 的已公布日期，按 BLS 常规 08:30 美国东部转换，并在邮件中注明日期来源与时刻口径，不推算未公布日期。取得可用日历后，发布前 24 小时窗口提醒一次；到计划发布时刻再提醒一次。计划时刻提醒明确区别于实际数据已经取得。取得新的完整数据对应期后另发数据更新邮件。启用时距发布不足 24 小时，首次检查会补发即将发布提醒。来源故障可能延迟提醒；发布时刻补发窗口为六小时。
-- **十年美债**：目前沿用 H.15 / FRED DGS10 日度十年恒定期限收益率。比较连续成功读取的数据，在从低于预警线到达到/超过，或从达到/超过回落至下方时发送。默认 5.1%，可修改。首次读取或修改阈值建立基线，不把当前已在线上的状态当作新穿越。**不是实时盘中预警**。
-- **巨鲸**：每小时检查网站现有机构的最新 13F 报告及修订。邮件附持仓报告期、申报时间和 SEC 原文件；不能视为实时交易。
-- **News**：每小时检查收件人自己 Watchlist 中的 Earnings Calls 和 SEC Filings。沿用页面的最近两个已发布季度筛选口径。新增股票首次成功读取建立基线，之后的新条目才通知。无新内容不发邮件。
+An optional project scheduler exists behind `.private/scheduler-enabled`; this marker is absent in current production. Do not enable it while the external job remains active. A host reboot requires backend/supervisor recovery before triggers can work.
 
-## 调度、缓存与失败处理
+## Binding and preferences
 
-任务在服务器后台执行，网页无需打开。宏观检查与公司数据抓取分开运行，分别最多两个源任务并发；相同数据源按数据库租约合并。正常源间隔一小时，NFP/PCE 临近发布时检查间隔一分钟，失败五分钟后重试。复用已有成功市场缓存，发布前五分钟至发布后半小时内加快宏观源刷新。上游发布、外部定时器、平台唤醒、抓取和邮件渠道都可能产生延迟，不能保证整点零延迟。
+Verification codes are hashed, valid for ten minutes, limited to five attempts, and sent no more than once per minute. The interface disables empty-field actions, displays only countdown digits plus `s`, and hides the binding form after verification. A loading state prevents a verified account from briefly appearing unbound during initialization.
 
-当前 cron-job.org 每分钟调用 当前服务器，项目本地 scheduler 默认关闭，避免重复调度。当前服务器 监督进程不依赖浏览器或 SSH 会话；服务器/容器重启后仍需项目启动钩子或人工启动。代理与 Funnel 可用性也会影响调度。外部调度与 Gmail 渠道的额度、限制以各自账户面板为准。
+Categories are per account: NFP, PCE, Treasury, institutions, and the user's own Watchlist News. Saving with any category selected enables monitoring; saving with none selected disables it. Threshold changes are persisted per subscriber. Unbinding, replacing the address, or disabling categories cancels affected pending messages. Already accepted messages cannot be recalled.
 
-订阅、已见事件和发件队列持久化到私人数据库。新内容入队和游标更新在同一事务中完成，唯一事件键防止重复排队。失败指数退避，超过 23 小时停止重试，避免发送过时提醒。故障不会把旧数据当作新事件。关闭类别（全部取消即停用）、解绑、换邮箱会取消相应待发邮件；已经提交到邮件渠道的消息无法撤回。
+## Trigger definitions
 
-账户与通知数据库可用性是执行前提。没有配置发送服务时不启动监控，不额外抓取市场数据。监控不开启网站登录链路中的同步数据请求。
+| Category | Trigger and included information |
+| --- | --- |
+| NFP / PCE pre-release | Once in the 24-hour pre-release window; indicator, planned time in Beijing and US Eastern, calendar link and time basis |
+| NFP / PCE release time | Once when the planned time is reached, with a six-hour catch-up window; explicitly distinguishes planned release from retrieved data |
+| NFP / PCE data update | New complete observation period after a prior baseline; values, units, corresponding dates, retrieval time and source |
+| Ten-year Treasury | Successful daily yield crosses above/equal to or below the subscriber's threshold; prior/current values and dates, H.15/FRED links |
+| Institutional holdings | Newly observed reports/amendments for supported institutions; report period, filing/publication date and original SEC link |
+| Watchlist News | New earnings calls or SEC index entries for the recipient's own watchlist; titles, dates and original document links |
 
-### 实际配置进度（2026-10-10，北京时间）
+The Treasury default is 5.1%, adjustable per account. First reads and changed thresholds establish baselines rather than sending an existing above-line state as a new crossing. This is daily-statistic monitoring, not intraday touching alerts. Institution and company first reads also establish baselines, avoiding historical floods. News follows the page's two-quarter window.
 
-- Google Cloud 专用项目、Gmail API、桌面 OAuth 客户端及仅含 `gmail.send` 的授权已配置。应用已切换正式模式；发信配置已迁至 当前服务器 私密文件，令牌更新已验证成功。正式模式不等于 Google 已完成应用验证，撤销授权及平台策略变化仍可能导致失效。
-- 此前真实邮箱验证码已被收件人收到并完成绑定；邮箱设置、提醒游标和队列已随 15 张应用表迁移到项目 PostgreSQL，不要求重新绑定。未在此文档公布具体收件地址或令牌。
-- cron-job.org 的 `FinFeed email reminders` 已启用，每分钟 POST 到 `https://finfeed.tail03a68f.ts.net/api/notifications/tick`，独立 Bearer 密钥保留在配置中，不放入 URL。保存后已重新加载核对，当前服务器 日志连续记录自动请求返回 202。202 代表任务已接受，不代表邮件已送达。
-- 提醒类别由账户分别选择，全部不选即关闭；没有独立总开关。代码默认十年美债预警线 5.1%，每个账户的实际设置以数据库和“我的账户”为准，迁移不覆盖用户值。
-- Gmail 令牌更新、历史验证码收件和当前自动调度已验证；尚未逐类观察新市场事件完成真实投递，不能宣称全部事件类别已通过生产投递验收。首次成功读取仍建立基线，避免发送历史内容。
-- 发信代码仅支持 Gmail，不依赖 Resend。当前 `GMAIL_PROXY_URL=http://127.0.0.1:17890` 显式使用 FinFeed 项目代理；BLS 和 Polymarket 也分别使用项目代理变量。
-- 解绑与验证成功时平滑切换界面；发送后倒计时只显示数字和 `s`。空邮箱/空验证码对应按钮禁用。保存成功显示“提醒已设置”并禁用按钮，更改类别或阈值后恢复“保存提醒设置”。
+Calendars prefer BLS/BEA. The BLS fallback uses published FRED release dates, with explicit standard-time assumptions if no exact time is provided. It does not invent future dates. FRED observation availability can lag the publishing institution.
 
-此记录不包含密钥或凭据内容。真实提醒投递验收结果应在发生后补充，不能以 202 或代码测试替代。
+## Polling and durable delivery
+
+Macro and company monitoring run in separate lanes, with at most two source tasks concurrently in each lane. Database leases merge repeated source polling. Normal source intervals are one hour, failure retry is five minutes, and NFP/PCE near-release checks accelerate to one minute. The five minutes before to thirty minutes after release window accelerates macro refresh. Supplier and scheduler delays remain possible.
+
+Subscriptions, cursors, source state, and the outbox are durable PostgreSQL records. Event insertion and cursor updates share a transaction, and unique event keys prevent duplicate queue entries. Existing public market caches are reused. No configured sender means monitoring is not started and extra source fetches are avoided.
+
+Before sending, the durable outbox transitions to `sending`. Clear rejections use bounded exponential retry; messages stop retrying after 23 hours to avoid stale alerts. A timeout, server error, or interrupted `sending` state can mean Gmail already accepted the message: these become uncertain/nonautomatic retry work. Operators must inspect the sender's sent folder and private queue state before sending it again.
+
+Gmail does not promise application idempotency. Fixed Message-ID values help tracking but do not guarantee deduplication. The policy favors avoiding duplicate messages; uncertain messages may require manual resolution.
+
+## Message format
+
+Verification and market alerts are plain-text messages with a personalized English greeting/sign-off and a currently Chinese body. Usernames come from the recipient's own account, not an account they happen to be viewing.
+
+```text
+Dear {account name},
+
+{verification or subscribed-alert introduction}
+
+{code or event details, reporting dates, units and source links}
+
+{subscription-management instructions for market alerts}
+
+Best regards,
+FinFeed Team
+```
+
+Subjects begin with `FinFeed` for market events. Bodies identify planned release time versus observed data and include source context. Documentation translation does not change the language or behavior of actual outgoing messages.
+
+## Operational acceptance and troubleshooting
+
+The current deployment has verified Gmail token refresh, prior real verification-code reception and binding, and automatic every-minute trigger acceptance. Every category has not yet been observed delivering a new production event; mock transport tests and HTTP 202 must not be reported as proof of those deliveries.
+
+Authenticated `GET /api/notifications` provides the account's queue counts. A `sent` state means channel acceptance, not guaranteed delivery, reading, or absence from spam. Check authorization, proxy connectivity, source/calendar validity, event baseline, subscription state, and outbox status in that order. Respect Gmail account sending limits and do not repeatedly trigger real mail as a health probe.
+
+References: [Gmail sending](https://developers.google.com/workspace/gmail/api/guides/sending), [desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app), [token expiration](https://developers.google.com/identity/protocols/oauth2#expiration), and [sending limits](https://support.google.com/mail/answer/22839).

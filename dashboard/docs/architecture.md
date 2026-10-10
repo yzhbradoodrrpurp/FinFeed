@@ -1,40 +1,75 @@
-# Dashboard 代码结构
+# Architecture and Authentication
 
-更新于 2026-10-10（北京时间）。生产代码在 `main`；Vercel 前端、服务器后端和项目 PostgreSQL 数据库的运维见 [部署说明](deployment.md)。
+Configuration baseline: October 10, 2026, Asia/Shanghai. See [deployment](deployment.md), [server operations](server-deployment.md), [database](database-migration.md), [data and caching](data-and-caching.md), and [email](email-notifications.md).
 
-## 目录职责
+## Request topology
 
-- `backend/app.py`：Flask 应用、登录、权限和路由。
-- `backend/services/`：证券、宏观、机构持仓、新闻和首页业务。证券数据为 Watchlist 与 Portfolio 共用。
-- `backend/providers/`：FRED 观测值、BLS/BEA 发布日历、Yahoo 会话与诊断、Alpha Vantage 和 Polymarket。
-- `backend/domain/`：财务/宏观计算、账户记录校验。
-- `backend/storage/store.py`：数据库连接池、事务、账户和缓存存储。
-- `backend/infrastructure/`：刷新队列、Gmail 邮件渠道和脱敏日志。
-- `frontend/pages/`、`styles/`、`js/core/`、`js/components/`、`js/views/`、`assets/`：前端源码。
-- `frontend/manifest.json`：原静态 URL 文件名到源码路径的唯一映射；Flask 和 Vercel 构建共同使用。
-- `deployment/`：构建、Gunicorn worker、启动与可选代理。`deployment/h20/` 包含项目后端启动器、监督程序和可选本地调度器；根目录 `build_cloud.py`、`start_cloud.py` 保留 Render 备用部署命令。
-- `tests/backend/`、`tests/frontend/`：Python 与 Node 回归测试；`tests/run.py` 为统一入口。
-
-仓库根目录 `frontend/` 是 Vercel 部署包装，不是第二套业务前端。它从 `dashboard/frontend/` 构建到 `frontend/dist/`，保持原 URL 和脚本顺序。
-
-## 稳定性约束
-
-服务器迁移保持账户、Passkey、API 路径、Cookie、数据库 schema 和缓存键兼容，2026-10-10 已将 Supabase 的全部 15 张应用表迁移到项目 PostgreSQL，并校验一致快照的逐表行数和内容哈希。随后已将完整后端和数据库迁至 `47.114.43.129`，h20 已停用。原 Supabase 保留为只读迁移快照，详见 [数据库运维](database-migration.md)。`backend/paths.py` 的应用临时缓存位于代码快照内的 `dashboard/.cache/`；服务器私密配置位于 `/mnt/data/users/shx/FinFeed/.private/`，代理、Tailscale、虚拟环境和日志均在项目目录内，不提交 Git。本机授权和测试文件仍可位于 Git 忽略的 `dashboard/.local/`。
-
-后台路径：浏览器 → Vercel `/api/*` 转发 → Tailscale Funnel → `47.114.43.129` 的 `127.0.0.1:18765` → 应用。出站代理只监听 `127.0.0.1:17890`，Yahoo、Gmail、BLS 和 Polymarket 通过各自显式配置使用；SEC/FRED 可直连。当前代理由服务器香港节点连接美国节点，最终出口已验证为美国，不经用户电脑，不改变系统路由或其他项目设置。
-
-监督进程仅管理它创建的进程并自动重启退出的子进程，不安装系统服务。邮件由外部 cron-job.org 每分钟调度，项目本地调度默认关闭。服务器重启后的恢复、权限范围和日志管理边界见 [服务器运维说明](server-deployment.md)。
-
-宏观数据链：FRED 提供 BLS 非农/失业率/时薪、BEA PCE 和 H.15 收益率序列；BLS/BEA 优先直接提供发布日历，BLS 失败时备用读取 FRED 的 BLS 已公布日期并标注时刻口径；Yahoo 提供 DXY 日线。`services/macro.py` 组合结果，`domain/macro_metrics.py` 保留原计算及缺月判断。
-
-2026-10-08 的目录整理保留了以下待办：`app.py` 路由拆分、`store.py` 内部拆分，以及其他业务模块中尚存的供应商调用提取，留待单独变更，不宣称已完成全部分层。
-
-## 验证
-
-从仓库根目录执行：
-
-```sh
-dashboard/.venv/bin/python dashboard/tests/run.py
+```mermaid
+flowchart LR
+  B[Browser] --> V[Vercel static frontend and API rewrite]
+  V --> T[Tailscale Funnel HTTPS]
+  T --> A[Flask / Gunicorn on loopback 18765]
+  A --> D[Project PostgreSQL TLS on 18766]
+  A --> P[Project Mihomo proxy on 17890]
+  P --> U[Selected external data and Gmail APIs]
+  A --> S[Direct SEC and FRED requests]
+  C[cron-job.org] --> T
 ```
 
-覆盖后端、前端逻辑、旧静态 URL、启动参数、worker fork 行为和前端构建。前端为原生脚本，不引入打包运行时；源码移动不增加网络请求。
+The server is `47.114.43.129`; all persistent deployment files are beneath `/mnt/data/users/shx/FinFeed`. Database and proxy ports are not public listeners. Funnel exposes the web API only; an HTTPS tunnel does not bypass application authentication.
+
+## Source boundaries
+
+| Module | Responsibility |
+| --- | --- |
+| `backend/app.py` | Flask factory, authentication, authorization, routes, response security |
+| `backend/services/` | Home, sectors, securities, macro, holdings, news, notification workflows |
+| `backend/providers/` | Yahoo sessions/history, FRED, BLS, BEA, Alpha Vantage, Polymarket |
+| `backend/domain/` | Calculation definitions and account-state validation |
+| `backend/storage/` | PostgreSQL transactions, accounts, history, cache, notification state |
+| `backend/infrastructure/` | Coalesced refresh jobs, Gmail transport, sanitized failure logging |
+| `dashboard/frontend/` | Canonical browser source; `manifest.json` maps public asset names |
+| Repository `frontend/` | Vercel copying build, rewrites, login bridge and callback |
+| `deployment/worker.py` | Gunicorn initialization without application preloading |
+| `deployment/h20/` | Current project supervisor and database/backup launchers |
+| `tests/` | Backend and browser-logic regression checks |
+
+The `h20` directory and `FINFEED_H20_ROOT` variable are retained executable names, not the current host. Some provider calls remain in business services; route and storage modules are not fully split into smaller modules.
+
+## Process and concurrency model
+
+The supervisor launches one Gunicorn worker with 64 HTTP threads and a 180-second worker timeout. Database pools are created inside the worker, not inherited from a preloaded parent. The supervisor also owns PostgreSQL, the project proxy, Tailscale, and the daily backup loop.
+
+Refresh jobs have independent lanes: security 4 workers; home, sector, macro, whales, and news 2 each. Total queued/running capacity is 256. Same-key work is coalesced inside a worker; notification source leases provide additional database coordination. Increasing Gunicorn worker count would multiply in-memory lanes, provider sessions, and database pools and therefore requires capacity analysis.
+
+## Passkey and session security
+
+WebAuthn verifies the fixed origin, RP ID, challenge, signature, and user verification. The RP ID remains `finfeed-research.vercel.app`. Challenges expire after five minutes and are consumed once. Device-held private keys never enter the database; public credentials and verification metadata do.
+
+Sessions expire after twelve hours. Bearer tokens are hashed in storage. Cookies use Secure, HttpOnly, and SameSite=Strict. Logout invalidates the server session. State-changing requests validate origin, JSON content, and the application's custom request header. Private responses are `no-store`.
+
+The frontend login bridge and callback exchange short-lived authentication tickets between the fixed frontend/backend origins. Preview domains are not automatically authorized. Do not change origin settings to arbitrary incoming Host values; changing a Passkey RP ID can make existing credentials unusable.
+
+## API groups
+
+| API group | Purpose |
+| --- | --- |
+| `/api/health` | Public process liveness |
+| `/api/ready` | Authenticated database and refresh-queue readiness |
+| `/api/auth/*` | Registration, login, logout, credentials, frontend ticket exchange |
+| `/api/accounts`, `/api/state` | Authenticated directory, shared reads, owner-only updates |
+| `/api/invitations`, `/api/admin/*` | Invitations and administrator operations |
+| `/api/home`, `/api/home/sectors/<symbol>` | Index and sector snapshots |
+| `/api/security/<symbol>` | Shared quote and financial results |
+| `/api/macro/<kind>` | Macro indicators and prediction-market data |
+| `/api/whales/<kind>` | Institution holdings |
+| `/api/news`, `/api/news/<symbol>/<kind>` | Company disclosure indexes |
+| `/api/notifications` | Current account subscription and delivery queue status |
+| `/api/notifications/email`, `/api/notifications/verify` | Email verification and unbinding |
+| `/api/notifications/tick` | Scheduler-token protected background trigger |
+
+Unauthenticated account operations return 401. Cross-account writes are rejected. Scheduler credentials authorize only alert triggering, not user login or database access.
+
+## Isolation limits
+
+Project processes do not modify global DNS, routing, firewall, package environments, or unrelated services. Loopback, private files, and separate SQL roles prevent accidental exposure and operational interference; they are not a strong boundary against another root process or a process using the same OS identity. CPU, memory, disk, and network remain shared host resources.

@@ -1,38 +1,35 @@
-# FinFeed 开发说明
+# FinFeed Development Instructions
 
-## 项目定位与目录
+## Scope and layout
 
-FinFeed 是资本市场研究网站，提供主要美股指数、11 个标普板块 ETF、关注列表、持仓、宏观数据、机构持仓和新闻，以及账户与邮件提醒功能。
+FinFeed is a capital-market research website. Canonical browser sources live in `dashboard/frontend/`; the repository-level `frontend/` directory wraps Vercel publishing. Python services live in `dashboard/backend/`, operational tools in `dashboard/deployment/`, tests in `dashboard/tests/`, and technical documentation in `dashboard/docs/`.
 
-- `frontend/`：Vercel 静态前端及构建配置。
-- `dashboard/backend/`：Python 后端，应用入口为 `backend.app:create_app()`。
-- `dashboard/public/`：网站页面、样式及浏览器脚本。
-- `dashboard/deployment/`：部署与项目进程管理。
-- `dashboard/tests/`：后端及前端验证。
-- `dashboard/docs/`：架构、部署、数据库及邮件提醒说明。
+Personal research and records belong in ignored `personal/`. Do not upload that directory, local credential files, database archives, or ignored runtime state.
 
-## 开发与验证
+## Working requirements
 
-1. 修改前检查当前代码、相关说明和 Git 状态，保留用户已有改动。
-2. 保持现有功能、账户权限、Passkey 登录、数据口径和缓存行为兼容。不要为了部署或测试增加认证绕过。
-3. 针对改动验证实际行为；格式检查或健康接口成功不能替代功能验收。区分已实现、测试通过、已部署和实际投递。
-4. 完整回归入口为仓库根目录的 `dashboard/.venv/bin/python dashboard/tests/run.py`；低风险文档或目录调整不必重跑全部功能测试。
-5. 对外说明与当前代码和部署保持一致；变更后更新相关文档。
+1. Inspect current code, relevant documentation, and Git status before editing. Preserve user changes.
+2. Preserve account permissions, Passkey compatibility, API paths, calculation definitions, cache semantics, and existing features.
+3. Verify behavior proportionately. Distinguish implemented, tested, deployed, accepted by a provider, and actually delivered.
+4. Run `dashboard/.venv/bin/python dashboard/tests/run.py` from the repository root for regression verification when needed. Documentation-only changes do not require a full application test run.
+5. Keep English documentation consistent with current code and production configuration. Do not describe unused platforms as active infrastructure.
 
-## 数据与安全
+## Financial data and security
 
-- 原始发布机构优先，金融数据注明来源、对应期、时间、时区、单位、修订及延迟。缺失值不补造。
-- 区分官方事实、市场预期和分析推断；市场价格及预测市场不是官方承诺，不输出确定性收益承诺。
-- 遵守供应商许可、API 限制和 SEC fair access 要求，保留失败时已有成功快照及旧数据标记。
-- API key、Cookie、OAuth 凭据、数据库连接密码、代理订阅、账户数据和数据库备份不得进入 Git、静态前端、日志或聊天输出。
-- 不使用 `git add -f` 添加被忽略的内容。构建与同步采用明确的应用路径，不能打包整个仓库含忽略文件。
+- Prefer original publishers. Preserve source, reporting period, retrieval time, timezone, unit, revision basis, and delay indicators. Never invent missing observations.
+- Separate official facts, market expectations, and inference. Prediction-market prices are not official policy commitments; do not promise investment returns.
+- Respect provider licenses, rate limits, and SEC fair-access requirements. Keep successful snapshots when refreshes fail and label stale data.
+- Never commit or print API keys, cookies, OAuth credentials, proxy subscriptions, database passwords, account records, or backups.
+- Never force-add ignored private files. Build and synchronize explicit application paths rather than the entire working tree.
+- Do not introduce authentication bypasses for testing or deployment.
 
-## 生产部署边界
+## Production boundaries
 
-前端在 Vercel；后端及专用 PostgreSQL 在 `47.114.43.129` 的 FinFeed 项目内。运维以 `dashboard/docs/deployment.md`、`server-deployment.md` 和 `database-migration.md` 为准。
+The frontend is on Vercel. The backend, PostgreSQL, proxy, and HTTPS tunnel run under `/mnt/data/users/shx/FinFeed` on `47.114.43.129`. Follow the deployment, server, database, and email runbooks.
 
-- 所有持久部署文件位于 `/mnt/data/users/shx/FinFeed`，只管理 FinFeed 进程、依赖、代理、数据库和日志。
-- 不改其他项目、系统网络、全局 Python 环境、系统服务或其他既有服务。
-- GitHub `main` 推送会触发前端构建，后端代码快照需单独部署；不能覆盖服务器私密配置、数据库、备份或持久状态。
-- 数据库恢复或迁移前保存一致备份并验证；保留原始副本。回滚需处理切换后的新增数据，不能简单切回旧库。
-- 删除云服务、重写 Git 历史或清理数据库作为独立操作处理，不因普通代码或文档更新自动执行。
+- Manage only FinFeed-owned files and verified processes. Do not change other projects, global Python, system services, firewall rules, DNS, or routing.
+- A push to `main` publishes the frontend; the server application snapshot requires an explicit separate update.
+- Never synchronize over `.private`, `.postgres`, `.proxy`, `.tailscale`, `.venv`, or `.runtime` during an application update.
+- Back up and verify databases before schema changes or restore. Preserve source copies and include post-cutover writes in any rollback.
+- Do not run duplicate supervisors, schedulers, database clusters, or copies of the public tunnel identity.
+- Infrastructure deletion, Git history rewriting, and database cleanup are separate operations requiring task-specific authorization.

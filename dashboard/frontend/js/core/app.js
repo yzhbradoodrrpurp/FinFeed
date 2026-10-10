@@ -35,6 +35,7 @@ const groups = [
 const groupIds=['security','price','eps','valuation','volume','revenue','debt','fcf','gross_margin','operating_margin','capex'];
 groups.forEach((group,index)=>group.id=groupIds[index]);
 let groupOrder=[...groupIds],ownGroupOrder=[...groupIds];
+function canReorderWatchlistGroups(){return !readOnly&&viewedUserId===currentUser?.id;}
 function applyAccountGroupOrder(state){groupOrder=[...(state.uiPreferences?.watchlistGroupOrder||(viewedUserId===currentUser?.id?ownGroupOrder:groupIds))];}
 const allColumns=groups.flatMap(g=>g.columns);
 const records=new Map();
@@ -699,8 +700,8 @@ window.FinFeedPreferences?.subscribe(preferences=>{
   render();
 });
 window.FinFeedWatchlistOrder?.bind({
-  canReorder:()=>!readOnly&&viewedUserId===currentUser?.id,
+  canReorder:canReorderWatchlistGroups,
   getOrder:()=>[...groupOrder],
-  reorder:order=>{groupOrder=order;if(!readOnly)ownGroupOrder=[...order];render();},
-  save:order=>window.FinFeedPreferences.save({watchlistGroupOrder:order})
+  reorder:order=>{if(!canReorderWatchlistGroups())return;groupOrder=[...order];ownGroupOrder=[...order];render();},
+  save:order=>canReorderWatchlistGroups()?window.FinFeedPreferences.save({watchlistGroupOrder:[...order]}):Promise.reject(new Error("只能修改自己的指标顺序"))
 });

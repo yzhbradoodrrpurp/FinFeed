@@ -38,6 +38,44 @@ class CloudCases(unittest.TestCase):
         reopened = Store(sqlite_path=self.path)
         self.assertEqual(reopened.read_state()['uiPreferences'], prefs)
 
+    def test_two_accounts_keep_independent_layouts_across_reads_writes_and_restart(self):
+        from backend.domain.state_validation import GROUP_ORDER, SECTOR_ORDER
+        self.enroll()
+        account_a = self.client.get('/api/auth/status').json['user']['id']
+        client_b = self.app.test_client()
+        account_b = self.signup(client_b)
+        order_a, order_b = list(reversed(GROUP_ORDER)), GROUP_ORDER[1:] + GROUP_ORDER[:1]
+        for client, order in ((self.client, order_a), (client_b, order_b)):
+            self.assertEqual(client.put('/api/preferences', json={'watchlistGroupOrder': order}, headers=HEADERS).status_code, 200)
+        before_a, before_b = self.store.read_state(account_a), self.store.read_state(account_b)
+        # Viewing B reads B's layout; A's own preferences continue to resolve to A's session.
+        viewed = self.client.get('/api/state?user=' + account_b).json
+        self.assertTrue(viewed['readOnly'])
+        self.assertEqual(viewed['state']['uiPreferences']['watchlistGroupOrder'], order_b)
+        self.assertEqual(self.client.get('/api/preferences').json['preferences']['watchlistGroupOrder'], order_a)
+        for client, target in ((self.client, account_b), (client_b, account_a)):
+            self.assertEqual(client.put('/api/preferences?user=' + target, json={'watchlistGroupOrder': GROUP_ORDER}, headers=HEADERS).status_code, 403)
+            self.assertEqual(client.put('/api/state?user=' + target, json={'uiPreferences': {'watchlistGroupOrder': GROUP_ORDER}}, headers=HEADERS).status_code, 403)
+            self.assertEqual(client.put('/api/preferences', json={'user_id': target, 'watchlistGroupOrder': GROUP_ORDER}, headers=HEADERS).status_code, 400)
+        self.assertEqual(self.store.read_state(account_a), before_a)
+        self.assertEqual(self.store.read_state(account_b), before_b)
+        # An A write leaves all of B's state/revision/history unchanged, and vice versa.
+        def snapshot(user):
+            with self.store.transaction() as connection:
+                account = self.store.account(connection, user, lock=False)
+                history = self.store.execute(connection, 'SELECT COUNT(*) AS n FROM account_history WHERE user_id=?', (user,)).fetchone()['n']
+                return account['state'], account['revision'], history
+        saved_b = snapshot(account_b)
+        self.client.put('/api/preferences', json={'watchlistGroupOrder': GROUP_ORDER, 'homeSectorOrder': list(reversed(SECTOR_ORDER))}, headers=HEADERS)
+        self.assertEqual(snapshot(account_b), saved_b)
+        saved_a = snapshot(account_a)
+        self.assertEqual(client_b.put('/api/preferences', json={'watchlistGroupOrder': order_a, 'homeSectorOrder': SECTOR_ORDER}, headers=HEADERS).status_code, 200)
+        client_b.put('/api/state', json={'watchlist': ['NVDA']}, headers=HEADERS)
+        self.assertEqual(snapshot(account_a), saved_a)
+        reopened = Store(sqlite_path=self.path)
+        self.assertEqual(reopened.read_state(account_a)['uiPreferences']['watchlistGroupOrder'], GROUP_ORDER)
+        self.assertEqual(reopened.read_state(account_b)['uiPreferences']['watchlistGroupOrder'], order_a)
+
     def test_database_timeout_returns_retryable_json_without_expiring_session(self):
         import psycopg
         from psycopg_pool import PoolTimeout

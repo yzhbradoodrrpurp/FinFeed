@@ -28,8 +28,10 @@ node_modules/
 dist/
 build/
 
-# Private stock trading records; keep only the shared instructions
-/trading/*
-!/trading/README.md
+# Personal research and records; local only
+/personal/
+/analysis/
+/knowledge/
+/trading/
 frontend/dist/
 frontend/.vercel/

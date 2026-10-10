@@ -13,7 +13,9 @@ const ctx={window:{},URL,Promise,AbortController,encodeURIComponent,surfaceNames
  // Intentionally ignore abort: also verify protection when stale responses arrive anyway.
  seedQuoteSnapshots(){},FinFeedAuth:{request:(url,options)=>new Promise(resolve=>pending.push({url,options,resolve}))}};
 ctx.FinFeedCache={read:()=>null,write(){},market:async(url,consume,{signal}={})=>{const response=await ctx.FinFeedAuth.request(url,{signal});if(!response.ok)throw new Error('request failed');const value=await response.json();consume(value);return value;}};
-vm.createContext(ctx);vm.runInContext(functions+pump,ctx);
+ctx.groupIds=['security','price'];ctx.ownGroupOrder=['price','security'];
+const orderFunction=source.slice(source.indexOf('function applyAccountGroupOrder('),source.indexOf('const allColumns='));
+vm.createContext(ctx);vm.runInContext(orderFunction+functions+pump,ctx);
 const flush=()=>new Promise(setImmediate);
 const response=data=>({ok:true,json:async()=>data});
 (async()=>{
@@ -27,8 +29,8 @@ const response=data=>({ok:true,json:async()=>data});
  assert.equal(firstState.options.signal.aborted,true);
  const newestState=pending.at(-1);
  await ctx.switchSurface('macro');assert.equal(ctx.surface,'macro');assert.equal(main.inert,false);
- newestState.resolve(response({state:{watchlist:['AAPL','MSFT'],positions:[]},readOnly:true,quotes:{}}));await flush();
- assert.deepEqual(Array.from(ctx.tickers),['AAPL','MSFT']);assert.equal(ctx.surface,'macro');
+ newestState.resolve(response({state:{watchlist:['AAPL','MSFT'],positions:[],uiPreferences:{watchlistGroupOrder:['security','price']}},readOnly:true,quotes:{}}));await flush();
+ assert.deepEqual(Array.from(ctx.tickers),['AAPL','MSFT']);assert.equal(ctx.surface,'macro');assert.deepEqual(Array.from(ctx.groupOrder),['security','price']);
  assert.equal(new URL(ctx.location.href).searchParams.get('surface'),'macro');
  firstState.resolve(response({state:{watchlist:['WRONG'],positions:[]},readOnly:false,quotes:{}}));await first;
  assert.deepEqual(Array.from(ctx.tickers),['AAPL','MSFT']);assert.equal(ctx.readOnly,true);
@@ -38,5 +40,6 @@ const response=data=>({ok:true,json:async()=>data});
  newQuote.resolve(response({ticker:'MSFT',name:'new'}));await flush();
  oldQuote.resolve(response({ticker:'AAPL',name:'stale'}));await flush();
  assert.equal(ctx.records.get('AAPL').name,'new account');assert.equal(ctx.records.get('MSFT').name,'new');assert.equal(ctx.running,0);
+ ctx.viewedUserId='self';ctx.applyAccountGroupOrder({});assert.deepEqual(Array.from(ctx.groupOrder),['price','security']);
  console.log('PASS: navigation and account selection stay interactive; cancelled and late responses cannot overwrite newer data');
 })().catch(error=>{console.error(error);process.exitCode=1;});

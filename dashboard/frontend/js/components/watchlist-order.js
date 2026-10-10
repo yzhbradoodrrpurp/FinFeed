@@ -1,7 +1,8 @@
 "use strict";
 window.FinFeedWatchlistOrder=(()=>{
   const easing='cubic-bezier(.22,1,.36,1)';
-  function bind({getOrder,reorder,save}){
+  let cancelDrag=()=>{};
+  function bind({getOrder,reorder,save,canReorder=()=>true}){
     const table=document.getElementById('watchlist'),shell=table.closest('.table-shell');
     let drag=null,hold=null,frame=0;
     const animations=new Map();
@@ -20,10 +21,10 @@ window.FinFeedWatchlistOrder=(()=>{
     }
     function report(error){const feedback=document.getElementById('feedback');feedback.hidden=false;feedback.textContent=`指标顺序尚未保存：${error.message}。请重试。`;}
     function persist(order,previous){save(order).catch(error=>{
-      if(JSON.stringify(getOrder())===JSON.stringify(order))shift(previous);report(error);
+      if(canReorder()&&JSON.stringify(getOrder())===JSON.stringify(order))shift(previous);report(error);
     });}
     function start(){
-      hold=null;if(!drag||!window.FinFeedPreferences.ready)return;
+      hold=null;if(!drag||!window.FinFeedPreferences.ready||!canReorder())return;
       drag.active=true;document.body.classList.add('group-order-dragging');
       const header=table.querySelector(`.group-head [data-group="${drag.id}"]`),bounds=header.getBoundingClientRect();
       const preview=document.createElement('div'),copy=table.cloneNode(true);
@@ -75,8 +76,9 @@ window.FinFeedWatchlistOrder=(()=>{
       }else preview.remove();
       if(JSON.stringify(order)!==JSON.stringify(previous.original))persist(order,previous.original);
     }
+    cancelDrag=()=>finish(true);
     shell.addEventListener('pointerdown',event=>{
-      const handle=event.target.closest('[data-group-handle]');if(!handle||handle.disabled||event.button!==0||drag)return;
+      const handle=event.target.closest('[data-group-handle]');if(!canReorder()||!handle||handle.disabled||event.button!==0||drag)return;
       event.preventDefault();drag={id:handle.dataset.groupHandle,pointer:event.pointerId,x:event.clientX,y:event.clientY,startX:event.clientX,startY:event.clientY,original:getOrder(),active:false};
       shell.setPointerCapture?.(event.pointerId);hold=setTimeout(start,300);
     });
@@ -92,12 +94,12 @@ window.FinFeedWatchlistOrder=(()=>{
     window.addEventListener('blur',()=>finish(true));
     shell.addEventListener('keydown',event=>{
       if(event.key==='Escape'&&drag){event.preventDefault();finish(true);return;}
-      const handle=event.target.closest('[data-group-handle]');if(!handle||handle.disabled||!['ArrowLeft','ArrowRight'].includes(event.key))return;
+      const handle=event.target.closest('[data-group-handle]');if(!canReorder()||!handle||handle.disabled||!['ArrowLeft','ArrowRight'].includes(event.key))return;
       event.preventDefault();const original=getOrder(),order=[...original],from=order.indexOf(handle.dataset.groupHandle);
       const visible=[...table.querySelectorAll('.group-head [data-group]')].map(cell=>cell.dataset.group),index=visible.indexOf(handle.dataset.groupHandle),neighbor=visible[index+(event.key==='ArrowLeft'?-1:1)],to=order.indexOf(neighbor);
       if(to<0)return;order.splice(from,1);order.splice(to,0,handle.dataset.groupHandle);shift(order);persist(order,original);
       table.querySelector(`[data-group-handle="${handle.dataset.groupHandle}"]`)?.focus({preventScroll:true});
     });
   }
-  return {bind};
+  return {bind,cancel:()=>cancelDrag()};
 })();

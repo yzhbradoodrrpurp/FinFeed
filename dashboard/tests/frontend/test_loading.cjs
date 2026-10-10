@@ -9,7 +9,9 @@ const context={window:{},URLSearchParams,Promise,AbortController,accountStateVer
  document:{addEventListener(){},querySelector:()=>main,querySelectorAll:()=>[],body:{classList:{toggle(){}}}},el,sessionStorage:{getItem:()=>null},escapeHTML:s=>s,switchSurface(){},rememberSurfaceAccount(name,id){context.surfaceAccounts[name]=id;},
  seedQuoteSnapshots(){},FinFeedNews:{initialize:()=>calls.push('news'),setWatchlist(){}},FinFeedAuth:{initialize:()=>deferred('auth'),request:deferred},FinFeedHome:{prefetch:()=>calls.push('home'),open:()=>calls.push('greeting')},FinFeedMacro:{open:()=>calls.push('macro')},FinFeedWhales:{open:()=>calls.push('whales')},
  trackedTickers:()=>[...new Set([...context.tickers,...context.holdings.map(p=>p.ticker)])],render:()=>calls.push('render'),load:tickers=>calls.push([...tickers]),setTimeout:callback=>{context.timers.push(callback);},timers:[],setInterval(){},refreshWatchlist(){},feedback:message=>calls.push(message)};
-vm.createContext(context);vm.runInContext(init,context);
+context.groupIds=['security','price'];context.ownGroupOrder=['price','security'];
+const orderFunction=source.slice(source.indexOf('function applyAccountGroupOrder('),source.indexOf('const allColumns='));
+vm.createContext(context);vm.runInContext(orderFunction+init,context);
 (async()=>{
  const done=context.initializeState();assert.deepEqual(calls,[]);
  assert.equal(main.inert,false);assert.equal(context.readOnly,true); // Filters stay usable; writes wait for verified state.

@@ -34,7 +34,8 @@ const groups = [
 ];
 const groupIds=['security','price','eps','valuation','volume','revenue','debt','fcf','gross_margin','operating_margin','capex'];
 groups.forEach((group,index)=>group.id=groupIds[index]);
-let groupOrder=[...groupIds];
+let groupOrder=[...groupIds],ownGroupOrder=[...groupIds];
+function applyAccountGroupOrder(state){groupOrder=[...(state.uiPreferences?.watchlistGroupOrder||(viewedUserId===currentUser?.id?ownGroupOrder:groupIds))];}
 const allColumns=groups.flatMap(g=>g.columns);
 const records=new Map();
 let watchlistFavorites=[];
@@ -203,6 +204,7 @@ function cancelRecordLoads(){
   for(const controller of recordRequests)controller.abort();
 }
 async function changeViewedAccount(name,id){
+  window.FinFeedWatchlistOrder?.cancel();
   const version=++accountStateVersion;
   accountRequest?.abort();accountRequest=new AbortController();
   const controller=accountRequest;
@@ -222,6 +224,7 @@ async function changeViewedAccount(name,id){
     if(!response.ok)throw new Error(data.error||"记录读取失败");
     const state=data.state||{watchlist:[],positions:[]};
     readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
+    applyAccountGroupOrder(state);
     tickers=state.watchlist;watchlistFavorites=state.watchlistFavorites||[];holdings=state.positions;initialLoading=false;
     seedQuoteSnapshots(data.quotes);
     feedback("");render();load(trackedTickers());
@@ -299,7 +302,7 @@ function sortedTickers(){
 function render(){
   if(surface==="watchlist"){
   const chosen=selectedGroups();const cols=chosen.flatMap(g=>g.columns);
-  const headerHTML=`<tr class="group-head"><th class="sticky">公司 / 基金</th>${chosen.map(g=>`<th data-group="${g.id}" colspan="${g.columns.length}"><div class="group-title">${g.name}<button class="group-handle" data-group-handle="${g.id}" type="button" aria-label="长按拖动 ${g.name}，或用左右方向键排序" title="长按拖动排序" ${window.FinFeedPreferences?.ready?"":"disabled"}>⠿</button></div></th>`).join("")}<th>时间</th></tr><tr class="column-head"><th class="sticky"><button class="th-button" data-sort="ticker">Ticker / Name<span>点击列名排序</span></button></th>${cols.map(([key,name,sub])=>`<th data-group="${groups.find(g=>g.columns.some(c=>c[0]===key)).id}" data-column="${key}"><button class="th-button" data-sort="${key}" ${sortKey===key?'data-sort-active="true"':""}>${name}${sortKey===key?(sortAsc?" ↑":" ↓"):""}<span>${sub}</span></button></th>`).join("")}<th>Quote Date<span style="display:block;font-weight:400">交易所当地日期</span></th></tr>`;
+  const headerHTML=`<tr class="group-head"><th class="sticky">公司 / 基金</th>${chosen.map(g=>`<th data-group="${g.id}" colspan="${g.columns.length}"><div class="group-title">${g.name}${readOnly?"":`<button class="group-handle" data-group-handle="${g.id}" type="button" aria-label="长按拖动 ${g.name}，或用左右方向键排序" title="长按拖动排序" ${window.FinFeedPreferences?.ready?"":"disabled"}>⠿</button>`}</div></th>`).join("")}<th>时间</th></tr><tr class="column-head"><th class="sticky"><button class="th-button" data-sort="ticker">Ticker / Name<span>点击列名排序</span></button></th>${cols.map(([key,name,sub])=>`<th data-group="${groups.find(g=>g.columns.some(c=>c[0]===key)).id}" data-column="${key}"><button class="th-button" data-sort="${key}" ${sortKey===key?'data-sort-active="true"':""}>${name}${sortKey===key?(sortAsc?" ↑":" ↓"):""}<span>${sub}</span></button></th>`).join("")}<th>Quote Date<span style="display:block;font-weight:400">交易所当地日期</span></th></tr>`;
   if(el("table-head").innerHTML!==headerHTML)el("table-head").innerHTML=headerHTML;
   const watchHTML=tickers.length?sortedTickers().map(t=>{
     const record=records.get(t);const m=record?.metrics||{};
@@ -308,8 +311,10 @@ function render(){
       const value=format(metric,type);const color=value==="—"?"missing":type==="growth"?(metric.value>=0?"positive":"negative"):"";
       return `<td data-group="${groups.find(g=>g.columns.some(c=>c[0]===key)).id}" data-column="${key}" ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}${fetchingTickers.has(t)?" cell-fetching":""}">${value}${value==="—"?`<span class="missing-label">${shortMissing(metric)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
     }).join("")}<td class="status-cell">${escapeHTML(record?.quote_date||"—")}<div class="missing-label">${record?.partial?"行情已取得 · 正在补充数据":record?.refreshing?"缓存 · 正在更新":record?.stale?"旧快照 · 刷新失败":record?.errors?.length?"部分数据未取得":record?record.volume_complete?"完整交易日":"部分数据待确认":"读取中"}</div></td></tr>`;
-  }).join(""):initialLoading?Array.from({length:8},()=>`<tr class="initial-loading"><td class="sticky"><span class="skeleton"></span></td>${cols.map(()=>`<td><span class="skeleton"></span></td>`).join("")}<td><span class="skeleton"></span></td></tr>`).join(""):`<tr class="empty-row"><td colspan="${cols.length+2}">添加股票或 ETF 的 Ticker，开始查看指标。</td></tr>`;
+  }).join(""):initialLoading?Array.from({length:8},()=>`<tr class="initial-loading"><td class="sticky"><span class="skeleton"></span></td>${cols.map(()=>`<td><span class="skeleton"></span></td>`).join("")}<td><span class="skeleton"></span></td></tr>`).join(""):`<tr class="empty-row"><td colspan="${cols.length+2}"></td></tr>`;
   patchRows(el("table-body"),watchHTML,"ticker");
+  el("watchlist-empty").hidden=Boolean(tickers.length||initialLoading);
+  el("watchlist-empty").style.top=(el("table-head").offsetHeight||72)+"px";
   }
   const fetched=tickers.filter(t=>records.has(t)).length;
   const withPrice=tickers.filter(t=>records.get(t)?.metrics?.price?.value!=null).length;
@@ -534,6 +539,7 @@ async function initializeState(){
       if(!state&&readOnly)state={watchlist:[],positions:[]};
       if(!state)state=await persistState({initialize:true,watchlist:[],positions:[]});
       if(stateVersion!==accountStateVersion)return;
+      applyAccountGroupOrder(state);
       initialLoading=false;tickers=state.watchlist;watchlistFavorites=state.watchlistFavorites||[];holdings=state.positions;
       if(viewedUserId===currentUser.id)window.FinFeedNews?.setWatchlist(tickers);
       seedQuoteSnapshots(data.quotes);
@@ -686,11 +692,15 @@ el("admin-accounts").addEventListener("click",async event=>{
 });
 
 window.FinFeedPreferences?.subscribe(preferences=>{
-  if(preferences.watchlistGroupOrder)groupOrder=[...preferences.watchlistGroupOrder];
+  if(preferences.watchlistGroupOrder){
+    ownGroupOrder=[...preferences.watchlistGroupOrder];
+    if(viewedUserId===currentUser?.id&&!readOnly)groupOrder=[...ownGroupOrder];
+  }
   render();
 });
 window.FinFeedWatchlistOrder?.bind({
+  canReorder:()=>!readOnly&&viewedUserId===currentUser?.id,
   getOrder:()=>[...groupOrder],
-  reorder:order=>{groupOrder=order;render();},
+  reorder:order=>{groupOrder=order;if(!readOnly)ownGroupOrder=[...order];render();},
   save:order=>window.FinFeedPreferences.save({watchlistGroupOrder:order})
 });

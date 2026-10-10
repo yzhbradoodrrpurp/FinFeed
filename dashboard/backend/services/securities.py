@@ -79,7 +79,7 @@ def frame_values(frame, labels, currency, source_url):
     return output
 
 
-def growth(series, period, yearly=False, margin=False):
+def growth(series, period, yearly=False):
     if not period or period not in series:
         return empty_metric("缺少该财季数据", period=period)
     if yearly:
@@ -92,15 +92,13 @@ def growth(series, period, yearly=False, margin=False):
     b = series.get(old, {})
     current, previous = number(a["value"]), number(b.get("value"))
     value, reason = qoq(current, previous)
-    if margin and current is not None and previous is not None:
-        value, reason = current - previous, None
     if yearly and reason:
         reason = reason.replace("上一财季", "去年同财季")
     cached = [entry for entry in (a, b) if entry.get("historical_cache")]
     return {"value": value, "reason": reason, "period": period, "comparison_period": old,
-            "basis": ("利润率变化 = 本期利润率 − 比较期利润率；显示为百分点（pp）" if margin else "金额变化率 =（本期 − 比较期）/ |比较期|；零基期无法计算百分比") + ("；同比财季间隔须为 350–380 天" if yearly else "；环比财季间隔须为 65–120 天"),
-            "change_status": None if margin else change_status(current, previous),
-            "change_unit": "pp" if margin else "%", "calculation_version": 2, "source": a["source"],
+            "basis": "相对变化率 =（本期 − 比较期）/ |比较期|；零基期无法计算百分比；利润率变化不是百分点差值" + ("；同比财季间隔须为 350–380 天" if yearly else "；环比财季间隔须为 65–120 天"),
+            "change_status": change_status(current, previous),
+            "change_unit": "%", "calculation_version": 3, "source": a["source"],
             "historical_cache": bool(cached),
             "cache_fetched_at": min((entry["fetched_at"] for entry in cached if entry.get("fetched_at")), default=None),
             "inputs": {"current": a["value"], "previous_year_quarter" if yearly else "previous_quarter": b.get("value")}}
@@ -139,7 +137,7 @@ def add_quarter_metrics(result):
     for label in ("gross_margin", "operating_margin", "capex"):
         values = series.get(label)
         for suffix, period, yearly in (("yoy_q0", q0, True), ("qoq_q0", q0, False), ("qoq_q1", q1, False)):
-            result["metrics"][f"{label}_{suffix}"] = growth(values, period, yearly=yearly, margin=label.endswith("margin")) if values is not None else empty_metric(
+            result["metrics"][f"{label}_{suffix}"] = growth(values, period, yearly=yearly) if values is not None else empty_metric(
                 result["metrics"].get(f"{label}_q0", {}).get("reason") or "数据源未提供该财季值", period=period)
     return result
 

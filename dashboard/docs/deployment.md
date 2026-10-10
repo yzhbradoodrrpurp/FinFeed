@@ -1,4 +1,4 @@
-# 网站部署：Vercel + h20 + Supabase
+# 网站部署：Vercel + h20 PostgreSQL
 
 更新于 2026-10-10（北京时间）。`h20-backend` 已合并到 `main`，当前生产部署如下：
 
@@ -7,7 +7,7 @@
 | 前端 | https://finfeed-research.vercel.app ，Vercel，仓库 `main`，Root Directory `frontend` |
 | 后端 HTTPS | https://finfeed.tail03a68f.ts.net ，Tailscale Funnel，仅转发 FinFeed |
 | 后端进程 | h20，`/mnt/data/users/shx/FinFeed`，监听 `127.0.0.1:18765` |
-| 数据库 | 原 Supabase PostgreSQL，客户端 TLS，同一 `finfeed_private` schema |
+| 数据库 | h20 项目 PostgreSQL 17.11，`127.0.0.1:18766`，TLS，`finfeed_private` schema |
 | 邮件 | Gmail HTTPS API，仅 `gmail.send` 权限 |
 | 调度 | cron-job.org 每分钟 POST 到 h20，项目本地 scheduler 默认关闭 |
 | Render | 暂保留作回滚备用，不是当前生产转发目标 |
@@ -18,15 +18,15 @@
 
 Vercel 使用 `frontend/vercel.json` 和 `node build.cjs`，输出 `dist`，将 `/api/*` 转发到 h20。推送 `main` 会触发前端自动部署；h20 使用代码快照，更新代码需单独部署，不会随 Git push 自动同步。
 
-迁移继续使用原数据库，不需要搬迁账户、持仓、Passkey、通知设置或缓存。`DATABASE_URL` 保存在 h20 的 `.private/backend.json`，权限 600；URI 中的特殊字符密码须编码，连接要求 TLS。不要把私密 schema 加入 Supabase Exposed schemas。应用不使用 Supabase Auth，浏览器不会获得数据库密码或 Passkey 私钥。
+2026-10-10 已将原 Supabase 中全部 15 张应用表的一致快照迁移并逐表校验，保留账户、持仓、Passkey、会话、历史、通知设置和缓存。`DATABASE_URL` 保存在 h20 的 `.private/backend.json`，权限 600；URI 中的特殊字符密码须编码，连接要求 TLS。数据库不开放公网端口。应用不使用 Supabase Auth，浏览器不会获得数据库密码或 Passkey 私钥。
 
-新建环境时可以使用 Supabase Session pooler；当前部署的连接配置以私密文件为准，不在文档中公布连接地址或凭据。
+PostgreSQL 安装、数据、TLS 与每日备份均位于 `.postgres`，由本项目监督进程管理。原 Supabase 以应用表写保护触发器保留只读快照；备份与回滚见 [数据库运维](database-migration.md)。连接凭据不在文档公布。
 
 ## h20 私密配置与代理
 
 配置文件为 `/mnt/data/users/shx/FinFeed/.private/backend.json`。禁止提交到 Git 或静态前端：
 
-- `DATABASE_URL`：原 Supabase 连接 URI。
+- `DATABASE_URL`：本机项目 PostgreSQL 的 `finfeed_app` 角色连接 URI，数据库名 `finfeed`。
 - `PUBLIC_ORIGIN=https://finfeed.tail03a68f.ts.net`：固定后端 HTTPS origin，不含路径。
 - `FRONTEND_ORIGIN=https://finfeed-research.vercel.app`：生产前端来源；现有 Passkey 继续使用此域名的 origin 和 RP ID。
 - `FINFEED_BOOTSTRAP_TOKEN`：至少 32 字符的高强度首次绑定码；现有账户不重新初始化。
@@ -70,7 +70,7 @@ Macro 正常缓存一小时，失败状态短期重试；界面先显示成功�
 
 从仓库根目录运行 `dashboard/.venv/bin/python dashboard/tests/run.py`；使用 Flask 测试客户端、测试数据库和虚拟认证器，不依赖无登录本机服务。结构见 [架构说明](architecture.md)。
 
-2026-10-10 已验证 h20 进程、Supabase 客户端 TLS、Yahoo 三年日线、BLS 官方日历/报告/数据 API、SEC、FRED、BEA、Polymarket、Gmail 令牌更新、Vercel 公网健康检查及自动调度 202。错误 Host/Origin 返回 403，未登录私人接口返回 401，登录选项保留 Vercel RP ID。迁移代码的后端 164 项测试与前端验证已通过。
+2026-10-10 已验证 h20 进程、项目 PostgreSQL 客户端 TLS、Yahoo 三年日线、BLS 官方日历/报告/数据 API、SEC、FRED、BEA、Polymarket、Gmail 令牌更新、Vercel 公网健康检查及自动调度 202。错误 Host/Origin 返回 403，未登录私人接口返回 401，登录选项保留 Vercel RP ID。迁移代码的后端 164 项测试与前端验证已通过。
 
 这些检查不等于逐项重测全部页面操作，也不等于每类提醒均已实际投递。Alpha Vantage 本次迁移没有重新进行实际 API 验收。真实邮件送达边界见邮件提醒说明。`/api/health` 是存活检查；登录后的 `/api/ready` 才检查数据库和刷新队列。
 
@@ -78,11 +78,11 @@ Macro 正常缓存一小时，失败状态短期重试；界面先显示成功�
 
 根目录 `render.yaml`、`dashboard/build_cloud.py`、`dashboard/start_cloud.py` 保留原 Render 部署兼容性，不是 h20 启动入口。Blueprint 使用 `dashboard` 根目录、Python 3.11.17、`python build_cloud.py`、`python start_cloud.py`、`/api/health`。Render 仍保留私密环境变量；不要把 h20 本机代理地址直接复制到 Render，因为其 loopback 指向不同机器。
 
-回滚需要同时恢复 Vercel 转发目标和邮件调度目标，保持数据库、前端 origin 和 Passkey RP ID；避免两个调度器同时运行。当前旧服务尚未删除，停止/删除作为独立运维操作处理。
+数据库已迁移且 Supabase 应用表有写保护，不能直接启用旧 Render。回滚需暂停写入、同步并校验 h20 新增数据，再恢复转发与调度，保持前端 origin 和 Passkey RP ID；避免两个调度器同时运行。当前旧服务尚未删除，停止/删除作为独立运维操作处理。
 
 ## 来源
 
 - [h20 运维记录](h20-deployment.md)、[邮件提醒配置](email-notifications.md)。
 - [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel)。
-- [Supabase PostgreSQL 连接](https://supabase.com/docs/guides/database/connecting-to-postgres)。
+- [PostgreSQL 归档恢复](https://www.postgresql.org/docs/17/app-pgrestore.html)。
 - [Render Blueprint](https://render.com/docs/blueprint-spec) 与 [免费服务](https://render.com/docs/free)，仅供备用部署参考。

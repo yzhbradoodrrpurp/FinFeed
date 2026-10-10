@@ -4,11 +4,11 @@
 
 邮件提醒入口为“我的账户”；Gmail 配置、服务器调度及迁移验收见 [邮件提醒说明](docs/email-notifications.md)。
 
-应用工厂为 `backend.app:create_app()`，生产后端在 h20 的 `/mnt/data/users/shx/FinFeed` 独立运行。使用原 Supabase PostgreSQL 保存记录及应用缓存，账户数据访问和修改仍要求 Passkey 登录。不提供无登录的本机服务或浏览器本地记录模式。
+应用工厂为 `backend.app:create_app()`，生产后端在 h20 的 `/mnt/data/users/shx/FinFeed` 独立运行。使用 h20 项目内 PostgreSQL 保存记录及应用缓存，账户数据访问和修改仍要求 Passkey 登录。不提供无登录的本机服务或浏览器本地记录模式。
 
 线上入口：<https://finfeed-research.vercel.app>；后端 HTTPS 入口：<https://finfeed.tail03a68f.ts.net>。Vercel 从 GitHub `main` 自动构建前端并转发 `/api/*`；h20 使用代码快照，需要单独更新部署，不会随 Git push 自动更新。迁移分支 `h20-backend` 已合并到 `main`。原 Render 服务暂保留作为回滚备用，不是当前生产转发目标。
 
-登录继续使用 Vercel 域名绑定的 Passkey；账户、持仓、缓存及邮件设置使用原数据库，无需迁移或重新注册。旧 Render 域名 Passkey 的迁移入口已移除。当前允许来源、凭据绑定和维护步骤见部署说明。
+登录继续使用 Vercel 域名绑定的 Passkey；账户、持仓、缓存及邮件设置已完整迁移到项目 PostgreSQL，无需重新注册或绑定邮箱。旧 Render 域名 Passkey 的迁移入口已移除。当前允许来源、凭据绑定和维护步骤见部署说明。
 
 表格进入时先显示列标题和占位动画，标的记录返回后显示 ticker 与已有公司名称；数据请求期间对应单元格显示轻微流动效果。“我的账户”用户列表首次加载显示占位动画，窗口打开期间每 60 秒自动刷新，关闭时停止。
 
@@ -104,7 +104,7 @@ node --check frontend/js/core/app.js
 
 - 账户状态、账户目录、当前账户记录并行加载；接口继续独立验证登录权限。
 - 请求完成后按浏览器动画帧合并渲染，保留现有表格行和单元格，只更新变化的内容；隐藏视图不重建，保留涨跌闪色与缺失值处理。
-- Supabase 使用 1–4 条 PostgreSQL 连接的小型池，归还连接前提交或回滚事务，取连接时检查可用性；连接使用 TLS，关闭预备语句，私人 schema 隔离保持。
+- PostgreSQL 使用 1–4 条连接的小型池，归还连接前提交或回滚事务，取连接时检查可用性；连接使用 TLS，关闭预备语句，私人 schema 隔离保持。
 - 每个 ticker 继续限制并发和合并请求；60 秒内有效行情供不同账户复用，季度财务随分钟刷新一同检查；失败保留带日期的成功快照并标记旧数据。
 - 该次历史测试使用免费 Render；当前 h20 不采用 Render 的空闲休眠机制，仍受用户网络、代理和 Yahoo 上游延迟影响。
 
@@ -115,7 +115,7 @@ Vercel 项目从同一 GitHub 仓库的 `main` 分支导入，Root Directory 为
 静态构建不包含数据库连接、Yahoo Cookie、代理凭据或 API Key；这些保存在 h20 的 `.private/backend.json`。
 `FRONTEND_ORIGIN=https://finfeed-research.vercel.app`，`PUBLIC_ORIGIN=https://finfeed.tail03a68f.ts.net`；不能改成访问者传入的 Host。
 
-已有 Passkey 仍验证 Vercel 的 origin 和 RP ID。迁移使用同一数据库，没有转移用户私钥。服务端 Cookie、Origin 校验和账户写入权限继续生效，预览域名不自动加入生产允许来源。
+已有 Passkey 仍验证 Vercel 的 origin 和 RP ID。数据库迁移保留原凭据和账户记录，没有转移用户私钥。服务端 Cookie、Origin 校验和账户写入权限继续生效，预览域名不自动加入生产允许来源。
 
 前端发布不等于 h20 代码发布。代码快照更新、监督进程、独立代理和回滚步骤见 [h20 运维说明](docs/h20-deployment.md)。
 

@@ -18,6 +18,9 @@ def commands():
                       '--socket=@finfeed-h20-control', '--port=0'],
         'backend': [str(ROOT / '.venv/bin/python'), str(ROOT / 'app/dashboard/deployment/h20/backend.py')],
     }
+    if (ROOT / '.private/postgresql-enabled').exists():
+        services = {'database': [str(ROOT / '.venv/bin/python'), str(ROOT / 'app/dashboard/deployment/h20/database.py')], **services}
+        services['database-backup'] = [str(ROOT / '.venv/bin/python'), str(ROOT / 'app/dashboard/deployment/h20/database_backup.py')]
     if (ROOT / '.private/scheduler-enabled').exists():
         services['scheduler'] = [str(ROOT / '.venv/bin/python'), str(ROOT / 'app/dashboard/deployment/h20/scheduler.py')]
     return services

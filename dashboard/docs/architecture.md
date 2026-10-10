@@ -1,6 +1,6 @@
 # Dashboard 代码结构
 
-更新于 2026-10-10（北京时间）。生产代码在 `main`；Vercel 前端、h20 后端和 Supabase 数据库的运维见 [部署说明](deployment.md)。
+更新于 2026-10-10（北京时间）。生产代码在 `main`；Vercel 前端、h20 后端和项目 PostgreSQL 数据库的运维见 [部署说明](deployment.md)。
 
 ## 目录职责
 
@@ -19,7 +19,7 @@
 
 ## 稳定性约束
 
-h20 迁移保持账户、Passkey、API 路径、Cookie、数据库 schema 和缓存键兼容，使用同一 Supabase 数据库。`backend/paths.py` 的应用临时缓存位于代码快照内的 `dashboard/.cache/`；服务器私密配置位于 `/mnt/data/users/shx/FinFeed/.private/`，代理、Tailscale、虚拟环境和日志均在项目目录内，不提交 Git。本机授权和测试文件仍可位于 Git 忽略的 `dashboard/.local/`。
+h20 迁移保持账户、Passkey、API 路径、Cookie、数据库 schema 和缓存键兼容，2026-10-10 已将 Supabase 的全部 15 张应用表迁移到项目 PostgreSQL，并校验一致快照的逐表行数和内容哈希。原 Supabase 保留为只读迁移快照，详见 [数据库运维](database-migration.md)。`backend/paths.py` 的应用临时缓存位于代码快照内的 `dashboard/.cache/`；服务器私密配置位于 `/mnt/data/users/shx/FinFeed/.private/`，代理、Tailscale、虚拟环境和日志均在项目目录内，不提交 Git。本机授权和测试文件仍可位于 Git 忽略的 `dashboard/.local/`。
 
 后台路径：浏览器 → Vercel `/api/*` 转发 → Tailscale Funnel → h20 `127.0.0.1:18765` → 应用。出站代理只监听 `127.0.0.1:17890`，Yahoo、Gmail、BLS 和 Polymarket 通过各自显式配置使用；SEC/FRED 可直连。当前代理由服务器香港节点连接美国节点，最终出口已验证为美国，不经用户电脑，不改变系统路由或其他项目设置。
 

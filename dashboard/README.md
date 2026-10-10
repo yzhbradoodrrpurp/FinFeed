@@ -50,6 +50,8 @@ State saves use authenticated `/api/state`, with revision and transaction contro
 | Forward P/E | Price / (next-quarter estimated EPS × 4) |
 | Revenue | Reported quarterly revenue |
 | Debt | Quarter-end total debt under provider classification |
+| Gross / operating margin | Same-quarter gross profit / revenue and operating income / revenue; latest, year-ago, previous and second-previous quarters |
+| Capital expenditure | Quarterly cash outflow displayed positive, using the same four quarter anchors; not company-adjusted net capex |
 | Free cash flow | Quarterly operating cash flow minus positive capital expenditure |
 | Quarterly growth | Current / adjacent previous quarter − 1 |
 | Average volume | Mean of the ten complete trading days before the comparison day |

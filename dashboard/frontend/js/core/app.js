@@ -27,7 +27,10 @@ const groups = [
   {name:"成交参与",view:"market",columns:[["avg_volume_10","Avg Volume","此前 10 交易日","volume"],["relative_volume_10","Volume / Avg","比较日 / 10 日","ratio"]]},
   {name:"营收",view:"financial",columns:[["revenue_q0","Total Revenue","Q0 · 单季","money"],["revenue_yoy_q0","Revenue Growth","Q0 · 季度同比","growth"],["revenue_qoq_q0","Revenue Growth","Q0 · 季度环比","growth"],["revenue_qoq_q1","Revenue Growth","Q−1 · 季度环比","growth"]]},
   {name:"债务",view:"financial",columns:[["debt_q0","Total Debt","Q0 · 季末","money"],["debt_yoy_q0","Debt Growth","Q0 · 季度同比","growth"],["debt_qoq_q0","Debt Growth","Q0 · 季度环比","growth"],["debt_qoq_q1","Debt Growth","Q−1 · 季度环比","growth"]]},
-  {name:"自由现金流",view:"financial",columns:[["fcf_q0","Free Cash Flow","Q0 · 单季","money"],["fcf_yoy_q0","FCF Growth","Q0 · 季度同比","growth"],["fcf_qoq_q0","FCF Growth","Q0 · 季度环比","growth"],["fcf_qoq_q1","FCF Growth","Q−1 · 季度环比","growth"]]}
+  {name:"自由现金流",view:"financial",columns:[["fcf_q0","Free Cash Flow","Q0 · 单季","money"],["fcf_yoy_q0","FCF Growth","Q0 · 季度同比","growth"],["fcf_qoq_q0","FCF Growth","Q0 · 季度环比","growth"],["fcf_qoq_q1","FCF Growth","Q−1 · 季度环比","growth"]]},
+  {name:"毛利率",view:"financial",columns:[["gross_margin_q0","Gross Margin","本季度","percent"],["gross_margin_year_ago","Gross Margin","去年同季度","percent"],["gross_margin_q1","Gross Margin","上个季度","percent"],["gross_margin_q2","Gross Margin","上上个季度","percent"]]},
+  {name:"营业利润率",view:"financial",columns:[["operating_margin_q0","Operating Margin","本季度","percent"],["operating_margin_year_ago","Operating Margin","去年同季度","percent"],["operating_margin_q1","Operating Margin","上个季度","percent"],["operating_margin_q2","Operating Margin","上上个季度","percent"]]},
+  {name:"资本开支",view:"financial",columns:[["capex_q0","Capital Expenditure","本季度","money"],["capex_year_ago","Capital Expenditure","去年同季度","money"],["capex_q1","Capital Expenditure","上个季度","money"],["capex_q2","Capital Expenditure","上上个季度","money"]]}
 ];
 const allColumns=groups.flatMap(g=>g.columns);
 const records=new Map();
@@ -273,6 +276,7 @@ function format(metric,type){
   if(type==="money"){const abs=Math.abs(n);return abs>=1e12?(n/1e12).toFixed(2)+"T":abs>=1e9?(n/1e9).toFixed(2)+"B":abs>=1e6?(n/1e6).toFixed(2)+"M":n.toLocaleString("en-US",{maximumFractionDigits:0});}
   if(type==="volume")return n.toLocaleString("en-US",{maximumFractionDigits:0});
   if(type==="growth")return (n>0?"+":"")+(n*100).toFixed(1)+"%";
+  if(type==="percent")return (n*100).toFixed(2)+"%";
   if(type==="ratio")return n.toFixed(1)+"×";
   return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 }

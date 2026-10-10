@@ -101,7 +101,40 @@ def growth(series, period, yearly=False):
             "inputs": {"current": a["value"], "previous_year_quarter" if yearly else "previous_quarter": b.get("value")}}
 
 
-FINANCIAL_KEYS = ("eps_q0", "eps_q1", "forward_eps_q0", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1", "revenue_yoy_q0", "debt_yoy_q0", "fcf_yoy_q0", "pe_ntm")
+QUARTER_METRIC_KEYS = tuple(f"{label}_{quarter}" for label in ("gross_margin", "operating_margin", "capex") for quarter in ("q0", "year_ago", "q1", "q2"))
+
+
+def margin_series(numerator, revenue, basis):
+    output = {}
+    for period in numerator.keys() & revenue.keys():
+        a, b = numerator[period], revenue[period]
+        output[period] = field(a["value"] / b["value"] if b["value"] > 0 else None, period,
+                              basis, a["source"], inputs={"numerator": a["value"], "revenue": b["value"]})
+        if b["value"] <= 0:
+            output[period]["reason"] = "营收非正，利润率不适用"
+    return output
+
+
+def add_quarter_metrics(result):
+    series = result.get("series", {})
+    # Anchor every category to the same reported income-statement quarter.
+    calendar = set(series.get("revenue", {})) | set(series.get("eps", {}))
+    q0 = result.get("quarter_0")
+    q1 = prior_quarter_period(q0, calendar) if q0 else None
+    q2 = prior_quarter_period(q1, calendar) if q1 else None
+    candidates = [p for p in calendar if q0 and 350 <= (datetime.fromisoformat(q0) - datetime.fromisoformat(p)).days <= 380]
+    year_ago = min(candidates, key=lambda p: abs((datetime.fromisoformat(q0) - datetime.fromisoformat(p)).days - 365), default=None)
+    for label in ("gross_margin", "operating_margin", "capex"):
+        for suffix, period in (("q0", q0), ("year_ago", year_ago), ("q1", q1), ("q2", q2)):
+            key = f"{label}_{suffix}"
+            if label in series:
+                result["metrics"][key] = series[label].get(period, empty_metric("数据源未提供该财季值", period=period))
+            elif key not in result["metrics"]:
+                result["metrics"][key] = empty_metric(result["metrics"].get("revenue_q0", {}).get("reason") or "数据源未提供该财季值", period=period)
+    return result
+
+
+FINANCIAL_KEYS = ("eps_q0", "eps_q1", "forward_eps_q0", "revenue_q0", "revenue_qoq_q0", "revenue_qoq_q1", "debt_q0", "debt_qoq_q0", "debt_qoq_q1", "fcf_q0", "fcf_qoq_q0", "fcf_qoq_q1", "revenue_yoy_q0", "debt_yoy_q0", "fcf_yoy_q0", "pe_ntm") + QUARTER_METRIC_KEYS
 
 
 
@@ -113,7 +146,7 @@ def add_yearly_growth(result):
             result["metrics"][key] = growth(series, result.get("quarter_0"), yearly=True)
         elif key not in result["metrics"]:
             result["metrics"][key] = empty_metric(result["metrics"].get(f"{label}_q0", {}).get("reason") or "缺少同比财季数据")
-    return result
+    return add_quarter_metrics(result)
 
 
 def financial_day(timestamp):
@@ -134,6 +167,7 @@ def _financial_age(saved, timestamp):
 def financial_due(saved, timestamp):
     return (not saved or saved.get("yahoo_session", {}).get("mode", "anonymous") != yahoo_session.mode()
             or saved.get("yahoo_session", {}).get("proxy_enabled", False) != yahoo_session.proxy_enabled()
+            or (saved.get("quote_type") == "EQUITY" and "capex" not in saved.get("series", {}))
             or _financial_age(saved, timestamp) >= TTL)
 
 
@@ -399,6 +433,8 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
             result["reported_shares"] = reported_shares[max(reported_shares)]
     eps = frame_values(income, ["DilutedEPS"], fin_currency, financial_url)
     revenue = frame_values(income, ["TotalRevenue"], fin_currency, financial_url)
+    gross_margin = margin_series(frame_values(income, ["GrossProfit"], fin_currency, financial_url), revenue, "毛利率 = 同财季毛利润 / 营收")
+    operating_margin = margin_series(frame_values(income, ["OperatingIncome"], fin_currency, financial_url), revenue, "营业利润率 = 同财季营业利润 / 营收")
     debt = frame_values(balance, ["TotalDebt"], fin_currency, balance_url)
     ocf = frame_values(cashflow, ["OperatingCashFlow"], fin_currency, cash_url)
     capex = frame_values(cashflow, ["CapitalExpenditure"], fin_currency, cash_url)
@@ -418,7 +454,9 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
     for label, series in [("revenue", revenue), ("debt", debt), ("fcf", fcf)]:
         m[f"{label}_qoq_q0"] = growth(series, q0)
         m[f"{label}_qoq_q1"] = growth(series, q1)
-    result["series"] = {"eps": eps, "revenue": revenue, "debt": debt, "fcf": fcf}
+    result["series"] = {"eps": eps, "revenue": revenue, "debt": debt, "fcf": fcf,
+                        "gross_margin": gross_margin, "operating_margin": operating_margin,
+                        "capex": {period: field(abs(entry["value"]), period, "单季资本开支；现金流出取正数，未调整为公司净资本开支", cash_url, currency=fin_currency, inputs={"reported_capex": entry["value"]}) for period, entry in capex.items()}}
     # Forecast permission failures must not discard successfully fetched actual
     # statements (including historical quarters needed for growth rates).
     statement_errors = errors[financial_error_start:]

@@ -25,7 +25,7 @@
 
 ## 数据来源与限制（核验于 2026-10-04，Asia/Shanghai）
 
-- 行情、财务和分析师预期：Yahoo Finance，经 [yfinance](https://ranaroussi.github.io/yfinance/) 读取。该项目并非 Yahoo 官方 SDK，适用于个人研究，数据的使用范围仍受供应商条款约束；不承诺实时、持续可用或覆盖所有市场。
+- 行情、财务和分析师预期：Yahoo Finance，经 [yfinance](https://ranaroussi.github.io/yfinance/) 读取。该项目并非 Yahoo 官方 SDK，数据的使用范围受供应商条款约束；不承诺实时、持续可用或覆盖所有市场。
 - 原始来源入口：[SEC EDGAR](https://www.sec.gov/edgar/search/)、[SEC API 文档](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)。当前网络对 SEC Company Facts 的实际测试返回 HTTP 403，所以第一版使用 C 级 Yahoo 聚合财务值，不把它们标为直接提取的 SEC 数据。
 - 每个标的提供北京时间检索时间、报价原始 UTC 时间、交易所时区、财季结束日期和逐字段来源。申报日期未从免费源可靠获得，因此明确缺失并提供 SEC 核对入口；数据期末不是公告日期。
 - ETF 的公司 EPS、公司债务、营收和 FCF 不适用；ETF 的 P/E 也未用持仓加权或基金商估值替代。`BTC` 是 Grayscale Bitcoin Mini Trust 的 ETF 代码；BTC 现货应使用 `BTC-USD`，两者不能混用。
@@ -84,7 +84,7 @@ node --check frontend/js/core/app.js
 - `backend/domain/metrics.py`：季度环比、上一财季匹配、P/E 和完整日量比。
 - `frontend/`：原生网页，不依赖前端构建。
 
-后续可接 SEC 财务解析或有授权的四季预测 API。公开部署之前需要重新核对数据许可、服务器访问控制和缓存范围；当前版本的个人研究数据不作为公共网站数据接口。
+后续可接 SEC 财务解析或有授权的四季预测 API。公开部署之前需要重新核对数据许可、服务器访问控制和缓存范围；当前版本不作为对外公共数据接口。
 
 2026-10-03 本地验证：8 个默认标的全部取得真实行情；另外检查了 ASML 的币种差异和 MSFT 的添加 / 移除 / 持久化。5 项财务边界测试通过；浏览器完成了桌面 / 390px 小屏检查、添加格式校验、行详情、视图切换和排序验证，未发现控制台错误。页面内表格可横向滚动，小屏正文没有横向溢出。可选 WebMCP 功能仅在浏览器支持时注册；本次验证浏览器没有可用的 WebMCP 上下文，该项未验证。
 

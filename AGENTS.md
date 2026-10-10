@@ -29,10 +29,10 @@ FinFeed 是资本市场研究网站，提供主要美股指数、11 个标普板
 
 ## 生产部署边界
 
-前端在 Vercel；后端及专用 PostgreSQL 在 h20 的 FinFeed 项目内。运维以 `dashboard/docs/deployment.md`、`h20-deployment.md` 和 `database-migration.md` 为准。
+前端在 Vercel；后端及专用 PostgreSQL 在 `47.114.43.129` 的 FinFeed 项目内。运维以 `dashboard/docs/deployment.md`、`server-deployment.md` 和 `database-migration.md` 为准。
 
 - 所有持久部署文件位于 `/mnt/data/users/shx/FinFeed`，只管理 FinFeed 进程、依赖、代理、数据库和日志。
-- 不改其他项目、系统网络、全局 Python 环境、系统服务或 SSH 跳板机。
-- GitHub `main` 推送会触发前端构建，h20 代码快照需单独部署；不能覆盖服务器私密配置、数据库、备份或持久状态。
+- 不改其他项目、系统网络、全局 Python 环境、系统服务或其他既有服务。
+- GitHub `main` 推送会触发前端构建，后端代码快照需单独部署；不能覆盖服务器私密配置、数据库、备份或持久状态。
 - 数据库恢复或迁移前保存一致备份并验证；保留原始副本。回滚需处理切换后的新增数据，不能简单切回旧库。
 - 删除云服务、重写 Git 历史或清理数据库作为独立操作处理，不因普通代码或文档更新自动执行。

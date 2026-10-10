@@ -30,7 +30,7 @@ FinFeed 是一个资本市场研究网站，集中查看美股行情、关注列
 
 - [架构说明](dashboard/docs/architecture.md)
 - [生产部署](dashboard/docs/deployment.md)
-- [h20 运维](dashboard/docs/h20-deployment.md)
+- [服务器运维](dashboard/docs/server-deployment.md)
 - [PostgreSQL 与数据库迁移](dashboard/docs/database-migration.md)
 - [邮件提醒](dashboard/docs/email-notifications.md)
 
@@ -40,4 +40,4 @@ FinFeed 是一个资本市场研究网站，集中查看美股行情、关注列
 dashboard/.venv/bin/python dashboard/tests/run.py
 ```
 
-前端由 Vercel 托管，后端与专用 PostgreSQL 在 h20 的 FinFeed 项目内运行。数据库、代理、邮件及账户凭据只保存在私密配置中，不提交 Git。
+前端由 Vercel 托管，后端与专用 PostgreSQL 在 `47.114.43.129` 的 FinFeed 项目内运行。数据库、代理、邮件及账户凭据只保存在私密配置中，不提交 Git。

@@ -1,12 +1,12 @@
-> 更新于 2026-10-10（北京时间）。当前结构和统一验证命令见 [架构说明](docs/architecture.md)，生产部署见 [部署说明](docs/deployment.md)及 [h20 运维说明](docs/h20-deployment.md)。带历史日期的实测记录仅供追溯。
+> 更新于 2026-10-10（北京时间）。当前结构和统一验证命令见 [架构说明](docs/architecture.md)，生产部署见 [部署说明](docs/deployment.md)及 [服务器运维说明](docs/server-deployment.md)。带历史日期的实测记录仅供追溯。
 
 # FinFeed 自选股与持仓网站
 
 邮件提醒入口为“我的账户”；Gmail 配置、服务器调度及迁移验收见 [邮件提醒说明](docs/email-notifications.md)。
 
-应用工厂为 `backend.app:create_app()`，生产后端在 h20 的 `/mnt/data/users/shx/FinFeed` 独立运行。使用 h20 项目内 PostgreSQL 保存记录及应用缓存，账户数据访问和修改仍要求 Passkey 登录。不提供无登录的本机服务或浏览器本地记录模式。
+应用工厂为 `backend.app:create_app()`，生产后端在 `47.114.43.129` 的 `/mnt/data/users/shx/FinFeed` 独立运行。使用 当前服务器项目内 PostgreSQL 保存记录及应用缓存，账户数据访问和修改仍要求 Passkey 登录。不提供无登录的本机服务或浏览器本地记录模式。
 
-线上入口：<https://finfeed-research.vercel.app>；后端 HTTPS 入口：<https://finfeed.tail03a68f.ts.net>。Vercel 从 GitHub `main` 自动构建前端并转发 `/api/*`；h20 使用代码快照，需要单独更新部署，不会随 Git push 自动更新。迁移分支 `h20-backend` 已合并到 `main`。原 Render 服务暂保留作为回滚备用，不是当前生产转发目标。
+线上入口：<https://finfeed-research.vercel.app>；后端 HTTPS 入口：<https://finfeed.tail03a68f.ts.net>。Vercel 从 GitHub `main` 自动构建前端并转发 `/api/*`；后端服务器使用代码快照，需要单独更新部署，不会随 Git push 自动更新。迁移分支 `h20-backend` 已合并到 `main`。原 Render 服务暂保留作为回滚备用，不是当前生产转发目标。
 
 登录继续使用 Vercel 域名绑定的 Passkey；账户、持仓、缓存及邮件设置已完整迁移到项目 PostgreSQL，无需重新注册或绑定邮箱。旧 Render 域名 Passkey 的迁移入口已移除。当前允许来源、凭据绑定和维护步骤见部署说明。
 
@@ -106,9 +106,9 @@ node --check frontend/js/core/app.js
 - 请求完成后按浏览器动画帧合并渲染，保留现有表格行和单元格，只更新变化的内容；隐藏视图不重建，保留涨跌闪色与缺失值处理。
 - PostgreSQL 使用 1–4 条连接的小型池，归还连接前提交或回滚事务，取连接时检查可用性；连接使用 TLS，关闭预备语句，私人 schema 隔离保持。
 - 每个 ticker 继续限制并发和合并请求；60 秒内有效行情供不同账户复用，季度财务随分钟刷新一同检查；失败保留带日期的成功快照并标记旧数据。
-- 该次历史测试使用免费 Render；当前 h20 不采用 Render 的空闲休眠机制，仍受用户网络、代理和 Yahoo 上游延迟影响。
+- 该次历史测试使用免费 Render；当前服务器不采用 Render 的空闲休眠机制，仍受用户网络、代理和 Yahoo 上游延迟影响。
 
-## Vercel 前端与 h20 后端
+## Vercel 前端与 服务器后端
 
 Vercel 项目从同一 GitHub 仓库的 `main` 分支导入，Root Directory 为 `frontend`，Framework Preset 为 Other。
 `frontend/vercel.json` 使用 `node build.cjs` 构建静态页面到 `dist`，并将 `/api/*` 转发至 h20 的 HTTPS 入口。
@@ -117,7 +117,7 @@ Vercel 项目从同一 GitHub 仓库的 `main` 分支导入，Root Directory 为
 
 已有 Passkey 仍验证 Vercel 的 origin 和 RP ID。数据库迁移保留原凭据和账户记录，没有转移用户私钥。服务端 Cookie、Origin 校验和账户写入权限继续生效，预览域名不自动加入生产允许来源。
 
-前端发布不等于 h20 代码发布。代码快照更新、监督进程、独立代理和回滚步骤见 [h20 运维说明](docs/h20-deployment.md)。
+前端发布不等于后端代码发布。代码快照更新、监督进程、独立代理和回滚步骤见 [服务器运维说明](docs/server-deployment.md)。
 
 ### 请求失败日志
 

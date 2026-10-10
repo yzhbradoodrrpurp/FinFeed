@@ -1,6 +1,6 @@
 # Dashboard 代码结构
 
-更新于 2026-10-10（北京时间）。生产代码在 `main`；Vercel 前端、h20 后端和项目 PostgreSQL 数据库的运维见 [部署说明](deployment.md)。
+更新于 2026-10-10（北京时间）。生产代码在 `main`；Vercel 前端、服务器后端和项目 PostgreSQL 数据库的运维见 [部署说明](deployment.md)。
 
 ## 目录职责
 
@@ -19,11 +19,11 @@
 
 ## 稳定性约束
 
-h20 迁移保持账户、Passkey、API 路径、Cookie、数据库 schema 和缓存键兼容，2026-10-10 已将 Supabase 的全部 15 张应用表迁移到项目 PostgreSQL，并校验一致快照的逐表行数和内容哈希。原 Supabase 保留为只读迁移快照，详见 [数据库运维](database-migration.md)。`backend/paths.py` 的应用临时缓存位于代码快照内的 `dashboard/.cache/`；服务器私密配置位于 `/mnt/data/users/shx/FinFeed/.private/`，代理、Tailscale、虚拟环境和日志均在项目目录内，不提交 Git。本机授权和测试文件仍可位于 Git 忽略的 `dashboard/.local/`。
+服务器迁移保持账户、Passkey、API 路径、Cookie、数据库 schema 和缓存键兼容，2026-10-10 已将 Supabase 的全部 15 张应用表迁移到项目 PostgreSQL，并校验一致快照的逐表行数和内容哈希。随后已将完整后端和数据库迁至 `47.114.43.129`，h20 已停用。原 Supabase 保留为只读迁移快照，详见 [数据库运维](database-migration.md)。`backend/paths.py` 的应用临时缓存位于代码快照内的 `dashboard/.cache/`；服务器私密配置位于 `/mnt/data/users/shx/FinFeed/.private/`，代理、Tailscale、虚拟环境和日志均在项目目录内，不提交 Git。本机授权和测试文件仍可位于 Git 忽略的 `dashboard/.local/`。
 
-后台路径：浏览器 → Vercel `/api/*` 转发 → Tailscale Funnel → h20 `127.0.0.1:18765` → 应用。出站代理只监听 `127.0.0.1:17890`，Yahoo、Gmail、BLS 和 Polymarket 通过各自显式配置使用；SEC/FRED 可直连。当前代理由服务器香港节点连接美国节点，最终出口已验证为美国，不经用户电脑，不改变系统路由或其他项目设置。
+后台路径：浏览器 → Vercel `/api/*` 转发 → Tailscale Funnel → `47.114.43.129` 的 `127.0.0.1:18765` → 应用。出站代理只监听 `127.0.0.1:17890`，Yahoo、Gmail、BLS 和 Polymarket 通过各自显式配置使用；SEC/FRED 可直连。当前代理由服务器香港节点连接美国节点，最终出口已验证为美国，不经用户电脑，不改变系统路由或其他项目设置。
 
-监督进程仅管理它创建的进程并自动重启退出的子进程，不安装系统服务。邮件由外部 cron-job.org 每分钟调度，项目本地调度默认关闭。服务器重启后的恢复、权限范围和日志管理边界见 [h20 运维说明](h20-deployment.md)。
+监督进程仅管理它创建的进程并自动重启退出的子进程，不安装系统服务。邮件由外部 cron-job.org 每分钟调度，项目本地调度默认关闭。服务器重启后的恢复、权限范围和日志管理边界见 [服务器运维说明](server-deployment.md)。
 
 宏观数据链：FRED 提供 BLS 非农/失业率/时薪、BEA PCE 和 H.15 收益率序列；BLS/BEA 优先直接提供发布日历，BLS 失败时备用读取 FRED 的 BLS 已公布日期并标注时刻口径；Yahoo 提供 DXY 日线。`services/macro.py` 组合结果，`domain/macro_metrics.py` 保留原计算及缺月判断。
 

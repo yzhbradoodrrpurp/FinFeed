@@ -27,6 +27,8 @@ def commands():
 
 
 def main():
+    if (ROOT / '.private/retired-deployment').exists():
+        raise RuntimeError('This FinFeed deployment is retired; do not start a second database or Funnel identity')
     os.umask(0o077)
     runtime = ROOT / '.runtime'
     runtime.mkdir(exist_ok=True)

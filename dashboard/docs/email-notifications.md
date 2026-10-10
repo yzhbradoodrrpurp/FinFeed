@@ -4,11 +4,11 @@
 
 ## Gmail 发信配置（无需自有域名）
 
-发件人使用自己的 Gmail 账户，后台通过 HTTPS Gmail API 发信；不依赖 SMTP 端口。当前后端运行在 h20，配置位置见 [部署说明](deployment.md)和 [h20 运维说明](h20-deployment.md)。只申请 `gmail.send` 权限，不读取邮箱内容。普通收件人不需要 Google 授权。
+发件人使用自己的 Gmail 账户，后台通过 HTTPS Gmail API 发信；不依赖 SMTP 端口。当前后端运行在 当前服务器，配置位置见 [部署说明](deployment.md)和 [服务器运维说明](server-deployment.md)。只申请 `gmail.send` 权限，不读取邮箱内容。普通收件人不需要 Google 授权。
 
 1. 在 Google Cloud 创建专用项目，启用 Gmail API，配置 Google Auth Platform。创建桌面 OAuth 客户端，用本机回环地址完成一次发件人授权。
-2. 下载桌面客户端 JSON 后，在本机运行 `python3 dashboard/deployment/authorize_gmail.py --client /完整路径/client.json --sender 发件人@gmail.com`，在 Safari 打开工具打印的本机地址并完成授权。工具使用 PKCE、随机 state、离线访问，凭据保存在 Git 忽略的 `dashboard/.local/gmail-mailer.json`，文件权限为 600。将配置转存 h20 的 `.private/backend.json` 后妥善管理本机凭据，不提交代码。
-3. 在 h20 私密配置中配置 `FINFEED_EMAIL_PROVIDER=gmail`、`FINFEED_EMAIL_FROM`（授权的 Gmail 邮箱）、`GMAIL_CLIENT_ID`、`GMAIL_CLIENT_SECRET`、`GMAIL_REFRESH_TOKEN`。
+2. 下载桌面客户端 JSON 后，在本机运行 `python3 dashboard/deployment/authorize_gmail.py --client /完整路径/client.json --sender 发件人@gmail.com`，在 Safari 打开工具打印的本机地址并完成授权。工具使用 PKCE、随机 state、离线访问，凭据保存在 Git 忽略的 `dashboard/.local/gmail-mailer.json`，文件权限为 600。将配置转存 当前服务器 的 `.private/backend.json` 后妥善管理本机凭据，不提交代码。
+3. 在 当前服务器 私密配置中配置 `FINFEED_EMAIL_PROVIDER=gmail`、`FINFEED_EMAIL_FROM`（授权的 Gmail 邮箱）、`GMAIL_CLIENT_ID`、`GMAIL_CLIENT_SECRET`、`GMAIL_REFRESH_TOKEN`。
 4. Google 外部应用处于 Testing 时，相关 refresh token 通常七天失效；长期运行需按 Google 要求调整发布状态及验证，不能把测试授权当成永久授权。用户撤销授权等情况仍会导致失效。
 5. 继续配置下方的 `FINFEED_NOTIFICATION_CRON_TOKEN` 和外部调度，再完成实际邮件验证。Gmail 个人账户有发送限额；渠道接受不代表一定进入收件箱。
 
@@ -18,9 +18,9 @@ Gmail 不提供发送幂等键承诺。发送前持久化为 `sending`；明确�
 
 ## 外部调度与收件邮箱验证
 
-1. 在 h20 的 `.private/backend.json` 设置 `FINFEED_NOTIFICATION_CRON_TOKEN`：独立随机字符串，至少 32 字符。可在本机运行 `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` 生成。不要提交到 Git 或贴入聊天。
+1. 在 当前服务器 的 `.private/backend.json` 设置 `FINFEED_NOTIFICATION_CRON_TOKEN`：独立随机字符串，至少 32 字符。可在本机运行 `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` 生成。不要提交到 Git 或贴入聊天。
 2. 让 FinFeed 后端重新加载配置。在外部定时服务中设置每分钟执行一次 HTTP POST：
-   - URL：`https://finfeed.tail03a68f.ts.net/api/notifications/tick`，直接调用 h20 后端。
+   - URL：`https://finfeed.tail03a68f.ts.net/api/notifications/tick`，直接调用 服务器后端。
    - Header `Authorization: Bearer <上一步生成的调度密钥>`。
    - Header `Content-Type: application/json`。
    - Body：`{}`。
@@ -45,7 +45,7 @@ Gmail 不提供发送幂等键承诺。发送前持久化为 `sending`；明确�
 
 任务在服务器后台执行，网页无需打开。宏观检查与公司数据抓取分开运行，分别最多两个源任务并发；相同数据源按数据库租约合并。正常源间隔一小时，NFP/PCE 临近发布时检查间隔一分钟，失败五分钟后重试。复用已有成功市场缓存，发布前五分钟至发布后半小时内加快宏观源刷新。上游发布、外部定时器、平台唤醒、抓取和邮件渠道都可能产生延迟，不能保证整点零延迟。
 
-当前 cron-job.org 每分钟调用 h20，项目本地 scheduler 默认关闭，避免重复调度。h20 监督进程不依赖浏览器或 SSH 会话；服务器/容器重启后仍需项目启动钩子或人工启动。代理与 Funnel 可用性也会影响调度。外部调度与 Gmail 渠道的额度、限制以各自账户面板为准。
+当前 cron-job.org 每分钟调用 当前服务器，项目本地 scheduler 默认关闭，避免重复调度。当前服务器 监督进程不依赖浏览器或 SSH 会话；服务器/容器重启后仍需项目启动钩子或人工启动。代理与 Funnel 可用性也会影响调度。外部调度与 Gmail 渠道的额度、限制以各自账户面板为准。
 
 订阅、已见事件和发件队列持久化到私人数据库。新内容入队和游标更新在同一事务中完成，唯一事件键防止重复排队。失败指数退避，超过 23 小时停止重试，避免发送过时提醒。故障不会把旧数据当作新事件。关闭类别（全部取消即停用）、解绑、换邮箱会取消相应待发邮件；已经提交到邮件渠道的消息无法撤回。
 
@@ -53,9 +53,9 @@ Gmail 不提供发送幂等键承诺。发送前持久化为 `sending`；明确�
 
 ### 实际配置进度（2026-10-10，北京时间）
 
-- Google Cloud 专用项目、Gmail API、桌面 OAuth 客户端及仅含 `gmail.send` 的授权已配置。应用已切换正式模式；发信配置已迁至 h20 私密文件，令牌更新已验证成功。正式模式不等于 Google 已完成应用验证，撤销授权及平台策略变化仍可能导致失效。
+- Google Cloud 专用项目、Gmail API、桌面 OAuth 客户端及仅含 `gmail.send` 的授权已配置。应用已切换正式模式；发信配置已迁至 当前服务器 私密文件，令牌更新已验证成功。正式模式不等于 Google 已完成应用验证，撤销授权及平台策略变化仍可能导致失效。
 - 此前真实邮箱验证码已被收件人收到并完成绑定；邮箱设置、提醒游标和队列已随 15 张应用表迁移到项目 PostgreSQL，不要求重新绑定。未在此文档公布具体收件地址或令牌。
-- cron-job.org 的 `FinFeed email reminders` 已启用，每分钟 POST 到 `https://finfeed.tail03a68f.ts.net/api/notifications/tick`，独立 Bearer 密钥保留在配置中，不放入 URL。保存后已重新加载核对，h20 日志连续记录自动请求返回 202。202 代表任务已接受，不代表邮件已送达。
+- cron-job.org 的 `FinFeed email reminders` 已启用，每分钟 POST 到 `https://finfeed.tail03a68f.ts.net/api/notifications/tick`，独立 Bearer 密钥保留在配置中，不放入 URL。保存后已重新加载核对，当前服务器 日志连续记录自动请求返回 202。202 代表任务已接受，不代表邮件已送达。
 - 提醒类别由账户分别选择，全部不选即关闭；没有独立总开关。代码默认十年美债预警线 5.1%，每个账户的实际设置以数据库和“我的账户”为准，迁移不覆盖用户值。
 - Gmail 令牌更新、历史验证码收件和当前自动调度已验证；尚未逐类观察新市场事件完成真实投递，不能宣称全部事件类别已通过生产投递验收。首次成功读取仍建立基线，避免发送历史内容。
 - 发信代码仅支持 Gmail，不依赖 Resend。当前 `GMAIL_PROXY_URL=http://127.0.0.1:17890` 显式使用 FinFeed 项目代理；BLS 和 Polymarket 也分别使用项目代理变量。

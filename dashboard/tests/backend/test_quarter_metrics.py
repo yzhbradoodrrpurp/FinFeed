@@ -48,3 +48,17 @@ class QuarterMetricCases(unittest.TestCase):
         self.assertIsNone(data.add_quarter_metrics(snapshot)['metrics']['capex_qoq_q0']['value'])
         del snapshot['series']['capex']['2026-03-31']
         self.assertIsNone(data.add_quarter_metrics(snapshot)['metrics']['capex_qoq_q0']['value'])
+
+    def test_margin_growth_is_relative_change_and_preserves_periods(self):
+        snapshot = self.snapshot()
+        for label in ('gross_margin', 'operating_margin'):
+            snapshot['series'][label] = {p: data.field(v, p, 'margin', 'source') for p, v in zip(snapshot['series']['revenue'], [.4, .3, .2, .25])}
+        metrics = data.add_quarter_metrics(snapshot)['metrics']
+        for label in ('gross_margin', 'operating_margin'):
+            self.assertAlmostEqual(metrics[label + '_q0']['value'], .4)
+            self.assertAlmostEqual(metrics[label + '_yoy_q0']['value'], .6)
+            self.assertAlmostEqual(metrics[label + '_qoq_q0']['value'], 1/3)
+            self.assertAlmostEqual(metrics[label + '_qoq_q1']['value'], .5)
+            self.assertEqual(metrics[label + '_qoq_q1']['comparison_period'], '2025-12-31')
+            snapshot['series'][label]['2026-03-31']['value'] = -.1
+            self.assertIsNone(data.add_quarter_metrics(snapshot)['metrics'][label + '_qoq_q0']['value'])

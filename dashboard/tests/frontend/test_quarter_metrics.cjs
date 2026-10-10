@@ -8,7 +8,7 @@ const added=context.groupsResult.filter(g=>['毛利率','营业利润率','资�
 assert.equal(added.length,3);
 for(const group of added){
  assert.equal(group.view,'financial');assert.equal(group.columns.length,4);
- assert.deepEqual(Array.from(group.columns,c=>c[2]),group.name==='资本开支'?['Q0 · 单季','Q0 · 季度同比','Q0 · 季度环比','Q−1 · 季度环比']:['Q0','Q0 · 去年同期','Q−1','Q−2']);
+ assert.deepEqual(Array.from(group.columns,c=>c[2]),['Q0 · 单季','Q0 · 季度同比','Q0 · 季度环比','Q−1 · 季度环比']);
 }
 assert.deepEqual(Array.from(added.find(g=>g.name==='资本开支').columns,c=>c[3]),['money','growth','growth','growth']);
 assert.equal(context.format({value:.5},'growth'),'+50.0%');

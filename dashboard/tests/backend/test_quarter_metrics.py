@@ -33,3 +33,18 @@ class QuarterMetricCases(unittest.TestCase):
         self.assertIsNone(data.margin_series(numerator, revenue, 'basis')['2026-06-30']['value'])
         result = data.add_quarter_metrics({'metrics': {'revenue_q0': data.empty_metric('ETF 不适用')}, 'series': {}})
         self.assertEqual(result['metrics']['capex_q0']['reason'], 'ETF 不适用')
+
+    def test_capex_growth_uses_matching_quarters_and_reuses_cached_series(self):
+        snapshot = self.snapshot()
+        for period, value in zip(snapshot['series']['capex'], [30, 20, 10, 15]):
+            snapshot['series']['capex'][period]['value'] = value
+        result = data.add_quarter_metrics(snapshot)['metrics']
+        self.assertAlmostEqual(result['capex_yoy_q0']['value'], 1)
+        self.assertAlmostEqual(result['capex_qoq_q0']['value'], .5)
+        self.assertAlmostEqual(result['capex_qoq_q1']['value'], 1)
+        self.assertEqual(result['capex_qoq_q1']['period'], '2026-03-31')
+        self.assertEqual(result['capex_yoy_q0']['comparison_period'], '2025-06-30')
+        snapshot['series']['capex']['2026-03-31']['value'] = 0
+        self.assertIsNone(data.add_quarter_metrics(snapshot)['metrics']['capex_qoq_q0']['value'])
+        del snapshot['series']['capex']['2026-03-31']
+        self.assertIsNone(data.add_quarter_metrics(snapshot)['metrics']['capex_qoq_q0']['value'])

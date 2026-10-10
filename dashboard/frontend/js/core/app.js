@@ -28,9 +28,9 @@ const groups = [
   {name:"营收",view:"financial",columns:[["revenue_q0","Total Revenue","Q0 · 单季","money"],["revenue_yoy_q0","Revenue Growth","Q0 · 季度同比","growth"],["revenue_qoq_q0","Revenue Growth","Q0 · 季度环比","growth"],["revenue_qoq_q1","Revenue Growth","Q−1 · 季度环比","growth"]]},
   {name:"债务",view:"financial",columns:[["debt_q0","Total Debt","Q0 · 季末","money"],["debt_yoy_q0","Debt Growth","Q0 · 季度同比","growth"],["debt_qoq_q0","Debt Growth","Q0 · 季度环比","growth"],["debt_qoq_q1","Debt Growth","Q−1 · 季度环比","growth"]]},
   {name:"自由现金流",view:"financial",columns:[["fcf_q0","Free Cash Flow","Q0 · 单季","money"],["fcf_yoy_q0","FCF Growth","Q0 · 季度同比","growth"],["fcf_qoq_q0","FCF Growth","Q0 · 季度环比","growth"],["fcf_qoq_q1","FCF Growth","Q−1 · 季度环比","growth"]]},
-  {name:"毛利率",view:"financial",columns:[["gross_margin_q0","Gross Margin","本季度","percent"],["gross_margin_year_ago","Gross Margin","去年同季度","percent"],["gross_margin_q1","Gross Margin","上个季度","percent"],["gross_margin_q2","Gross Margin","上上个季度","percent"]]},
-  {name:"营业利润率",view:"financial",columns:[["operating_margin_q0","Operating Margin","本季度","percent"],["operating_margin_year_ago","Operating Margin","去年同季度","percent"],["operating_margin_q1","Operating Margin","上个季度","percent"],["operating_margin_q2","Operating Margin","上上个季度","percent"]]},
-  {name:"资本开支",view:"financial",columns:[["capex_q0","Capital Expenditure","本季度","money"],["capex_year_ago","Capital Expenditure","去年同季度","money"],["capex_q1","Capital Expenditure","上个季度","money"],["capex_q2","Capital Expenditure","上上个季度","money"]]}
+  {name:"毛利率",view:"financial",columns:[["gross_margin_q0","Gross Margin","Q0","percent"],["gross_margin_year_ago","Gross Margin","Q0 · 去年同期","percent"],["gross_margin_q1","Gross Margin","Q−1","percent"],["gross_margin_q2","Gross Margin","Q−2","percent"]]},
+  {name:"营业利润率",view:"financial",columns:[["operating_margin_q0","Operating Margin","Q0","percent"],["operating_margin_year_ago","Operating Margin","Q0 · 去年同期","percent"],["operating_margin_q1","Operating Margin","Q−1","percent"],["operating_margin_q2","Operating Margin","Q−2","percent"]]},
+  {name:"资本开支",view:"financial",columns:[["capex_q0","Capital Expenditure","Q0 · 单季","money"],["capex_yoy_q0","CapEx Growth","Q0 · 季度同比","growth"],["capex_qoq_q0","CapEx Growth","Q0 · 季度环比","growth"],["capex_qoq_q1","CapEx Growth","Q−1 · 季度环比","growth"]]}
 ];
 const groupIds=['security','price','eps','valuation','volume','revenue','debt','fcf','gross_margin','operating_margin','capex'];
 groups.forEach((group,index)=>group.id=groupIds[index]);

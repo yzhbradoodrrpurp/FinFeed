@@ -101,7 +101,7 @@ def growth(series, period, yearly=False):
             "inputs": {"current": a["value"], "previous_year_quarter" if yearly else "previous_quarter": b.get("value")}}
 
 
-QUARTER_METRIC_KEYS = tuple(f"{label}_{quarter}" for label in ("gross_margin", "operating_margin", "capex") for quarter in ("q0", "year_ago", "q1", "q2"))
+QUARTER_METRIC_KEYS = tuple(f"{label}_{quarter}" for label in ("gross_margin", "operating_margin", "capex") for quarter in ("q0", "year_ago", "q1", "q2")) + ("capex_yoy_q0", "capex_qoq_q0", "capex_qoq_q1")
 
 
 def margin_series(numerator, revenue, basis):
@@ -131,6 +131,10 @@ def add_quarter_metrics(result):
                 result["metrics"][key] = series[label].get(period, empty_metric("数据源未提供该财季值", period=period))
             elif key not in result["metrics"]:
                 result["metrics"][key] = empty_metric(result["metrics"].get("revenue_q0", {}).get("reason") or "数据源未提供该财季值", period=period)
+    capex = series.get("capex")
+    for key, period, yearly in (("capex_yoy_q0", q0, True), ("capex_qoq_q0", q0, False), ("capex_qoq_q1", q1, False)):
+        result["metrics"][key] = growth(capex, period, yearly=yearly) if capex is not None else empty_metric(
+            result["metrics"].get("capex_q0", {}).get("reason") or "数据源未提供该财季值", period=period)
     return result
 
 

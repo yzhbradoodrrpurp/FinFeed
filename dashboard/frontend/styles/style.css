@@ -259,3 +259,11 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 #notification-save{min-width:112px;transition:opacity .28s ease,background-color .28s ease}
 #notification-save:disabled{cursor:default}
 @media(prefers-reduced-motion:reduce){#notification-save{transition:none}}
+/* Account-synchronized metric group ordering; retain the existing compact header. */
+.group-title{display:flex;align-items:center;justify-content:space-between;gap:8px;height:19px}
+.group-handle{border:0;padding:0 3px;background:transparent;color:#a99a8a;font-size:17px;line-height:19px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.group-handle:disabled{cursor:default;opacity:.35}.group-handle:active{cursor:grabbing}
+.group-handle:focus:not(:focus-visible){outline:none;box-shadow:none}
+.group-order-dragging,.group-order-dragging *{cursor:grabbing!important;user-select:none!important}
+.group-moving{opacity:.35}.group-drag-preview{position:fixed;z-index:1000;pointer-events:none;overflow:hidden;border:1px solid #e9e3db;border-radius:8px;background:#fff;box-shadow:0 8px 22px #64401820;will-change:transform}
+.group-drag-preview table{width:100%;font-size:12px}.group-drag-preview th,.group-drag-preview td{padding:9px 10px}.group-drag-preview .group-handle{visibility:hidden}

@@ -32,6 +32,9 @@ const groups = [
   {name:"营业利润率",view:"financial",columns:[["operating_margin_q0","Operating Margin","本季度","percent"],["operating_margin_year_ago","Operating Margin","去年同季度","percent"],["operating_margin_q1","Operating Margin","上个季度","percent"],["operating_margin_q2","Operating Margin","上上个季度","percent"]]},
   {name:"资本开支",view:"financial",columns:[["capex_q0","Capital Expenditure","本季度","money"],["capex_year_ago","Capital Expenditure","去年同季度","money"],["capex_q1","Capital Expenditure","上个季度","money"],["capex_q2","Capital Expenditure","上上个季度","money"]]}
 ];
+const groupIds=['security','price','eps','valuation','volume','revenue','debt','fcf','gross_margin','operating_margin','capex'];
+groups.forEach((group,index)=>group.id=groupIds[index]);
+let groupOrder=[...groupIds];
 const allColumns=groups.flatMap(g=>g.columns);
 const records=new Map();
 let watchlistFavorites=[];
@@ -61,7 +64,7 @@ sidebarHandle.addEventListener("lostpointercapture",finishSidebarResize);
 sidebarHandle.addEventListener("keydown",event=>{if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;event.preventDefault();sidebarWidth=event.key==="Home"?154:event.key==="End"?320:Math.max(154,Math.min(320,sidebarWidth+(event.key==="ArrowRight"?10:-10)));applySidebar();saveSidebar();});
 const escapeHTML=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const timestamp=s=>s?new Date(s).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false})+" 北京时间":"未提供";
-function selectedGroups(){return groups.filter(g=>view==="all"||g.view===view||g.view==="both");}
+function selectedGroups(){return groupOrder.map(id=>groups.find(group=>group.id===id)).filter(g=>view==="all"||g.view===view||g.view==="both");}
 function trackedTickers(){return [...new Set([...tickers,...holdings.map(p=>p.ticker)])];}
 const holdingNumber=n=>n==null?"—":n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const holdingUnitPrice=n=>n==null?"—":n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:6});
@@ -296,14 +299,14 @@ function sortedTickers(){
 function render(){
   if(surface==="watchlist"){
   const chosen=selectedGroups();const cols=chosen.flatMap(g=>g.columns);
-  const headerHTML=`<tr class="group-head"><th class="sticky">公司 / 基金</th>${chosen.map(g=>`<th colspan="${g.columns.length}">${g.name}</th>`).join("")}<th>时间</th></tr><tr class="column-head"><th class="sticky"><button class="th-button" data-sort="ticker">Ticker / Name<span>点击列名排序</span></button></th>${cols.map(([key,name,sub])=>`<th><button class="th-button" data-sort="${key}" ${sortKey===key?'data-sort-active="true"':""}>${name}${sortKey===key?(sortAsc?" ↑":" ↓"):""}<span>${sub}</span></button></th>`).join("")}<th>Quote Date<span style="display:block;font-weight:400">交易所当地日期</span></th></tr>`;
+  const headerHTML=`<tr class="group-head"><th class="sticky">公司 / 基金</th>${chosen.map(g=>`<th data-group="${g.id}" colspan="${g.columns.length}"><div class="group-title">${g.name}<button class="group-handle" data-group-handle="${g.id}" type="button" aria-label="长按拖动 ${g.name}，或用左右方向键排序" title="长按拖动排序" ${window.FinFeedPreferences?.ready?"":"disabled"}>⠿</button></div></th>`).join("")}<th>时间</th></tr><tr class="column-head"><th class="sticky"><button class="th-button" data-sort="ticker">Ticker / Name<span>点击列名排序</span></button></th>${cols.map(([key,name,sub])=>`<th data-group="${groups.find(g=>g.columns.some(c=>c[0]===key)).id}" data-column="${key}"><button class="th-button" data-sort="${key}" ${sortKey===key?'data-sort-active="true"':""}>${name}${sortKey===key?(sortAsc?" ↑":" ↓"):""}<span>${sub}</span></button></th>`).join("")}<th>Quote Date<span style="display:block;font-weight:400">交易所当地日期</span></th></tr>`;
   if(el("table-head").innerHTML!==headerHTML)el("table-head").innerHTML=headerHTML;
   const watchHTML=tickers.length?sortedTickers().map(t=>{
     const record=records.get(t);const m=record?.metrics||{};
     return `<tr data-ticker="${escapeHTML(t)}" class="${watchlistFavorites.includes(t)?"watchlist-favorite":""}" tabindex="0" aria-label="查看 ${escapeHTML(t)} 数据详情"><td class="sticky"><div class="security-cell"><button class="favorite-heart" data-favorite="${escapeHTML(t)}" aria-pressed="${watchlistFavorites.includes(t)}" aria-label="${watchlistFavorites.includes(t)?"取消特别关注":"特别关注"} ${escapeHTML(t)}" ${readOnly||favoritePending.size>0?"disabled":""}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button><div class="security-label"><span class="symbol">${escapeHTML(t)}</span><div class="security-name" title="${escapeHTML(record?.name||"等待数据")}">${escapeHTML(record?.name||"等待数据")}</div></div><button class="remove" data-remove="${escapeHTML(t)}" aria-label="移除 ${escapeHTML(t)}">×</button></div></td>${cols.map(([key,,,type])=>{
       const metric=m[key];if(!record)return `<td><span class="skeleton"></span></td>`;
       const value=format(metric,type);const color=value==="—"?"missing":type==="growth"?(metric.value>=0?"positive":"negative"):"";
-      return `<td ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}${fetchingTickers.has(t)?" cell-fetching":""}">${value}${value==="—"?`<span class="missing-label">${shortMissing(metric)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
+      return `<td data-group="${groups.find(g=>g.columns.some(c=>c[0]===key)).id}" data-column="${key}" ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}${fetchingTickers.has(t)?" cell-fetching":""}">${value}${value==="—"?`<span class="missing-label">${shortMissing(metric)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
     }).join("")}<td class="status-cell">${escapeHTML(record?.quote_date||"—")}<div class="missing-label">${record?.partial?"行情已取得 · 正在补充数据":record?.refreshing?"缓存 · 正在更新":record?.stale?"旧快照 · 刷新失败":record?.errors?.length?"部分数据未取得":record?record.volume_complete?"完整交易日":"部分数据待确认":"读取中"}</div></td></tr>`;
   }).join(""):initialLoading?Array.from({length:8},()=>`<tr class="initial-loading"><td class="sticky"><span class="skeleton"></span></td>${cols.map(()=>`<td><span class="skeleton"></span></td>`).join("")}<td><span class="skeleton"></span></td></tr>`).join(""):`<tr class="empty-row"><td colspan="${cols.length+2}">添加股票或 ETF 的 Ticker，开始查看指标。</td></tr>`;
   patchRows(el("table-body"),watchHTML,"ticker");
@@ -495,6 +498,7 @@ async function initializeState(){
     const auth=await FinFeedAuth.initialize();
     el("startup-status").hidden=true;feedback("");
     currentUser=auth.user;main.inert=false;
+    window.FinFeedPreferences?.initialize();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;
     el("profile-name").textContent=currentUser.name;
     el("invite-controls").hidden=!auth.canInvite;
@@ -679,4 +683,14 @@ el("admin-accounts").addEventListener("click",async event=>{
     const data=await response.json();if(!response.ok)throw new Error(data.error);
     await loadAdminAccounts();accountFeedback(restore?"已恢复。":"已删除并撤销会话。");
   }catch(error){accountFeedback(error.message);button.disabled=false;}
+});
+
+window.FinFeedPreferences?.subscribe(preferences=>{
+  if(preferences.watchlistGroupOrder)groupOrder=[...preferences.watchlistGroupOrder];
+  render();
+});
+window.FinFeedWatchlistOrder?.bind({
+  getOrder:()=>[...groupOrder],
+  reorder:order=>{groupOrder=order;render();},
+  save:order=>window.FinFeedPreferences.save({watchlistGroupOrder:order})
 });

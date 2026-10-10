@@ -15,6 +15,29 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_display_preferences_persist_merge_and_are_owner_only(self):
+        from backend.domain.state_validation import GROUP_ORDER, SECTOR_ORDER
+        self.assertEqual(self.client.get('/api/preferences').status_code, 401)
+        self.frontend_setup()
+        self.client.put('/api/state', json={'watchlist': ['MU'], 'positions': []}, headers=HEADERS)
+        self.assertEqual(self.client.get('/api/preferences').json['preferences']['watchlistGroupOrder'], GROUP_ORDER)
+        reverse_groups = list(reversed(GROUP_ORDER))
+        reverse_sectors = list(reversed(SECTOR_ORDER))
+        self.assertEqual(self.client.put('/api/preferences', json={'watchlistGroupOrder': reverse_groups}, headers=HEADERS).status_code, 200)
+        self.assertEqual(self.client.put('/api/preferences', json={'homeSectorOrder': reverse_sectors}, headers=HEADERS).status_code, 200)
+        self.client.put('/api/state', json={'watchlist': ['MU', 'AAPL']}, headers=HEADERS)
+        prefs = self.client.get('/api/preferences').json['preferences']
+        self.assertEqual(prefs['watchlistGroupOrder'], reverse_groups)
+        self.assertEqual(prefs['homeSectorOrder'], reverse_sectors)
+        self.assertEqual(self.client.get('/api/state').json['state']['watchlist'], ['MU', 'AAPL'])
+        self.assertEqual(self.client.put('/api/preferences?user=another', json={'homeSectorOrder': SECTOR_ORDER}, headers=HEADERS).status_code, 403)
+        for invalid in ({'homeSectorOrder': ['XLC'] * 11}, {'watchlistGroupOrder': ['unknown']}, {'other': []}):
+            self.assertEqual(self.client.put('/api/preferences', json=invalid, headers=HEADERS).status_code, 400)
+        self.assertEqual(self.client.get('/api/preferences').json['preferences'], prefs)
+        # Reopen the same database, rather than relying on process-local state.
+        reopened = Store(sqlite_path=self.path)
+        self.assertEqual(reopened.read_state()['uiPreferences'], prefs)
+
     def test_database_timeout_returns_retryable_json_without_expiring_session(self):
         import psycopg
         from psycopg_pool import PoolTimeout

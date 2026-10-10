@@ -607,6 +607,28 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             database.execute(connection, "DELETE FROM revoked_passkeys WHERE id=?", (credential_id,))
         return jsonify(ok=True)
 
+    @app.get("/api/preferences")
+    def preferences_read():
+        from backend.domain.state_validation import display_preferences
+        user_id = require_owner()["user_id"]
+        with database.transaction() as connection:
+            account = database.account(connection, user_id, lock=False)
+            state = json.loads(account["state"]) if account["state"] else None
+        return jsonify(preferences=display_preferences(state))
+
+    @app.put("/api/preferences")
+    def preferences_write():
+        from backend.domain.state_validation import display_preferences, validate_preferences
+        user_id = require_owner()["user_id"]
+        if request.args.get("user") and request.args["user"] != user_id:
+            abort(403, description="不能修改其他账户的展示设置")
+        try:
+            preferences = validate_preferences(json_body())
+            state = database.update_state({"uiPreferences": preferences}, user_id=user_id)
+            return jsonify(preferences=display_preferences(state))
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+
     @app.get("/api/state")
     def state_read():
         viewer_id = logged_in()["user_id"]
@@ -737,7 +759,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/<path:filename>")
     def static_file(filename: str):
-        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js", "ticker-search.js", "symbol-directory.json", "news.js", "notifications.js"}:
+        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js", "ticker-search.js", "symbol-directory.json", "news.js", "notifications.js", "preferences.js", "watchlist-order.js"}:
             abort(404)
         return send_from_directory(ROOT / "frontend", STATIC_ASSETS[filename])
 

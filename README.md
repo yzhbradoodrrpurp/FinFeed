@@ -61,3 +61,5 @@ git diff --check
 ```
 
 Use the unified test runner for code changes; documentation-only changes require link, configuration, and consistency checks. A passing health check is not a functional acceptance test.
+
+Account display preferences synchronize Watchlist metric-group order and Home sector-card order through authenticated backend endpoints and PostgreSQL account state. Watchlist group headings support long-press dragging and keyboard reordering.

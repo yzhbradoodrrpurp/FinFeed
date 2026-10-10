@@ -39,7 +39,7 @@ An optional project scheduler exists behind `.private/scheduler-enabled`; this m
 
 Verification codes are hashed, valid for ten minutes, limited to five attempts, and sent no more than once per minute. The interface disables empty-field actions, displays only countdown digits plus `s`, and hides the binding form after verification. A loading state prevents a verified account from briefly appearing unbound during initialization.
 
-Categories are per account: NFP, PCE, Treasury, institutions, and the user's own Watchlist News. Saving with any category selected enables monitoring; saving with none selected disables it. Threshold changes are persisted per subscriber. Unbinding, replacing the address, or disabling categories cancels affected pending messages. Already accepted messages cannot be recalled.
+Categories are per account: NFP, PCE, Treasury, institutions, and the user's own Watchlist News. Saving with any category selected enables monitoring; saving with none selected disables it. Threshold changes are persisted per subscriber. The server-loaded preferences establish the saved baseline: unchanged settings show a disabled “提醒已设置” button, including after reload. Editing a category or threshold enables saving; success updates the baseline. Unbinding, replacing the address, or disabling categories cancels affected pending messages. Already accepted messages cannot be recalled.
 
 ## Trigger definitions
 

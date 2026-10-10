@@ -5,9 +5,31 @@ import re
 SYMBOL = re.compile(r'^[A-Z0-9][A-Z0-9.^=-]{0,19}$')
 
 
+GROUP_ORDER = ['security', 'price', 'eps', 'valuation', 'volume', 'revenue', 'debt', 'fcf', 'gross_margin', 'operating_margin', 'capex']
+SECTOR_ORDER = ['XLC', 'XLY', 'XLP', 'XLE', 'XLF', 'XLV', 'XLI', 'XLB', 'XLRE', 'XLK', 'XLU']
+
+
+def validate_preferences(preferences):
+    if not isinstance(preferences, dict) or set(preferences) - {'watchlistGroupOrder', 'homeSectorOrder'}:
+        raise ValueError('无效展示设置')
+    for key, allowed in (('watchlistGroupOrder', GROUP_ORDER), ('homeSectorOrder', SECTOR_ORDER)):
+        if key in preferences:
+            value = preferences[key]
+            if not isinstance(value, list) or len(value) != len(allowed) or any(not isinstance(item, str) for item in value) or set(value) != set(allowed):
+                raise ValueError('展示顺序必须包含全部项目且不能重复')
+    return preferences
+
+
+def display_preferences(state):
+    return {'watchlistGroupOrder': GROUP_ORDER.copy(), 'homeSectorOrder': SECTOR_ORDER.copy(),
+            **validate_preferences((state or {}).get('uiPreferences', {}))}
+
+
 def validate(state):
-    if not isinstance(state, dict) or not {'watchlist', 'positions'} <= set(state) or set(state) - {'watchlist', 'positions', 'watchlistFavorites'}:
+    if not isinstance(state, dict) or not {'watchlist', 'positions'} <= set(state) or set(state) - {'watchlist', 'positions', 'watchlistFavorites', 'uiPreferences'}:
         raise ValueError('无效保存格式')
+    if 'uiPreferences' in state:
+        validate_preferences(state['uiPreferences'])
     watchlist, positions = state['watchlist'], state['positions']
     if not isinstance(watchlist, list) or len(watchlist) > 128 or any(not isinstance(t, str) or not SYMBOL.fullmatch(t) for t in watchlist) or len(set(watchlist)) != len(watchlist):
         raise ValueError('无效自选股列表')

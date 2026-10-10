@@ -46,7 +46,8 @@ A third-party provider thread cannot safely be killed just because its HTTP subs
 | Layer | Location | What it stores / lifetime |
 | --- | --- | --- |
 | Browser market snapshots | localStorage `finfeed-market:v1:*` | Public market data; read age depends on caller, helper default seven days |
-| Browser preferences | localStorage | Sidebar settings and sector ordering, not holdings or credentials |
+| Browser preferences | localStorage | Sidebar settings, not holdings or credentials |
+| Account display preferences | PostgreSQL account state JSON | Watchlist metric-group order and Home sector-card order, isolated per account |
 | Worker refresh entries | Process memory | In-flight work, last successful value, TTL and retry state |
 | Store hot cache | Process memory | Up to 1,024 database cache entries, sixty-second hot lifetime |
 | Durable application cache | PostgreSQL `cache` | Shared successful snapshots, provider state and budgets; reusable after restart |
@@ -75,3 +76,9 @@ Failures preserve usable previous data. An unavailable field stays unavailable r
 - Preserve `app/dashboard/.cache` during code synchronization unless a specific disposable provider cache is deliberately reset.
 - Monitor upstream budgets and queue pressure; adding workers may amplify limits rather than improve latency.
 - Use [the application guide](../README.md) for the exact portfolio and financial metric definitions.
+
+## Account display order
+
+Authenticated `GET /api/preferences` loads the account's `watchlistGroupOrder` and `homeSectorOrder`. `PUT /api/preferences` validates complete permutations and merges only the supplied preference fields into account state inside the existing state transaction. No database schema change is required. Older state clients preserve these fields when saving watchlists or positions.
+
+Watchlist group handles activate after a 300 ms hold; pointer dragging uses an anchored preview, animated column swaps, and horizontal edge scrolling. Left/right arrow keys also reorder groups. Home retains its card drag and keyboard controls. Reorders update the view immediately and queue server writes; failures restore the prior order and display an error. Controls remain disabled until account preferences load. Other devices load the saved order on login/reload and refresh it when the window regains focus; this is not a live broadcast channel.

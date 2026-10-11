@@ -51,7 +51,8 @@ def submission_items(data, cik):
         datetime.fromisoformat(day)
         if not isinstance(accepted, str) or datetime.fromisoformat(accepted.replace('Z', '+00:00')).tzinfo is None:
             raise ValueError('Invalid SEC acceptance timestamp')
-        url = f'https://www.sec.gov/Archives/edgar/data/{cik}/{accession.replace("-", "")}/{quote(document or accession + '-index.html', safe="/._-")}'
+        document = quote(document or accession + '-index.html', safe='/._-')
+        url = f'https://www.sec.gov/Archives/edgar/data/{cik}/{accession.replace("-", "")}/{document}'
         items[accession] = {'title': form, 'form': form, 'url': url, 'published_at': day,
             'accepted_at': accepted,
             'report_date': rows.get('reportDate', [''] * size)[i], 'accession': accession,

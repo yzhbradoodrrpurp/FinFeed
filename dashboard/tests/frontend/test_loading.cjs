@@ -14,7 +14,7 @@ const orderFunction=source.slice(source.indexOf('function applyAccountGroupOrder
 vm.createContext(context);vm.runInContext(orderFunction+init,context);
 (async()=>{
  const done=context.initializeState();assert.deepEqual(calls,[]);
- assert.equal(main.inert,false);assert.equal(context.readOnly,true); // Filters stay usable; writes wait for verified state.
+ assert.equal(main.inert,true);assert.equal(context.readOnly,true); // Dashboard waits for authentication.
  pending.get('auth')({user:{id:'self',name:'Liam'}});await new Promise(setImmediate);
  assert.deepEqual(calls,['']);assert.equal(pending.size,3);assert.equal(main.inert,false);
  pending.get('/api/state')({ok:true,json:async()=>({state:{watchlist:['AAPL'],positions:[{ticker:'AAPL'},{ticker:'MSFT'}]},quotes:{},readOnly:false})});
@@ -49,6 +49,9 @@ vm.createContext(context);vm.runInContext(orderFunction+init,context);
  context.timers.splice(0).forEach(run=>run());
  for(const name of ['home','news','macro','whales'])assert.equal(calls.filter(call=>call===name).length,1);
  assert.deepEqual(context.tickers,['AAPL']);assert.equal(context.initializeState.running,false);
+ context.setTimeout=()=>{throw new Error('Redirect must not schedule a retry');};
+ context.FinFeedAuth.initialize=async()=>{const error=new Error('expired');error.code='AUTH_REDIRECT';throw error;};
+ await context.initializeState();assert.equal(main.inert,true);
  console.log('PASS: private snapshots render before shared views; private rows do not wait for account directory; only one account loads');
  console.log('PASS: failed auth automatically retries and starts each view once after recovery');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -269,3 +269,9 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 .group-drag-preview table{width:100%;font-size:12px}.group-drag-preview th,.group-drag-preview td{padding:9px 10px}.group-drag-preview .group-handle{visibility:hidden}
 
 .watchlist-table-frame{position:relative}.watchlist-empty{position:absolute;inset:72px 0 0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--muted);font-size:12px;pointer-events:none}.watchlist-empty[hidden]{display:none}#watchlist .empty-row,#watchlist .empty-row td{cursor:default;background:white!important}#watchlist .empty-row td{padding:0;height:0;border:0}
+
+/* Keep private dashboard content out of the first paint until auth succeeds. */
+.auth-pending .dashboard-page > .sidebar,
+.auth-pending .dashboard-page > .workspace { visibility: hidden; pointer-events: none; }
+#auth-gate { position: fixed; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; color: #847e76; text-align: center; }
+#auth-gate[hidden] { display: none; }

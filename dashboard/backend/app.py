@@ -112,6 +112,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         old = request.cookies.get(session_cookie, "")
         database.execute(connection, "DELETE FROM sessions WHERE id=?", (digest(old),))
         set_cookie(response, session_cookie, database.new_session(connection, user_id), 43200)
+        response.headers["X-FinFeed-Session-Max-Age"] = "43200"
         response.delete_cookie(flow_cookie, secure=secure, httponly=True, samesite="Strict", path="/")
 
     def ceremony_origin():
@@ -355,7 +356,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             database_owner_id = database.owner(connection, lock=False)["user_handle"]
             bound = bool(account and frontend and any(key.get("rp_id") == urlsplit(frontend).hostname for key in database.credentials(connection, account["id"])))
         return jsonify(user={"id": account["id"], "name": account["name"]} if account else None, registrationOpen=False, invitationRequired=True, isAdmin=bool(session and session["user_id"] == database_owner_id), canInvite=bool(session), cloud=True, authenticated=bool(session), setupRequired=setup,
-                       bootstrapAvailable=bool(bootstrap), passkeySupported=True, frontendPasskeyBound=bound)
+                       bootstrapAvailable=bool(bootstrap), passkeySupported=True, frontendPasskeyBound=bound,
+                       sessionExpiresIn=max(0, session["expires"] - time.time()) if session else 0)
 
     @app.post("/api/auth/register/options")
     def register_options():

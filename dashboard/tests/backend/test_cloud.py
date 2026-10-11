@@ -15,6 +15,20 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_status_reports_remaining_fixed_session_lifetime(self):
+        self.assertEqual(self.client.get('/api/auth/status').json['sessionExpiresIn'], 0)
+        self.frontend_setup()
+        remaining = self.client.get('/api/auth/status').json['sessionExpiresIn']
+        self.assertGreater(remaining, 43100)
+        self.assertLessEqual(remaining, 43200)
+        with patch('backend.app.time.time', return_value=time.time() + 60):
+            later = self.client.get('/api/auth/status').json['sessionExpiresIn']
+        self.assertAlmostEqual(remaining - later, 60, delta=1)
+        with patch('backend.app.time.time', return_value=time.time() + 43201):
+            expired = self.client.get('/api/auth/status').json
+        self.assertFalse(expired['authenticated'])
+        self.assertEqual(expired['sessionExpiresIn'], 0)
+
     def test_display_preferences_persist_merge_and_are_owner_only(self):
         from backend.domain.state_validation import GROUP_ORDER, SECTOR_ORDER
         self.assertEqual(self.client.get('/api/preferences').status_code, 401)
@@ -241,6 +255,7 @@ class CloudCases(unittest.TestCase):
         self.assertEqual(frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers={**HEADERS, "Origin": "https://evil.example"}).status_code, 403)
         response = frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers=headers)
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-FinFeed-Session-Max-Age"], "43200")
         self.assertIn("HttpOnly", response.headers["Set-Cookie"])
         self.assertIn("SameSite=Strict", response.headers["Set-Cookie"])
         self.assertEqual(frontend.get("/api/state").status_code, 200)

@@ -1,6 +1,38 @@
 "use strict";
 // Native WebAuthn: private keys and biometrics stay with the authenticator.
 window.FinFeedAuth = (() => {
+  let redirectError=null;
+  const expiryKey="finfeed-session-expires";
+  function rememberExpiry(seconds) {
+    try { localStorage.setItem(expiryKey,String(Date.now()+Number(seconds)*1000)); } catch {}
+  }
+  function redirectToLogin() {
+    try { localStorage.removeItem(expiryKey); } catch {}
+    setGate(true);
+    location.replace("/login");
+    const error=new Error("登录已过期，请重新验证");
+    error.code="AUTH_REDIRECT";
+    redirectError=error;
+    return error;
+  }
+  function knownExpired() {
+    try { const expiry=Number(localStorage.getItem(expiryKey));return expiry>0&&Date.now()>=expiry; } catch { return false; }
+  }
+  function setGate(pending, message="正在检查登录状态…") {
+    if(typeof document==="undefined")return;
+    document.documentElement?.classList.toggle("auth-pending",pending);
+    const status=document.getElementById("auth-gate");
+    if(status){status.hidden=!pending;status.textContent=message;}
+  }
+  function checkResumedSession() {
+    if(!redirectError&&knownExpired())redirectToLogin();
+  }
+  if(typeof document!=="undefined"&&document.documentElement?.classList.contains("auth-pending")) {
+    window.addEventListener?.("pageshow",checkResumedSession);
+    document.addEventListener?.("visibilitychange",()=>{if(!document.hidden)checkResumedSession();});
+  }
+  // This synchronous head script can redirect before the dashboard is parsed.
+  if(typeof document!=="undefined"&&document.documentElement?.classList.contains("auth-pending")&&knownExpired())redirectToLogin();
   const decode = value => Uint8Array.from(atob(value.replace(/-/g,"+").replace(/_/g,"/") + "=".repeat((4-value.length%4)%4)), c=>c.charCodeAt(0));
   const encode = value => btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
   function reportFailure(url, options, category, status, started, requestId) {
@@ -29,6 +61,11 @@ window.FinFeedAuth = (() => {
       else if(error.name !== 'AbortError')reportFailure(url, options, 'network_error', null, started, requestId);
       throw controller.signal.reason?.name==='TimeoutError' ? controller.signal.reason : error;
     }
+    const maxAge=response.headers?.get("X-FinFeed-Session-Max-Age");
+    if(response.ok&&maxAge!==null&&maxAge!==undefined&&Number(maxAge)>0)rememberExpiry(maxAge);
+    if(response.ok&&url==="/api/auth/logout") {
+      try { localStorage.removeItem(expiryKey); } catch {}
+    }
     const readJSON = response.json?.bind(response);
     if(readJSON)response.json = async () => {
       try { return await readJSON(); }
@@ -39,7 +76,7 @@ window.FinFeedAuth = (() => {
     if(!readJSON||response.headers?.get('content-type')?.includes('ndjson'))finish();
     if(!response.ok)reportFailure(url, options, 'http_error', response.status, started, requestId);
     if(response.status===401 && !url.startsWith("/api/auth/")) {
-      finish();location.replace("/login");throw new Error("登录已过期，请重新验证");
+      finish();throw redirectToLogin();
     }
     return response;
   }
@@ -73,10 +110,13 @@ window.FinFeedAuth = (() => {
     await post(`/api/auth/${action}/verify`,credentialJSON(credential));
   }
   async function initialize() {
+    if(redirectError)throw redirectError;
+    if(knownExpired())throw redirectToLogin();
     const response=await request("/api/auth/status");
     const status=await response.json();
     if(!response.ok)throw new Error(status.error||"无法检查登录状态，请稍后刷新");
-    if(!status.authenticated){location.replace("/login");throw new Error("请先登录");}
+    if(!status.authenticated)throw redirectToLogin();
+    if(Number(status.sessionExpiresIn)>0)rememberExpiry(status.sessionExpiresIn);
     return status;
   }
   function message(error) {
@@ -84,5 +124,5 @@ window.FinFeedAuth = (() => {
     if(error.name==="InvalidStateError")return "这把 Passkey 已绑定，请使用它登录或选择另一把。";
     return error.message||"验证失败，请重试。";
   }
-  return {request,post,passkey,initialize,message};
+  return {request,post,passkey,initialize,message,setGate};
 })();

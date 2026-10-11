@@ -46,7 +46,7 @@ Refresh jobs have independent lanes: security 4 workers; home, sector, macro, wh
 
 WebAuthn verifies the fixed origin, RP ID, challenge, signature, and user verification. The RP ID remains `finfeed-research.vercel.app`. Challenges expire after five minutes and are consumed once. Device-held private keys never enter the database; public credentials and verification metadata do.
 
-Sessions expire after twelve hours. Bearer tokens are hashed in storage. Cookies use Secure, HttpOnly, and SameSite=Strict. Logout invalidates the server session. State-changing requests validate origin, JSON content, and the application's custom request header. Private responses are `no-store`.
+Sessions expire after twelve hours. The dashboard stays hidden and inert until the initial server authentication check succeeds. A non-secret browser expiry hint enables an immediate login redirect for known expired sessions; successful login responses replace that hint and status checks use the remaining server lifetime without extending the session. Missing hints still require server validation. Network failures retain the authentication gate and retry after fifteen seconds. Bearer tokens are hashed in storage. Cookies use Secure, HttpOnly, and SameSite=Strict. Logout invalidates the server session. State-changing requests validate origin, JSON content, and the application's custom request header. Private responses are `no-store`.
 
 The frontend login bridge and callback exchange short-lived authentication tickets between the fixed frontend/backend origins. Preview domains are not automatically authorized. Do not change origin settings to arbitrary incoming Host values; changing a Passkey RP ID can make existing credentials unusable.
 

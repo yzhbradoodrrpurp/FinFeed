@@ -512,12 +512,12 @@ async function initializeState(){
   if(initializeState.running)return;
   initializeState.running=true;
   switchSurface(surface);
-  const main=document.querySelector("main");main.inert=false;
+  const main=document.querySelector("main");main.inert=true;
   readOnly=true;document.body.classList.toggle("read-only",true);
   try{
     const auth=await FinFeedAuth.initialize();
     el("startup-status").hidden=true;feedback("");
-    currentUser=auth.user;main.inert=false;
+    currentUser=auth.user;main.inert=false;FinFeedAuth.setGate?.(false);
     window.FinFeedPreferences?.initialize();
     el("domain-passkey").hidden=location.hostname!=="finfeed-research.vercel.app"||auth.frontendPasskeyBound;
     el("profile-name").textContent=currentUser.name;
@@ -578,10 +578,11 @@ async function initializeState(){
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWatchlist();});
     await Promise.allSettled([directoryTask,stateTask]);
   }catch(error){
+    if(error.code==="AUTH_REDIRECT")return;
     const message=`登录检查失败：${error.message}。15 秒后自动重试。`;
-    feedback(message);
+    feedback(message);FinFeedAuth.setGate?.(true,message);
     el("startup-status").textContent=message;el("startup-status").hidden=false;
-    main.inert=false;
+    main.inert=true;
     const controls=Array.from(document.querySelectorAll("main button, main input, main select"));
     const disabled=controls.map(control=>control.disabled);
     controls.forEach(control=>{if(!control.closest(".dropdown"))control.disabled=true;});

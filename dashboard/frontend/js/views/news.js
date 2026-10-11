@@ -2,7 +2,7 @@
 window.FinFeedNews=(()=>{
   const el=id=>document.getElementById(id), escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let busy=false,kind="all",selectedTicker="all",listError='',states=new Map(),symbols=[],done=0,total=0;
-  const sourceLink=(ticker,kind)=>`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/${{sec:'sec-filings',calls:'earnings-calls'}[kind]}/`;
+  const sourceLink=(ticker,kind)=>kind==='sec'?`https://www.sec.gov/edgar/search/#/q=${encodeURIComponent(ticker)}`:`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/earnings-calls/`;
   const kinds=['calls','sec'];
   const refreshInterval=60*60*1000;
   let lastCheck=null,owner=null,pendingRender=false,retryAt=null;
@@ -30,6 +30,7 @@ window.FinFeedNews=(()=>{
   }
   function accept(task,value,persist=true){
     if(!symbols.includes(task.ticker)||!kinds.includes(task.kind))return;
+    if(task.kind==='sec'&&value.provider!=='sec_edgar')return;
     const key=task.ticker+':'+task.kind,previous=states.get(key);
     if(previous&&Date.parse(previous.retrieved_at)>Date.parse(value.retrieved_at))return;
     if((value.errors?.length||value.stale)&&previous?.items?.length&& !value.items?.length)value={...value,items:previous.items,retrieved_at:previous.retrieved_at};
@@ -53,7 +54,7 @@ window.FinFeedNews=(()=>{
       if(periods.length){const latest=Math.max(...periods);return items.filter(item=>[latest,latest-1].includes(fiscal(item)));}
     }
     if(value.kind==='calls')return [];
-    const anchors=[...new Set(items.filter(item=>/^10-[QK](?:\s|$)/.test(item.title||'')).map(item=>String(item.published_at||'').slice(0,10)).filter(date=>/^\d{4}-\d{2}-\d{2}$/.test(date)&&date<=today))].sort().reverse().slice(0,2);
+    const anchors=[...new Set(items.filter(item=>/^(?:10-[QK]|20-F|40-F)(?:\s|$)/.test(item.title||'')).map(item=>String(item.published_at||'').slice(0,10)).filter(date=>/^\d{4}-\d{2}-\d{2}$/.test(date)&&date<=today))].sort().reverse().slice(0,2);
     if(!anchors.length)return [];
     const start=anchors.at(-1);
     return items.filter(item=>{const date=String(item.published_at||'').slice(0,10);return date>=start&&date<=today;});
@@ -67,7 +68,7 @@ window.FinFeedNews=(()=>{
     for(const [key,value] of states){if(!kinds.includes(value.kind)||(selectedTicker!=='all'&&value.ticker!==selectedTicker))continue;for(const item of recentItems(value)){if(kind!=='all'&&item.kind!==kind)continue;const id=item.kind+':'+item.url;const entry=entries.get(id)||{...item,tickers:new Set()};entry.tickers.add(value.ticker);entries.set(id,entry);}}
     const items=[...entries.values()].sort((a,b)=>(Date.parse(b.published_at)||0)-(Date.parse(a.published_at)||0));
     el('news-status').textContent=!symbols.length?(busy?'正在读取自己的观察列表…':listError?'观察列表暂时无法读取，可稍后重试。':'自己的观察列表暂无标的，可先在 Watchlist 添加。'):`${selectedTicker==='all'?'全部 Ticker':selectedTicker} · ${kind==='all'?'全部类型':label(kind)} · ${items.length} 条${busy?` · 正在并发更新 ${done}/${total}`:' · 最近两次财季披露 · 每小时自动检查'}${listError?' · 暂用缓存列表':''}`;
-    el('news-feed').innerHTML=items.map(item=>`<article class="news-card"><div class="news-meta"><span class="news-badge">${label(item.kind)}</span><strong>${[...item.tickers].map(escape).join(' · ')}</strong><time>${escape(date(item.published_at))}</time></div><a href="${escape(item.url)}" target="_blank" rel="noopener noreferrer">${escape(item.title)} ↗</a><p>${escape(item.source)}${item.kind==='sec'?' · 最近两次季报／年报申报以来 · 索引经 Yahoo 获取':''}</p></article>`).join('')||(!busy&&symbols.length?`<p class="news-empty">${[...states.values()].some(v=>matches(v)&&v.errors?.length)?'部分来源获取失败，暂时没有可展示的动态。':'该来源暂无可展示的动态。'}</p>`:'');
+    el('news-feed').innerHTML=items.map(item=>`<article class="news-card"><div class="news-meta"><span class="news-badge">${label(item.kind)}</span><strong>${[...item.tickers].map(escape).join(' · ')}</strong><time>${escape(date(item.published_at))}</time></div><a href="${escape(item.url)}" target="_blank" rel="noopener noreferrer">${escape(item.title)} ↗</a><p>${escape(item.source)}${item.kind==='sec'?' · 最近两次季报／年报申报以来 · SEC 官方 API':''}</p></article>`).join('')||(!busy&&symbols.length?`<p class="news-empty">${[...states.values()].some(v=>matches(v)&&v.errors?.length)?'部分来源获取失败，暂时没有可展示的动态。':'该来源暂无可展示的动态。'}</p>`:'');
     el('news-errors').innerHTML=(listError?`<p class="macro-note">${escape(listError)}</p>`:'')+[...states.values()].filter(value=>matches(value)&&(value.errors?.length||value.stale)).map(value=>`<p class="macro-note">${escape(value.ticker)} · ${label(value.kind)}：${escape(value.errors?.join('；')||'暂显示缓存，等待更新')} · <a href="${escape(sourceLink(value.ticker,value.kind))}" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></p>`).join('');
     el('news-refresh').disabled=busy;
   }

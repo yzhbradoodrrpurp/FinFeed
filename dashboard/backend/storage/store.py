@@ -376,7 +376,8 @@ class Store:
 
     def get_cached_news(self, symbols: list[str]) -> dict:
         keys = ['market:v1:news:' + version + ':' + kind + ':' + symbol
-                for symbol in symbols for kind in ('calls', 'sec') for version in ('v1', 'v2')]
+                for symbol in symbols for kind in ('calls',) for version in ('v1', 'v2')]
+        keys += ['market:v1:news:sec-edgar:v1:' + symbol for symbol in symbols]
         values = self._cached_batch(keys)
         return {key: {**payload, 'cached': True,
                 'cache_age_seconds': round(max(0, time.time() - updated))}

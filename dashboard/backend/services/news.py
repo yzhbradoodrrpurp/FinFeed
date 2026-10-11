@@ -1,4 +1,4 @@
-"""Bounded Yahoo SEC and earnings-call index snapshots; no article body storage."""
+"""Official SEC filings and Yahoo earnings-call index snapshots; no article body storage."""
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 import threading
@@ -48,7 +48,7 @@ def recent_items(items, kind, now=None):
     # to the latest two original quarterly/annual reports, not calendar quarters.
     items = [item for item in items if item.get('published_at', '')[:10] <= today]
     anchors = sorted({item['published_at'][:10] for item in items
-        if re.match(r'^10-[QK](?:\s|$)', item.get('title', ''))
+        if re.match(r'^(?:10-[QK]|20-F|40-F)(?:\s|$)', item.get('title', ''))
         and re.fullmatch(r'\d{4}-\d{2}-\d{2}', item.get('published_at', '')[:10])}, reverse=True)[:2]
     if not anchors:
         return []
@@ -138,16 +138,22 @@ def snapshot(symbol, kind):
     try:
         if not acquired:
             raise TimeoutError('News provider slots busy')
-        yahoo_session.initialize()
-        raw, note = fetch_index(yf.Ticker(symbol), symbol, kind)
-        value['items'] = recent_items(normalize(raw, kind), kind)
+        if kind == 'sec':
+            from backend.providers.sec import index
+            raw, note, cik = index(symbol)
+            value.update(provider='sec_edgar', cik=cik, notification_items=raw)
+            value['items'] = recent_items(raw, kind)
+        else:
+            yahoo_session.initialize()
+            raw, note = fetch_index(yf.Ticker(symbol), symbol, kind)
+            value['items'] = recent_items(normalize(raw, kind), kind)
         value['period_basis'] = 'fiscal_quarter' if kind == 'calls' else 'latest_periodic_filings'
         if note:
             value['note'] = note
         elif raw and not value['items']:
             value['note'] = '来源索引中没有可识别的已披露财季记录'
     except Exception as exc:
-        failure('yahoo', 'news_' + kind, symbol=symbol, error=exc)
+        failure('sec_edgar' if kind == 'sec' else 'yahoo', 'news_' + kind, symbol=symbol, error=exc)
         value['errors'] = ['该来源暂时无法获取，下次更新重试']
     finally:
         if acquired:

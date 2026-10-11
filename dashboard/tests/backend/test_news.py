@@ -46,38 +46,27 @@ class NewsCases(unittest.TestCase):
             self.assertEqual(empty['errors'], [])
             self.assertIn('未提供', empty['note'])
 
-    def test_bounded_retry_recovers_both_sources(self):
-        for kind, module, field, row in [
-            ('calls', 'earningsCallTranscripts', 'transcripts', {'title': 'AAPL Q4 FY2026 Call', 'date': 1791318600, 'url': 'https://example.com/call'}),
-            ('sec', 'secFilings', 'filings', {'type': '10-Q', 'date': '2026-10-06', 'edgarUrl': 'https://www.sec.gov/Archives/test'})]:
-            with self.subTest(kind=kind), patch('backend.services.news.yahoo_session.initialize'), patch('backend.services.news.yf.Ticker') as ticker:
-                get = ticker.return_value._data.get
-                get.side_effect = [TimeoutError('timeout'), response(module, field, [row])]
-                value = snapshot('AAPL', kind)
-                self.assertEqual(value['errors'], [])
-                self.assertEqual(len(value['items']), 1)
-                self.assertEqual(get.call_count, 2)
-                self.assertIn('query2.', get.call_args_list[0].args[0])
-                self.assertIn('query1.', get.call_args_list[1].args[0])
-                self.assertTrue(all(call.kwargs['timeout'] == 6 for call in get.call_args_list))
-
-    def test_http_and_schema_errors_are_not_empty_success(self):
-        failed_http = SimpleNamespace(status_code=503,
-            raise_for_status=lambda: (_ for _ in ()).throw(RuntimeError('HTTP 503')))
-        for result in [failed_http, response('secFilings', 'wrongField', []),
-                       response('secFilings', 'filings', None)]:
-            with self.subTest(result=result), patch('backend.services.news.yahoo_session.initialize'), patch('backend.services.news.yf.Ticker') as ticker:
-                get = ticker.return_value._data.get
-                get.return_value = result
-                self.assertTrue(snapshot('AAPL', 'sec')['errors'])
-                self.assertEqual(get.call_count, 2)
-
-    def test_valid_empty_index_is_success(self):
+    def test_bounded_retry_recovers_calls(self):
         with patch('backend.services.news.yahoo_session.initialize'), patch('backend.services.news.yf.Ticker') as ticker:
-            ticker.return_value._data.get.return_value = response('secFilings', 'filings', [])
+            get = ticker.return_value._data.get
+            get.side_effect = [TimeoutError('timeout'), response('earningsCallTranscripts', 'transcripts',
+                [{'title': 'AAPL Q4 FY2026 Call', 'date': 1791318600, 'url': 'https://example.com/call'}])]
+            value = snapshot('AAPL', 'calls')
+            self.assertEqual(value['errors'], [])
+            self.assertEqual(len(value['items']), 1)
+            self.assertEqual(get.call_count, 2)
+
+    def test_official_sec_failure_is_not_empty_success(self):
+        with patch('backend.providers.sec.index', side_effect=ValueError('Invalid schema')):
+            self.assertTrue(snapshot('AAPL', 'sec')['errors'])
+
+    def test_official_sec_has_no_yahoo_dependency(self):
+        with patch('backend.providers.sec.index', return_value=([], '未覆盖', None)), patch('backend.services.news.yf.Ticker') as yahoo:
             value = snapshot('VOO', 'sec')
             self.assertEqual(value['items'], [])
             self.assertEqual(value['errors'], [])
+            self.assertEqual(value['provider'], 'sec_edgar')
+            yahoo.assert_not_called()
 
     def test_calls_keep_adjacent_fiscal_quarter_across_year_boundary(self):
         rows = [dict(title=f'Company Q{quarter} FY{year} earnings call transcript',

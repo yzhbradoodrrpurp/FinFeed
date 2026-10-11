@@ -74,7 +74,7 @@ def item_identity(source, value):
     value = str(value)
     if source.startswith('news:sec:'):
         parsed = urlsplit(value)
-        match = re.fullmatch(r'/Archives/edgar/data/(\d+)/(\d{18}|\d{10}-\d{2}-\d{6})/[^/]+', parsed.path, re.I)
+        match = re.fullmatch(r'/Archives/edgar/data/(\d+)/(\d{18}|\d{10}-\d{2}-\d{6})/.+', parsed.path, re.I)
         if parsed.hostname in {'sec.gov', 'www.sec.gov'} and match:
             return 'sec:' + str(int(match[1])) + ':' + match[2].replace('-', '')
     return value
@@ -221,9 +221,9 @@ class NotificationWorker:
                 for user in users:self.storage.observe(user['user_id'],source,lambda old,u=user:item_events('whales',source,items,old,data['name']+' 新持仓披露',now=now,since=u['enabled_since']))
             else:
                 from backend.services.news import snapshot
-                kind,symbol=parts[1:];data=self.cached('market:v1:news:v1:'+kind+':'+symbol,3600,lambda:snapshot(symbol,kind))
+                kind,symbol=parts[1:];data=self.cached(('market:v1:news:sec-edgar:v1:' if kind=='sec' else 'market:v1:news:v1:calls:')+symbol,3600,lambda:snapshot(symbol,kind))
                 if data.get('errors') or not isinstance(data.get('items'),list):raise ValueError('Incomplete news data')
-                items=[{'id':r['url'],'title':r['title'],'date':r['published_at'],'url':r['url']} for r in data['items']]
+                items=[{'id':r['url'],'title':r['title'],'date':r.get('accepted_at') or r['published_at'],'url':r['url']} for r in data.get('notification_items',data['items'])]
                 for user in users:self.storage.observe(user['user_id'],source,lambda old,u=user:item_events('news',source,items,old,symbol+' 新'+('财报电话会' if kind=='calls' else 'SEC 披露'),now=now,since=u['enabled_since']),expected=user)
             self.storage.finish_source(source,token,time.time()+interval)
             self.deliver()

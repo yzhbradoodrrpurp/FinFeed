@@ -166,6 +166,31 @@ class NotificationCases(unittest.TestCase):
         for date in ['2026-10-10','2026-10-15','', '2026-02-30']:
             self.assertEqual(item_events('news',source,[item('000072312526000027',date)],{'ids':[],'observed_at':stamp-86400},'MU',now=stamp,since=stamp)[1],[])
 
+    def test_official_sec_poll_uses_full_index_and_durable_dedup(self):
+        from datetime import datetime, timezone
+        self.store.update_state({'watchlist':['AAPL'],'positions':[]},user_id=self.uid)
+        self.enabled()
+        user=self.n.subscribers()[0]
+        start=user['enabled_since']
+        source='news:sec:AAPL'
+        self.n.observe(self.uid,source,lambda old:({'ids':[], 'baseline_at':start, 'observed_at':start}, []))
+        url='https://www.sec.gov/Archives/edgar/data/320193/000032019326000999/primary.htm'
+        row={'title':'8-K','url':url,'published_at':datetime.now(timezone.utc).date().isoformat(),
+             'accepted_at':datetime.fromtimestamp(start+60,timezone.utc).isoformat()}
+        worker=NotificationWorker(self.n,self.mailer,self.store)
+        # The record is absent from display items, but must still trigger a reminder.
+        data={'items':[], 'notification_items':[row], 'errors':[], 'provider':'sec_edgar'}
+        with patch.object(worker,'cached',return_value=data) as cached, patch.object(worker,'deliver'), patch('backend.services.notifications.time.time',return_value=start+120):
+            worker.poll(source,[user])
+        self.assertEqual(cached.call_args.args[0],'market:v1:news:sec-edgar:v1:AAPL')
+        self.assertEqual(self.n.delivery_status(self.uid),{'pending':1})
+        with self.store.transaction() as c:
+            self.store.execute(c,'UPDATE notification_sources SET due=0,lease=0')
+        with patch.object(worker,'cached',return_value=data), patch.object(worker,'deliver'), patch('backend.services.notifications.time.time',return_value=start+180):
+            worker.poll(source,[user])
+        self.assertEqual(self.n.delivery_status(self.uid),{'pending':1})
+        self.mailer.send.assert_not_called()
+
     def test_late_provider_index_does_not_move_notification_start(self):
         start=instant('2026-10-11T12:00:00Z')
         source='news:sec:MU'

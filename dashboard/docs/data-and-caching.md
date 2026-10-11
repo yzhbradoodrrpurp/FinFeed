@@ -13,7 +13,8 @@
 | PCE calendar | BEA calendar | Provider HTTP connectivity |
 | DXY daily history | Yahoo DX-Y.NYB | Project proxy |
 | Institutional holdings | SEC submissions and filing XML | Direct, optional explicit override |
-| Company News | Yahoo earnings-call / filing indexes linking original documents | Project proxy |
+| Earnings calls | Yahoo earnings-call index | Project proxy |
+| Company SEC filings | Official SEC ticker map and EDGAR submissions API; primary-document links | Direct, optional SEC override |
 | FOMC outcome history | Polymarket provider | Project proxy |
 | Market trading calendar | pandas_market_calendars | Local calculation using library calendar |
 
@@ -86,3 +87,7 @@ Watchlist group handles activate after a 300 ms hold; pointer dragging uses an a
 ## Quarterly profitability and capital expenditure
 
 Gross Margin, Operating Margin and Capital Expenditure each display Q0 single-quarter value, Q0 year-over-year change, Q0 quarter-over-quarter change and Q−1 quarter-over-quarter change, anchored to the latest reported income-statement quarter. Margin levels are percentages. Relative changes for margins, Revenue, Debt, FCF and CapEx use (current − comparison) / abs(comparison), displayed as percentages. A margin increase from 40% to 50% is +25%, not a percentage-point difference. Negative bases retain a numeric rate with a label for narrowing, widening, unchanged, reaching zero or turning positive; positive-to-negative changes are labelled as turning negative. Zero bases have no numeric percentage and show a zero-to-positive, zero-to-negative or unchanged label. Missing observations remain missing. All numeric changes, including Debt and CapEx, use green for positive values and red for negative values; colors indicate direction, not investment merit. Spending uses the absolute cash outflow reported by the provider. Comparisons preserve the consecutive-quarter and matching-year rules and do not indicate investment performance. Backend snapshots are recalculated from cached quarterly series; browser snapshots with stored comparison inputs are upgraded before display, sorting and details without discarding successful data or forcing a provider refresh. Calculation version 3 distinguishes the new derived values.
+
+### Official company filings
+
+SEC filings use `company_tickers.json` to resolve CIKs and `data.sec.gov/submissions/CIK##########.json` for official filing metadata. Ticker aliases normalize dots to hyphens. The ticker map refreshes daily; an unmapped symbol is reported as unsupported, never guessed from another issuer. Submissions preserve accession, form, filing date, acceptance timestamp, report date, and primary document. Additional submissions pages are read when needed to find two original periodic-report anchors (10-Q, 10-K, 20-F, or 40-F). The page retains its report window; reminder detection reads the full retrieved index so display-window changes cannot hide newly indexed disclosures. Calls continue to use Yahoo. Requests share the existing SEC limiter and contact User-Agent with institutional holdings. API/schema failures retain prior successful caches and do not advance notification cursors. Official SEC caches have a separate versioned key from historical Yahoo caches.

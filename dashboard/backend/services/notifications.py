@@ -101,11 +101,14 @@ def item_events(category, source, items, previous, heading, now=None, since=0):
     old = {item_identity(source, value) for value in (previous or {}).get('ids', [])}
     # Legacy cursors gain a watermark on their next read, without replaying
     # historical backfill. Preserve every existing identifier during migration.
-    cutoff = max((previous or {}).get('observed_at', now), since)
+    baseline = (previous or {}).get('baseline_at', (previous or {}).get('observed_at', since or now))
+    cutoff = max(baseline, since)
     unique = {item_identity(source, item['id']): item for item in items}
     new = [item for key, item in unique.items() if key not in old
            and newly_published(item.get('date'), cutoff, now)] if previous is not None else []
-    value = {'ids': sorted(old | unique.keys()), 'observed_at': max(cutoff, now)}
+    # Never mark a future/undated item as seen: it can become a valid disclosure later.
+    seen = {key for key, item in unique.items() if newly_published(item.get('date'), 0, now)}
+    value = {'ids': sorted(old | seen), 'baseline_at': cutoff, 'observed_at': now}
     if not new:
         return value, []
     body = '\n\n'.join(f"{item['title']}\n发布/申报时间：{item.get('date', '未提供')}\n{item['url']}" for item in new)

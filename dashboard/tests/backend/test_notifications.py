@@ -166,6 +166,34 @@ class NotificationCases(unittest.TestCase):
         for date in ['2026-10-10','2026-10-15','', '2026-02-30']:
             self.assertEqual(item_events('news',source,[item('000072312526000027',date)],{'ids':[],'observed_at':stamp-86400},'MU',now=stamp,since=stamp)[1],[])
 
+    def test_late_provider_index_does_not_move_notification_start(self):
+        start=instant('2026-10-11T12:00:00Z')
+        source='news:sec:MU'
+        baseline,_=item_events('news',source,[],None,'MU',now=start,since=start)
+        # Several successful empty polls must not advance the eligibility boundary.
+        later,_=item_events('news',source,[],baseline,'MU',now=start+4*86400,since=start)
+        url='https://www.sec.gov/Archives/edgar/data/723125/000072312526000030/main.htm'
+        filing={'id':url,'url':url,'title':'10-Q','date':'2026-10-12'}
+        value,events=item_events('news',source,[filing],later,'MU',now=start+5*86400,since=start)
+        self.assertEqual(len(events),1)
+        self.assertEqual(value['baseline_at'],start)
+        self.assertEqual(item_events('news',source,[filing],value,'MU',now=start+6*86400,since=start)[1],[])
+        # Changing the document also remains deduplicated after a restart.
+        changed={**filing,'id':url.replace('main.htm','exhibit.htm')}
+        self.assertEqual(item_events('news',source,[changed],value,'MU',now=start+6*86400,since=start)[1],[])
+
+    def test_future_and_unknown_dates_can_become_publishable(self):
+        start=instant('2026-10-11T12:00:00Z')
+        base,_=item_events('news','news:calls:MU',[],None,'MU',now=start)
+        for initial in ['', '2026-10-12T12:00:00Z']:
+            item={'id':'call','url':'https://example.com/call','title':'call','date':initial}
+            waiting,events=item_events('news','news:calls:MU',[item],base,'MU',now=start)
+            self.assertEqual(events,[]);self.assertNotIn('call',waiting['ids'])
+            item['date']='2026-10-12T12:00:00Z'
+            value,events=item_events('news','news:calls:MU',[item],waiting,'MU',now=start+2*86400)
+            self.assertEqual(len(events),1)
+            self.assertEqual(item_events('news','news:calls:MU',[item],value,'MU',now=start+3*86400)[1],[])
+
     def test_call_timestamp_watermark(self):
         stamp=instant('2026-10-11T12:00:00Z')
         base={'ids':[],'observed_at':stamp}

@@ -30,7 +30,7 @@ window.FinFeedNews=(()=>{
   }
   function accept(task,value,persist=true){
     if(!symbols.includes(task.ticker)||!kinds.includes(task.kind))return;
-    if(task.kind==='sec'&&value.provider!=='sec_edgar')return;
+    if(task.kind==='sec'&&value.provider!=='sec_edgar'&&!value.errors?.length)return;
     const key=task.ticker+':'+task.kind,previous=states.get(key);
     if(previous&&Date.parse(previous.retrieved_at)>Date.parse(value.retrieved_at))return;
     if((value.errors?.length||value.stale)&&previous?.items?.length&& !value.items?.length)value={...value,items:previous.items,retrieved_at:previous.retrieved_at};
@@ -86,7 +86,7 @@ window.FinFeedNews=(()=>{
       total=symbols.length*kinds.length;
       const tasks=symbols.flatMap(ticker=>kinds.map(kind=>({ticker,kind}))).filter(task=>!retryOnly||states.get(task.ticker+':'+task.kind)?.errors?.length);total=tasks.length;let next=0;
       async function worker(){while(next<tasks.length){const task=tasks[next++];try{
-        await FinFeedCache.market(`/api/news/${encodeURIComponent(task.ticker)}/${task.kind}?stream=1&window=reported-v2${force?'&refresh=1':''}`,value=>{accept(task,value);scheduleRender();},{ttl:refreshInterval,staleTtl:cacheAge,refresh:force,validate:value=>Array.isArray(value.items)&&!value.errors?.length});
+        await FinFeedCache.market(`/api/news/${encodeURIComponent(task.ticker)}/${task.kind}?stream=1&window=${task.kind==='sec'?'sec-edgar-v1':'reported-v2'}${force?'&refresh=1':''}`,value=>{accept(task,value);scheduleRender();},{ttl:refreshInterval,staleTtl:cacheAge,refresh:force,validate:value=>Array.isArray(value.items)&&!value.errors?.length&&(task.kind!=='sec'||value.provider==='sec_edgar')});
       }catch{const saved=states.get(task.ticker+':'+task.kind)?.items?.length;accept(task,{items:[],errors:[saved?'本次更新失败，暂显示上次成功结果':'暂时无法取得数据，将自动重试'],stale:true});}finally{done++;scheduleRender();}}}
       await Promise.allSettled(Array.from({length:Math.min(4,tasks.length)},worker));
     }finally{busy=false;if(!retryOnly){lastCheck=Date.now();retryAt=[...states.values()].some(value=>value.errors?.length)?lastCheck+60000:null;}else retryAt=null;render();}

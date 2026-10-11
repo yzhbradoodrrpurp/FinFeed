@@ -128,15 +128,51 @@ class NotificationCases(unittest.TestCase):
 
     def test_baseline_and_crossings(self):
         item={'id':'one','title':'one','url':'https://example.com/one','date':'2026-10-08'}
-        baseline,events=item_events('news','AAPL',[item],None,'AAPL');self.assertEqual(events,[])
-        _,events=item_events('news','AAPL',[item],baseline,'AAPL');self.assertEqual(events,[])
-        _,events=item_events('news','AAPL',[{**item,'id':'two'}],baseline,'AAPL');self.assertEqual(len(events),1)
+        stamp=instant('2026-10-08T12:00:00Z')
+        baseline,events=item_events('news','AAPL',[item],None,'AAPL',now=stamp);self.assertEqual(events,[])
+        _,events=item_events('news','AAPL',[item],baseline,'AAPL',now=stamp);self.assertEqual(events,[])
+        _,events=item_events('news','AAPL',[{**item,'id':'two'}],baseline,'AAPL',now=stamp);self.assertEqual(len(events),1)
         def data(day,value):return {'metrics':[{'latest':{'date':day,'value':value}}]}
         base,events=treasury_events(data('2026-10-07',5),None,5.1);self.assertEqual(events,[])
         above,events=treasury_events(data('2026-10-08',5.1),base,5.1);self.assertEqual(len(events),1)
         _,events=treasury_events(data('2026-10-06',4),above,5.1);self.assertEqual(events,[])
         _,events=treasury_events(data('2026-10-09',5),above,5.1);self.assertEqual(len(events),1)
         with self.assertRaises(ValueError):treasury_events(data('2026-10-09',float('nan')),above,5.1)
+
+    def test_sec_accession_dedup_backfill_and_outage_recovery(self):
+        source='news:sec:MU'
+        stamp=instant('2026-10-11T12:00:00Z')
+        def item(accession, date, document='main.htm'):
+            url=f'https://www.sec.gov/Archives/edgar/data/723125/{accession}/{document}'
+            return {'id':url,'url':url,'title':'10-Q','date':date}
+        old=item('000072312526000015','2026-06-25')
+        # Upgrade legacy URL cursors and suppress changes of exhibit URL.
+        baseline,events=item_events('news',source,[{**old,'id':old['id'].replace('main.htm','exhibit.htm')}],{'ids':[old['id']]},'MU',now=stamp)
+        self.assertEqual(events,[]);self.assertEqual(len(baseline['ids']),1)
+        historical=item('000072312526000014','2026-05-01')
+        current=item('000072312526000025','2026-10-11')
+        value,events=item_events('news',source,[historical,current],baseline,'MU',now=stamp)
+        self.assertEqual(len(events),1);self.assertNotIn(historical['url'],events[0]['body'])
+        self.assertIn(current['url'],events[0]['body'])
+        self.assertEqual(item_events('news',source,[current],value,'MU',now=stamp)[1],[])
+        # Successful empty reads and legacy empty cursors cannot replay old rows.
+        empty,_=item_events('news',source,[],None,'MU',now=stamp)
+        self.assertEqual(item_events('news',source,[historical],empty,'MU',now=stamp)[1],[])
+        self.assertEqual(item_events('news',source,[historical],{'ids':[]},'MU',now=stamp)[1],[])
+        # Actual filings published during an outage remain eligible on recovery.
+        recovered,events=item_events('news',source,[item('000072312526000026','2026-10-12')],value,'MU',now=stamp+3*86400)
+        self.assertEqual(len(events),1)
+        # Subscription start also fences old events; invalid/future dates stay quiet.
+        for date in ['2026-10-10','2026-10-15','', '2026-02-30']:
+            self.assertEqual(item_events('news',source,[item('000072312526000027',date)],{'ids':[],'observed_at':stamp-86400},'MU',now=stamp,since=stamp)[1],[])
+
+    def test_call_timestamp_watermark(self):
+        stamp=instant('2026-10-11T12:00:00Z')
+        base={'ids':[],'observed_at':stamp}
+        item={'id':'call','url':'https://example.com/call','title':'call','date':'2026-10-11T11:00:00Z'}
+        self.assertEqual(item_events('news','news:calls:MU',[item],base,'MU',now=stamp+3600)[1],[])
+        item['date']='2026-10-11T12:30:00Z'
+        self.assertEqual(len(item_events('news','news:calls:MU',[item],base,'MU',now=stamp+3600)[1]),1)
 
     def test_macro_calendar_and_new_period(self):
         release='2026-10-09T08:30:00-04:00';stamp=instant(release)

@@ -3,6 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import math
+import re
+from urllib.parse import urlsplit
 import threading
 import time
 from backend.infrastructure.failure_log import failure
@@ -67,17 +69,48 @@ def treasury_events(data, previous, threshold):
         f"H.15 十年恒定期限收益率：{value:g}%\n数据日期：{day}\n此前记录：{previous['value']:g}%（{previous['date']}）\n检索时间：{data.get('retrieved_at','')}\n这是日度统计穿越提醒，不能代表盘中首次触线。预警线为个人观察设置。\nhttps://www.federalreserve.gov/releases/h15/\nhttps://fred.stlouisfed.org/series/DGS10")]
 
 
-def item_events(category, source, items, previous, heading):
-    # Existing items become the first baseline; no flood of historical emails.
-    ids={str(item['id']) for item in items}; old=set((previous or {}).get('ids',[]))
-    new=[item for item in items if str(item['id']) not in old] if previous is not None else []
-    # Keep previously seen identifiers even as the two-quarter window rolls.
-    value={'ids':sorted(old|ids)}
+def item_identity(source, value):
+    """SEC accession is stable when Yahoo changes the selected document."""
+    value = str(value)
+    if source.startswith('news:sec:'):
+        parsed = urlsplit(value)
+        match = re.fullmatch(r'/Archives/edgar/data/(\d+)/(\d{18}|\d{10}-\d{2}-\d{6})/[^/]+', parsed.path, re.I)
+        if parsed.hostname in {'sec.gov', 'www.sec.gov'} and match:
+            return 'sec:' + str(int(match[1])) + ':' + match[2].replace('-', '')
+    return value
+
+
+def newly_published(value, cutoff, now):
+    # SEC dates have day precision. Keep same-day filings eligible; timestamps
+    # such as calls/accepted_at are compared at their original precision.
+    if not isinstance(value, str):
+        return False
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}', value):
+        try:
+            day = datetime.fromisoformat(value).date()
+        except ValueError:
+            return False
+        zone = ZoneInfo('America/New_York')
+        return datetime.fromtimestamp(cutoff, zone).date() <= day <= datetime.fromtimestamp(now, zone).date()
+    stamp = instant(value)
+    return stamp is not None and cutoff <= stamp <= now
+
+
+def item_events(category, source, items, previous, heading, now=None, since=0):
+    now = time.time() if now is None else now
+    old = {item_identity(source, value) for value in (previous or {}).get('ids', [])}
+    # Legacy cursors gain a watermark on their next read, without replaying
+    # historical backfill. Preserve every existing identifier during migration.
+    cutoff = max((previous or {}).get('observed_at', now), since)
+    unique = {item_identity(source, item['id']): item for item in items}
+    new = [item for key, item in unique.items() if key not in old
+           and newly_published(item.get('date'), cutoff, now)] if previous is not None else []
+    value = {'ids': sorted(old | unique.keys()), 'observed_at': max(cutoff, now)}
     if not new:
-        return value,[]
-    body='\n\n'.join(f"{item['title']}\n发布/申报时间：{item.get('date','未提供')}\n{item['url']}" for item in new)
-    key=fingerprint(source+':'+':'.join(sorted(str(item['id']) for item in new)))
-    return value,[event(category,category+':'+key,heading+f'（{len(new)} 条）',body)]
+        return value, []
+    body = '\n\n'.join(f"{item['title']}\n发布/申报时间：{item.get('date', '未提供')}\n{item['url']}" for item in new)
+    key = fingerprint(source + ':' + ':'.join(sorted(item_identity(source, item['id']) for item in new)))
+    return value, [event(category, category + ':' + key, heading + f'（{len(new)} 条）', body)]
 
 
 class NotificationWorker:
@@ -182,13 +215,13 @@ class NotificationWorker:
                 if not data.get('totals_verified') or not data.get('report_date') or not data.get('sources'):raise ValueError('Incomplete current holdings')
                 items=[{'id':r['accession'],'title':f"{data['name']} · {r['form']} · 持仓季度 {data['report_date']}",
                         'date':r.get('accepted_at') or r['filed_at'],'url':r['url']} for r in data['sources']]
-                for user in users:self.storage.observe(user['user_id'],source,lambda old:item_events('whales',source,items,old,data['name']+' 新持仓披露'))
+                for user in users:self.storage.observe(user['user_id'],source,lambda old,u=user:item_events('whales',source,items,old,data['name']+' 新持仓披露',now=now,since=u['enabled_since']))
             else:
                 from backend.services.news import snapshot
                 kind,symbol=parts[1:];data=self.cached('market:v1:news:v1:'+kind+':'+symbol,3600,lambda:snapshot(symbol,kind))
                 if data.get('errors') or not isinstance(data.get('items'),list):raise ValueError('Incomplete news data')
                 items=[{'id':r['url'],'title':r['title'],'date':r['published_at'],'url':r['url']} for r in data['items']]
-                for user in users:self.storage.observe(user['user_id'],source,lambda old:item_events('news',source,items,old,symbol+' 新'+('财报电话会' if kind=='calls' else 'SEC 披露')),expected=user)
+                for user in users:self.storage.observe(user['user_id'],source,lambda old,u=user:item_events('news',source,items,old,symbol+' 新'+('财报电话会' if kind=='calls' else 'SEC 披露'),now=now,since=u['enabled_since']),expected=user)
             self.storage.finish_source(source,token,time.time()+interval)
             self.deliver()
         except Exception as exc:

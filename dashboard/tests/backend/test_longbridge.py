@@ -80,6 +80,20 @@ class LongbridgeCases(unittest.TestCase):
             self.assertEqual(seen['quote'],(60,True))
             self.assertEqual(seen['consensus'],(300,manual))
             self.assertEqual(seen['financial'],(300,manual))
+
+    def test_yahoo_failure_does_not_restore_intentionally_unavailable_forward_pe(self):
+        from unittest.mock import MagicMock
+        from copy import deepcopy
+        saved={'schema_version':securities.SCHEMA_VERSION,'market_provider':'longbridge',
+               'fetched_at':securities.now(),'metrics':{'price':{'value':100},'pe_forward_4q':{'value':20}}}
+        for failed in (False,True):
+            result={'schema_version':securities.SCHEMA_VERSION,'market_provider':'longbridge',
+                    'fetched_at':securities.now(),'errors':['Longbridge consensus failed' if failed else 'Yahoo financial failed'],
+                    'metrics':{'price':{'value':101},'pe_forward_4q':{'value':None,'stale':failed}}}
+            store=MagicMock();store.get_cache.return_value=(deepcopy(saved),time.time()-120)
+            with patch.object(securities,'fetch_security',return_value=result):
+                value=securities.security('ISOLATED',refresh=True,store=store)
+            self.assertEqual(value['metrics']['pe_forward_4q']['value'],20 if failed else None)
     def test_ttm_is_vendor_index_and_forward_is_one_actual_three_forecasts(self):
         r = lb.normalize('QA', blocks(), '2026-10-03T00:00:00+00:00', 'EQUITY')
         self.assertEqual(r['metrics']['pe_ltm']['value'], 12.5)

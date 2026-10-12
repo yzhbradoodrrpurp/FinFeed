@@ -697,7 +697,7 @@ def security(symbol, refresh=False, store=None, on_update=None, financial_refres
                 for key, previous in saved.get("metrics", {}).items():
                     incoming = result.get("metrics", {}).get(key, {})
                     if key in longbridge.KEYS or key in ("pe_quarter", "pe_forward_quarter"):
-                        if saved.get("market_provider") != "longbridge":
+                        if saved.get("market_provider") != "longbridge" or not incoming.get('stale'):
                             continue
                     if previous.get("value") is not None and incoming.get("value") is None:
                         result["metrics"][key] = {**deepcopy(previous), "stale": True}

@@ -240,8 +240,8 @@ def normalize(symbol: str, blocks: dict, fetched_at: str, quote_type: str) -> di
             inputs={'price': m['price']['value'], 'quarters': quarters, 'four_quarter_eps_sum': total})
         m['pe_forward_4q']['reason'] = reason
     for name, block in blocks.items():
-        if block.get('stale'):
-            output['errors'].append('长桥 ' + name + ' 刷新失败，使用成功缓存')
+        if block.get('stale') or block.get('failed'):
+            output['errors'].append('长桥 ' + name + (' 读取失败，暂无成功缓存' if block.get('failed') else ' 刷新失败，使用成功缓存'))
             affected = {'bars': ('high_52w', 'low_52w', 'avg_volume_10', 'relative_volume_10'),
                         'indexes': ('market_cap', 'pe_ltm'), 'quote': ('price', 'pe_forward_4q'),
                         'financial': ('eps_q0', 'eps_q1', 'forward_eps_next', 'pe_forward_4q'),
@@ -249,7 +249,7 @@ def normalize(symbol: str, blocks: dict, fetched_at: str, quote_type: str) -> di
             for key in affected:
                 m[key].update(stale=True, cache_fetched_at=block.get('fetched_at'))
     output['provider_blocks'] = {name: {'fetched_at': block.get('fetched_at'),
-                                      'stale': bool(block.get('stale'))} for name, block in blocks.items()}
+                                      'stale': bool(block.get('stale') or block.get('failed'))} for name, block in blocks.items()}
     if blocks.get('quote', {}).get('stale'):
         output['stale'] = True
     return output
@@ -293,7 +293,7 @@ def market_snapshot(symbol: str, store: Any, quote_type: str, force: bool = Fals
             if name in ('static', 'quote'):
                 raise
             errors.append('长桥 ' + name + ' 读取失败：' + type(exc).__name__)
-            blocks[name] = {'data': {} if name != 'bars' else [], 'fetched_at': datetime.now(timezone.utc).isoformat()}
+            blocks[name] = {'data': {} if name != 'bars' else [], 'failed': True, 'fetched_at': datetime.now(timezone.utc).isoformat()}
         if name == 'bars' and on_quote:
             preview_blocks = deepcopy(blocks)
             if store and quote_type != 'ETF':

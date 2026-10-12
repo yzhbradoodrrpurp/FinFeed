@@ -284,10 +284,10 @@ function format(metric,type){
   if(type==="volume")return n.toLocaleString("en-US",{maximumFractionDigits:0});
   if(type==="growth")return (n>0?"+":"")+(n*100).toFixed(1)+"%";
   if(type==="percent")return (n*100).toFixed(2)+"%";
-  if(type==="ratio")return n.toFixed(1)+"×";
+  if(type==="ratio")return n<0&&metric?.valuation_status?"—":n.toFixed(1)+"×";
   return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 }
-function shortMissing(metric){const reason=metric?.reason||"数据缺失";return reason.includes("不适用")?"不适用":reason.includes("收盘")?"待收盘":reason.includes("为零")?"零基期":reason.includes("连续 4")?"预期不完整":"缺失";}
+function shortMissing(metric){if(metric?.value<0&&metric?.valuation_status)return metric.valuation_status==="盈利为负"?"盈利为负":"预期盈利为负";const reason=metric?.reason||"数据缺失";return reason.includes("不适用")?"不适用":reason.includes("收盘")?"待收盘":reason.includes("为零")?"零基期":reason.includes("连续 4")?"预期不完整":"缺失";}
 function sortedTickers(){
   return [...tickers].sort((a,b)=>{
     if(!sortKey)return 0;

@@ -23,7 +23,7 @@ const groups = [
   {name:"证券",view:"market",columns:[["market_cap","Market Cap","公司市值","money"]]},
   {name:"价格",view:"market",columns:[["price","Last Price","常规时段","price"],["high_52w","52W High","52 周高点","price"],["low_52w","52W Low","52 周低点","price"]]},
   {name:"每股收益",view:"market",columns:[["eps_q0","Diluted EPS","已披露 Q0","eps"],["eps_q1","Diluted EPS","已披露 Q−1","eps"],["forward_eps_next","Forward EPS","下一财季预测","eps"]]},
-  {name:"估值",view:"market",columns:[["pe_ltm","P/E","TTM · 最近十二个月","ratio"],["pe_forward_4q","Forward P/E","","ratio"]]},
+  {name:"估值",view:"market",columns:[["pe_ltm","P/E","TTM · 最近十二个月","ratio"],["pe_forward_4q","Forward P/E","实际 1 季 + 预测 3 季","ratio"]]},
   {name:"成交参与",view:"market",columns:[["avg_volume_10","Avg Volume","此前 10 交易日","volume"],["relative_volume_10","Volume / Avg","比较日 / 10 日","ratio"]]},
   {name:"营收",view:"financial",columns:[["revenue_q0","Total Revenue","Q0 · 单季","money"],["revenue_yoy_q0","Revenue Growth","Q0 · 季度同比","growth"],["revenue_qoq_q0","Revenue Growth","Q0 · 季度环比","growth"],["revenue_qoq_q1","Revenue Growth","Q−1 · 季度环比","growth"]]},
   {name:"债务",view:"financial",columns:[["debt_q0","Total Debt","Q0 · 季末","money"],["debt_yoy_q0","Debt Growth","Q0 · 季度同比","growth"],["debt_qoq_q0","Debt Growth","Q0 · 季度环比","growth"],["debt_qoq_q1","Debt Growth","Q−1 · 季度环比","growth"]]},

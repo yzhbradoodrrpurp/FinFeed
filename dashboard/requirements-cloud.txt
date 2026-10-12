@@ -5,3 +5,4 @@ psycopg[binary]==3.3.6
 webauthn==2.8.0
 psycopg-pool==3.3.3
 pandas_market_calendars==5.5.0
+longbridge==5.2.0

@@ -24,7 +24,7 @@ The server is `47.114.43.129`; all persistent deployment files are beneath `/mnt
 | --- | --- |
 | `backend/app.py` | Flask factory, authentication, authorization, routes, response security |
 | `backend/services/` | Home, sectors, securities, macro, holdings, news, notification workflows |
-| `backend/providers/` | Yahoo sessions/history, FRED, BLS, BEA, Alpha Vantage, Polymarket |
+| `backend/providers/` | Longbridge market/EPS, Yahoo sessions/history, FRED, BLS, BEA, Alpha Vantage, Polymarket |
 | `backend/domain/` | Calculation definitions and account-state validation |
 | `backend/storage/` | PostgreSQL transactions, accounts, history, cache, notification state |
 | `backend/infrastructure/` | Coalesced refresh jobs, Gmail transport, sanitized failure logging |

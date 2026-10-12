@@ -20,7 +20,7 @@ Production configuration was checked on October 10, 2026 (Asia/Shanghai). Runtim
 ## Features
 
 - Three major US equity indices and eleven Select Sector SPDR ETFs with three-year daily charts and draggable ordering.
-- Independent watchlists and portfolios, financial metrics, currency-aware valuation, imports, and exports.
+- Independent watchlists and portfolios with Longbridge market/EPS data, TTM and blended forward valuation, Yahoo quarterly financial categories, currency-aware valuation, imports, and exports.
 - NFP, PCE, DXY, ten-year Treasury yields, and meeting-specific Polymarket pricing.
 - SEC 13F institutional holdings and company earnings-call / filing indexes.
 - Passkey login, invitation registration, account sharing, administration, and verified email subscriptions.

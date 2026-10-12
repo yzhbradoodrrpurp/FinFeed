@@ -1,4 +1,4 @@
-"""Yahoo Finance personal-use adapter with dated provenance and conservative gaps."""
+"""Longbridge market/EPS and Yahoo quarterly statements with independent provenance."""
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 import threading
@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 import backend.providers.yahoo.session as yahoo_session
+from backend.providers import longbridge
 from backend.infrastructure.failure_log import failure
 from backend.providers.yahoo.diagnostic import balance_with_diagnostics, provider_error_category
 from backend.providers.yahoo.probe import isolated_probe, REVISION as PROBE_REVISION
@@ -34,7 +35,7 @@ LIMIT = threading.Semaphore(4)
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def epoch(value):
@@ -243,6 +244,10 @@ def quarterly_pe(result, eps, forecast=False):
 def revalue(result, estimate_store=None):
     add_yearly_growth(result)
     m = result["metrics"]
+    if result.get("longbridge_market"):
+        longbridge.apply(result, result["longbridge_market"])
+        result["valuation_at"] = result["fetched_at"]
+        return result
     shares = result.get("reported_shares", {})
     if m.get("market_cap", {}).get("value") is None and shares.get("value") and m.get("price", {}).get("value"):
         m["market_cap"] = field(m["price"]["value"] * shares["value"], result.get("quote_date"),
@@ -256,7 +261,7 @@ def revalue(result, estimate_store=None):
     return result
 
 
-def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, force=False):
+def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=None, force=False, market=None):
     started = now()
     session_status = yahoo_session.initialize()
     if force:
@@ -281,31 +286,39 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
             return default
     info_day = financial_day(started)
     reuse_info = not force and saved and not financial_due(saved, started) and saved.get("info_checked_day") == info_day
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        history_task = pool.submit(load, "日线", lambda: history_item.history(
-            period="1mo", auto_adjust=False, actions=True, raise_errors=True, timeout=30), None)
-        if reuse_info:
-            info = deepcopy(saved.get("security_info") or {})
-            for key in ("regularMarketPrice", "regularMarketTime", "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "marketCap"):
-                info.pop(key, None)
-        else:
-            info_task = pool.submit(load, "证券信息", item.get_info, {})
-        history = history_task.result()
-        if on_update and history is not None and not history.empty:
-            metadata_preview = load("交易时段", history_item.get_history_metadata, {}) or {}
-            preview_price = number(metadata_preview.get("regularMarketPrice"))
-            if preview_price is None:
-                preview_price = number(history.iloc[-1]["Close"])
-            preview_date = history.index[-1].date().isoformat()
-            preview = deepcopy(saved) if saved else {"ticker": symbol, "name": symbol,
-                "metrics": {}, "sources": {}, "currency": metadata_preview.get("currency")}
-            preview.update(partial=True, fetched_at=started, quote_date=preview_date, stale=False)
-            preview["metrics"]["price"] = field(preview_price, preview_date,
-                "常规交易时段最近成交价", f"https://finance.yahoo.com/quote/{quote(symbol, safe='')}/",
-                currency=metadata_preview.get("currency") or preview.get("currency"))
-            on_update(preview)
-        if not reuse_info:
-            info = info_task.result() or {}
+    if market is not None:
+        history = None
+        metadata = {}
+        info = {"quoteType": market["market_type"], "currency": market["currency"],
+                "financialCurrency": (saved or {}).get("financial_currency") or market["currency"],
+                "regularMarketPrice": market["metrics"]["price"]["value"],
+                "regularMarketTime": market["quote_at"], "longName": market["name"]}
+    else:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            history_task = pool.submit(load, "日线", lambda: history_item.history(
+                period="1mo", auto_adjust=False, actions=True, raise_errors=True, timeout=30), None)
+            if reuse_info:
+                info = deepcopy(saved.get("security_info") or {})
+                for key in ("regularMarketPrice", "regularMarketTime", "fiftyTwoWeekHigh", "fiftyTwoWeekLow", "marketCap"):
+                    info.pop(key, None)
+            else:
+                info_task = pool.submit(load, "证券信息", item.get_info, {})
+            history = history_task.result()
+            if on_update and history is not None and not history.empty:
+                metadata_preview = load("交易时段", history_item.get_history_metadata, {}) or {}
+                preview_price = number(metadata_preview.get("regularMarketPrice"))
+                if preview_price is None:
+                    preview_price = number(history.iloc[-1]["Close"])
+                preview_date = history.index[-1].date().isoformat()
+                preview = deepcopy(saved) if saved else {"ticker": symbol, "name": symbol,
+                    "metrics": {}, "sources": {}, "currency": metadata_preview.get("currency")}
+                preview.update(partial=True, fetched_at=started, quote_date=preview_date, stale=False)
+                preview["metrics"]["price"] = field(preview_price, preview_date,
+                    "常规交易时段最近成交价", f"https://finance.yahoo.com/quote/{quote(symbol, safe='')}/",
+                    currency=metadata_preview.get("currency") or preview.get("currency"))
+                on_update(preview)
+            if not reuse_info:
+                info = info_task.result() or {}
     security_info = deepcopy(info)
     # quoteSummary can return {} after logging HTTP 401 without raising.
     # Chart metadata uses an independent endpoint and still identifies securities.
@@ -313,7 +326,7 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
     if not info_available:
         failure("yahoo", "证券信息", symbol=symbol, reason="quoteType missing / empty response")
         errors.append("Yahoo 证券信息接口未返回有效数据；使用日线元数据，部分指标可能缺失")
-    metadata = load("交易时段", history_item.get_history_metadata, {}) or {}
+    metadata = {} if market is not None else (load("交易时段", history_item.get_history_metadata, {}) or {})
     chart_info = {**metadata, "quoteType": metadata.get("instrumentType")}
     info = {**chart_info, **{key: value for key, value in info.items() if value is not None}}
     # The chart quote is refreshed each minute even when profile data is daily.
@@ -378,11 +391,16 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
     else:
         m["avg_volume_10"] = empty_metric("无法取得报价对应交易日")
         m["relative_volume_10"] = empty_metric("无法取得报价对应交易日")
+    if market is not None:
+        result["longbridge_market"] = market
+        longbridge.apply(result, market)
     if on_update and price is not None:
         preview = deepcopy(result)
         if saved:
             reuse_financial(preview, saved)
         preview["partial"] = True
+        if market is not None:
+            revalue(preview, estimate_store)
         on_update(preview)
     equity = quote_type == "EQUITY"
     if not equity:
@@ -391,8 +409,8 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
             m[key] = empty_metric(reason)
         if quote_type == "ETF":
             m["market_cap"] = empty_metric("ETF 公司市值不适用；未用资产规模替代")
-        return add_yearly_growth(result)
-    if m["market_cap"].get("value") is None:
+        return revalue(result, estimate_store) if market is not None else add_yearly_growth(result)
+    if market is None and m["market_cap"].get("value") is None:
         # Shares endpoint is independent of quoteSummary; refresh with each minute cycle.
         shares = (saved or {}).get("shares_outstanding") if not force and not financial_due(saved, started) else None
         shares_period = (saved or {}).get("shares_period") if shares is not None else None
@@ -418,11 +436,11 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
             if symbol == "GOOG" else yf.Ticker(symbol).get_balance_sheet(freq="quarterly")), None)
         cashflow_task = pool.submit(load, "现金流量表", lambda: yf.Ticker(symbol).get_cashflow(freq="quarterly"), None)
         shares_task = None
-        if m["market_cap"].get("value") is None:
+        if market is None and m["market_cap"].get("value") is None:
             shares_task = pool.submit(load, "流通股数", lambda: yf.Ticker(symbol).get_shares_full(
                 start=(datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()), None)
         # Report forecast errors after statement_errors is captured below.
-        estimates_task = pool.submit(load, "盈利预测", item.get_earnings_estimate, None)
+        estimates_task = pool.submit(lambda: None) if market is not None else pool.submit(load, "盈利预测", item.get_earnings_estimate, None)
         income, balance, cashflow = income_task.result(), balance_task.result(), cashflow_task.result()
     if shares_task is not None:
         share_frame = shares_task.result()
@@ -500,6 +518,27 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
     return revalue(result, estimate_store)
 
 
+def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, force=False):
+    # Preserve the existing non-US and crypto routes outside Longbridge's US adapter.
+    if symbol.endswith('-USD') or ('.' in symbol and symbol.rsplit('.', 1)[1] not in ('A', 'B')) or (saved or {}).get('quote_type') in ('CRYPTOCURRENCY', 'INDEX', 'MUTUALFUND', 'CURRENCY'):
+        result = _fetch_yahoo_security(symbol, saved, estimate_store, on_update, force)
+        result['market_provider'] = 'yahoo'
+        pe, reason = trailing_pe(result['metrics'].get('price', {}).get('value'), result.get('trailing_eps') or result.get('security_info', {}).get('trailingEps'))
+        result['metrics']['pe_ltm'] = field(pe, result.get('quote_date'), 'TTM P/E = 当前股价 / Yahoo 最近十二个月 EPS', result['sources']['quote'], reason=reason)
+        result['metrics']['pe_forward_4q'] = empty_metric('该证券未接入长桥季度预测，组合 Forward P/E 缺失')
+        return result
+    quote_type = (saved or {}).get("quote_type")
+    if quote_type not in ("EQUITY", "ETF"):
+        import json
+        directory = json.loads((ROOT / "frontend/assets/symbol-directory.json").read_text())
+        entry = next((r for r in directory["securities"] if r[0] == symbol), None)
+        quote_type = "ETF" if entry and entry[2] else "EQUITY"
+    market = longbridge.market_snapshot(symbol, estimate_store, quote_type, force)
+    result = _fetch_yahoo_security(symbol, saved, estimate_store, on_update, force, market)
+    result["errors"] = list(dict.fromkeys([*result.get("errors", []), *market.get("errors", [])]))
+    return revalue(result, estimate_store)
+
+
 def security(symbol, refresh=False, store=None, on_update=None):
     with LOCK_GUARD:
         lock = LOCKS.setdefault(symbol, threading.Lock())
@@ -513,13 +552,21 @@ def security(symbol, refresh=False, store=None, on_update=None):
             stored = None
         saved = stored[0] if stored else None
         age = time.time() - stored[1] if stored else float("inf")
-        if saved and saved.get("schema_version") != SCHEMA_VERSION:
+        needs_market_upgrade = bool(saved and saved.get('schema_version') == 8)
+        if saved and saved.get("schema_version") not in (8, SCHEMA_VERSION):
             saved = None
             age = float("inf")
+        elif saved and saved.get("schema_version") == 8:
+            # Preserve a labelled old quote during cutover failure, never reinterpret old P/E.
+            saved = deepcopy(saved)
+            saved["schema_version"] = SCHEMA_VERSION
+            saved["market_provider"] = "yahoo"
+            for key in ("pe_ltm", "pe_ntm", "pe_forward_4q", "pe_quarter", "pe_forward_quarter"):
+                saved["metrics"][key] = empty_metric("旧估值口径，等待长桥 TTM/Forward P/E 数据")
         if saved:
             add_yearly_growth(saved)
         # Market requests refresh each minute; same-minute tabs share the cache.
-        if not refresh and saved and not financial_due(saved, now()) and age < TTL:
+        if not refresh and not needs_market_upgrade and saved and not financial_due(saved, now()) and age < TTL:
             return {**saved, "cached": True, "cache_age_seconds": round(age)}
         def failed_snapshot(errors):
             if saved and saved.get("metrics", {}).get("price", {}).get("value") is not None:
@@ -535,7 +582,7 @@ def security(symbol, refresh=False, store=None, on_update=None):
                 result = (fetch_security(symbol, saved, estimate_store=store, on_update=on_update, force=refresh)
                           if on_update else fetch_security(symbol, saved, estimate_store=store, force=refresh))
             if result.get("metrics", {}).get("price", {}).get("value") is None:
-                failure("yahoo", "quote_refresh", symbol=symbol, reason="; ".join(result.get("errors", [])) or "price missing / empty response", started=fetch_started, fallback_available=bool(saved and saved.get("metrics", {}).get("price", {}).get("value") is not None))
+                failure(result.get("market_provider", "longbridge"), "quote_refresh", symbol=symbol, reason="; ".join(result.get("errors", [])) or "price missing / empty response", started=fetch_started, fallback_available=bool(saved and saved.get("metrics", {}).get("price", {}).get("value") is not None))
                 fallback = failed_snapshot(result.get("errors", []) + ["行情刷新失败，保留上次成功快照"])
                 if fallback:
                     return fallback
@@ -545,6 +592,9 @@ def security(symbol, refresh=False, store=None, on_update=None):
                 # Failed blocks cannot erase successful, dated financial fields.
                 for key, previous in saved.get("metrics", {}).items():
                     incoming = result.get("metrics", {}).get(key, {})
+                    if key in longbridge.KEYS or key in ("pe_quarter", "pe_forward_quarter"):
+                        if saved.get("market_provider") != "longbridge":
+                            continue
                     if previous.get("value") is not None and incoming.get("value") is None:
                         result["metrics"][key] = {**deepcopy(previous), "stale": True}
                 result["financial_checked_at"] = saved.get("financial_checked_at")
@@ -557,7 +607,7 @@ def security(symbol, refresh=False, store=None, on_update=None):
                 failure("database", stage, symbol=symbol, error=exc, started=fetch_started)
             return {**result, "cached": False}
         except Exception as exc:
-            failure("database" if stage == "quote_cache_write" else "yahoo", stage, symbol=symbol, error=exc, started=fetch_started)
+            failure("database" if stage == "quote_cache_write" else "longbridge", stage, symbol=symbol, error=exc, started=fetch_started)
             errors = [f"数据暂不可用：{type(exc).__name__}"]
             fallback = failed_snapshot(errors)
             if fallback:

@@ -4,8 +4,8 @@
 
 | Feature | Data chain | Current routing |
 | --- | --- | --- |
-| Quotes, statements, forecasts, sector charts | Yahoo Finance through yfinance and Yahoo request adapters | Project proxy |
-| Next-quarter EPS fallback | Alpha Vantage when configured and period-compatible | Provider client's configured connectivity |
+| Watchlist / Portfolio market, EPS and valuation | Longbridge OpenAPI; TTM P/E index and one-actual/three-forecast forward calculation | Longbridge SDK connection |
+| Quarterly financial categories, home indices and sector charts | Yahoo Finance through yfinance and Yahoo request adapters | Project proxy |
 | NFP levels, unemployment, hourly earnings | FRED series PAYEMS, UNRATE, CES0500000003; original publisher BLS | Direct |
 | PCE price indexes | FRED PCEPI / PCEPILFE; original publisher BEA | Direct |
 | Ten-year yield | FRED DGS10; original publisher Federal Reserve H.15 | Direct |
@@ -22,7 +22,11 @@ A network route working once does not guarantee continued provider access. SEC r
 
 ## Parsing and calculation rules
 
-Securities use regular-session prices, currency/financial-period checks, consecutive quarters, and explicit missing reasons. Yahoo next-quarter forecasts are matched against the quarter immediately following the latest actual results. Alpha Vantage is a fallback, not an interchangeable forecast-period replacement; its database-backed UTC-day budget caps calls at 25 per day.
+Securities use regular-session prices, currency/financial-period checks, consecutive quarters, and explicit missing reasons. Longbridge provides market capitalization, quotes, TTM P/E, historical bars and quarterly actual/forecast EPS. Forward EPS uses the next fiscal-quarter label after the latest reported Longbridge quarter. Forward P/E sums the latest released actual quarterly GAAP diluted EPS and the next three consecutive quarterly forecasts. This is a blended four-quarter denominator, not standard NTM; annual forecast labels or single-quarter multiplication are not substitutes. Missing estimates or a nonpositive aggregate denominator remain unavailable. Quarterly Revenue, Gross Margin, Operating Margin, CapEx, FCF and Debt remain on Yahoo, with their own quarter anchors. Market EPS can be newer than Yahoo quarterly statements; details show both anchors.
+
+The 52-week range is calculated over the latest 365 calendar days from Longbridge forward-adjusted regular-session daily bars, including corporate-action adjustment. It can differ from Yahoo's range definition and adjustment. Previous-ten-session average volume and relative volume retain the existing complete-day definition rather than using Longbridge's built-in volume ratio. NYSE holidays and early closes determine completion for US securities.
+
+Successful raw provider blocks use versioned `longbridge:v1:<block>:<symbol>` cache keys in PostgreSQL. Static identities have a one-day TTL; quotes, indexes, bars, statements used to anchor EPS and consensus have a 60-second TTL. Forced refresh bypasses those TTLs. Failed blocks retain dated successful raw snapshots and mark the affected display fields stale. Final security snapshots use schema 9; schema 8 quotes are preserved as labelled cutover fallbacks, but old valuation fields are cleared so quarterly-annualized ratios cannot be relabelled TTM/forward. Browser security validation also requires schema 9. No cache purge or database schema migration is needed.
 
 Home sector histories cover three years of daily closes without dividend total-return adjustment. Macro series preserve original units and observation periods. Monthly NFP changes and PCE growth are computed from adjacent observations; missing months are not silently bridged. The daily Treasury series does not provide intraday threshold events. Current revisions are visible, but original vintages and market consensus are not synthesized.
 

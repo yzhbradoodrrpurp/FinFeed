@@ -37,6 +37,7 @@ The server has a project Python 3.12 installation in `.python` and a separate `.
 | psycopg-pool | 3.3.3 |
 | webauthn | 2.8.0 |
 | pandas_market_calendars | 5.5.0 |
+| longbridge | 5.2.0 |
 
 Transitive dependencies should also be captured privately when preparing a reproducible server update. Do not install into system Python. PostgreSQL and networking executables live in separate project directories.
 
@@ -51,7 +52,8 @@ The supervisor reads `.private/backend.json` into the child environment. Keep th
 | `PUBLIC_ORIGIN` | Fixed production Funnel origin |
 | `FINFEED_BOOTSTRAP_TOKEN` | Strong first-account initialization token; existing databases must not be reinitialized |
 | `FRED_API_KEY` | Macro observations and published-release-date fallback |
-| `ALPHAVANTAGE_API_KEY` | Optional next-quarter earnings-estimate fallback |
+| `LONGBRIDGE_APP_KEY`, `LONGBRIDGE_APP_SECRET`, `LONGBRIDGE_ACCESS_TOKEN` | Server-only Longbridge market and fundamental API credentials; never sent to browsers |
+| `ALPHAVANTAGE_API_KEY` | Optional legacy forecast configuration; not used by Longbridge market valuation |
 | `YAHOO_SESSION_MODE` | Anonymous by default; explicit `login` only with both cookie variables |
 | `YAHOO_COOKIE_T`, `YAHOO_COOKIE_Y` | Optional private Yahoo login cookies; never sent to browsers |
 | `YAHOO_PROXY_URL` | Forced by the project launcher to loopback port 17890 |

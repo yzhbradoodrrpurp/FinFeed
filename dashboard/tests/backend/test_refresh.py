@@ -85,7 +85,21 @@ class RefreshCases(unittest.TestCase):
 
     def fetch(self, timestamp, saved=None):
         with patch.object(data, 'now', return_value=timestamp):
-            return data.fetch_security('QA', saved)
+            return data._fetch_yahoo_security('QA', saved)
+
+    def test_active_longbridge_route_keeps_statements_without_yahoo_market_calls(self):
+        from test_longbridge import blocks
+        market = data.longbridge.normalize('QA', blocks(), '2026-10-03T00:00:00+00:00', 'EQUITY')
+        with patch.object(data.longbridge, 'market_snapshot', return_value=market):
+            result = data.fetch_security('QA')
+        for method in ('get_info', 'history', 'get_history_metadata', 'get_earnings_estimate', 'get_shares_full'):
+            getattr(self.item, method).assert_not_called()
+        self.item.get_income_stmt.assert_called_once()
+        self.item.get_balance_sheet.assert_called_once()
+        self.item.get_cashflow.assert_called_once()
+        self.assertEqual(result['metrics']['revenue_q0']['value'], 100)
+        self.assertEqual(result['metrics']['pe_ltm']['value'], 12.5)
+        self.assertAlmostEqual(result['metrics']['pe_forward_4q']['value'], 100/14)
 
     def test_independent_yahoo_calls_overlap(self):
         quote_barrier = threading.Barrier(2)

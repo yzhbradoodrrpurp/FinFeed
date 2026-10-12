@@ -270,7 +270,7 @@ class Store:
         updated = time.time()
         # Public snapshot age follows collection time, never the time a cached
         # result was copied. SQL ordering also protects overlapping deployments.
-        if key.startswith(('quote:', 'market:v1:')):
+        if key.startswith(('quote:', 'market:v1:', 'longbridge:v1:', 'yahoo-financial:v1:')):
             source_time = payload.get('fetched_at') or payload.get('retrieved_at')
             if source_time:
                 try:

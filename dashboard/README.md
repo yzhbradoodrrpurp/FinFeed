@@ -7,7 +7,7 @@ This document describes current behavior; operational details are in [the techni
 | View | Content | Normal browser polling |
 | --- | --- | --- |
 | Home | S&P 500, Nasdaq Composite, Dow Jones, eleven sector ETFs | Every minute |
-| Watchlist / Portfolio | Quotes, financial statements, quarterly forecasts, valuation | Every minute |
+| Watchlist / Portfolio | Quotes, financial statements, quarterly forecasts, valuation | Minute quotes; five-minute statements and EPS/forecasts |
 | Macro | NFP, PCE, DXY, ten-year Treasury yields | Every hour |
 | Polymarket | Meeting-specific outcome prices and history | Every minute |
 | Whale Holdings | Supported institutions' SEC 13F reports | Every hour |

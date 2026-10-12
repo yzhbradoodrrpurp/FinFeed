@@ -37,6 +37,49 @@ def blocks(missing=None):
 
 
 class LongbridgeCases(unittest.TestCase):
+    def setUp(self):
+        cooldown = patch.object(lb, '_block_retry', {})
+        cooldown.start();self.addCleanup(cooldown.stop)
+
+    def test_many_users_share_one_forced_provider_request(self):
+        import threading
+        class Store:
+            def __init__(self):self.data={}
+            def get_cache(self,key):return self.data.get(key)
+            def set_cache(self,key,value):self.data[key]=(value,time.time())
+        store=Store();calls=[]
+        def fetch():
+            calls.append(1);time.sleep(.03);return {'price':100}
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            results=list(pool.map(lambda _:lb._cached('SHARED','quote',fetch,store,60,True),range(12)))
+        self.assertEqual(len(calls),1)
+        self.assertTrue(all(r['data']['price']==100 for r in results))
+
+    def test_failed_raw_block_has_one_minute_retry_cooldown(self):
+        calls=[]
+        def fail():calls.append(1);raise RuntimeError('offline')
+        with patch.object(lb,'failure'):
+            for _ in range(10):
+                with self.assertRaises(RuntimeError):lb._cached('NO-CACHE','consensus',fail,None,300,True)
+        self.assertEqual(len(calls),1)
+
+    def test_quote_time_is_not_rewritten_by_financial_merge(self):
+        b=blocks();b['quote']['fetched_at']='2026-10-02T22:00:00+00:00'
+        r=lb.normalize('QA',b,'2026-10-03T00:00:00+00:00','EQUITY')
+        self.assertEqual(r['fetched_at'],b['quote']['fetched_at'])
+        self.assertEqual(r['provider_blocks']['consensus']['fetched_at'],b['consensus']['fetched_at'])
+
+    def test_scheduled_market_force_respects_fundamental_cache_ttl(self):
+        fixture=blocks()
+        for manual in (False,True):
+            seen={}
+            def cached(symbol,name,action,store,ttl,force):
+                seen[name]=(ttl,force);return fixture[name]
+            with patch.object(lb,'contexts',return_value=(None,None)),patch.object(lb,'_cached',side_effect=cached):
+                lb.market_snapshot('QA',None,'EQUITY',True,financial_refresh=manual)
+            self.assertEqual(seen['quote'],(60,True))
+            self.assertEqual(seen['consensus'],(300,manual))
+            self.assertEqual(seen['financial'],(300,manual))
     def test_ttm_is_vendor_index_and_forward_is_one_actual_three_forecasts(self):
         r = lb.normalize('QA', blocks(), '2026-10-03T00:00:00+00:00', 'EQUITY')
         self.assertEqual(r['metrics']['pe_ltm']['value'], 12.5)

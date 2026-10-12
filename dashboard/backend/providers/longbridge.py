@@ -21,6 +21,10 @@ _contexts = None
 _context_lock = threading.Lock()
 _fundamental_lock = threading.Lock()
 _fundamental_last = 0.0
+_block_guard = threading.Lock()
+_block_locks: dict[str, threading.Lock] = {}
+_block_retry: dict[str, float] = {}
+FUNDAMENTAL_TTL = 300
 
 
 def _fundamental_call(action: Any) -> Any:
@@ -79,6 +83,14 @@ def contexts() -> tuple:
 
 def _cached(symbol: str, block: str, action: Any, store: Any,
             ttl: int, force: bool = False) -> dict:
+    with _block_guard:
+        lock = _block_locks.setdefault(f'{block}:{symbol}', threading.Lock())
+    with lock:
+        return _cached_locked(symbol, block, action, store, ttl, force)
+
+
+def _cached_locked(symbol: str, block: str, action: Any, store: Any,
+                   ttl: int, force: bool = False) -> dict:
     """Share successful provider blocks across users; failed refreshes retain them."""
     key = f'longbridge:v{VERSION}:{block}:{symbol}'
     try:
@@ -86,21 +98,28 @@ def _cached(symbol: str, block: str, action: Any, store: Any,
     except Exception as exc:
         failure('database', 'longbridge_cache_read', symbol=symbol, error=exc)
         saved = None
-    if saved and not force and time.time() - saved[1] < ttl:
+    minimum = 60 if block in ('financial', 'consensus') else 10
+    if saved and time.time() - saved[1] < (minimum if force else ttl):
         return saved[0]
+    if time.monotonic() < _block_retry.get(key, 0):
+        if saved:
+            return {**saved[0], 'stale': True}
+        raise RuntimeError('Longbridge block retry cooldown')
     try:
         data = action()
         if not data:
             raise ValueError('Empty provider block')
         payload = {'data': data, 'fetched_at': datetime.now(timezone.utc).isoformat()}
     except Exception as exc:
+        _block_retry[key] = time.monotonic()+60
         failure('longbridge', block, symbol=symbol, error=exc, fallback_available=bool(saved))
         if saved:
             return {**saved[0], 'stale': True}
         raise
+    _block_retry.pop(key, None)
     if store:
         try:
-            store.set_cache(key, payload)
+            getattr(store, 'publish_cache', store.set_cache)(key, payload)
         except Exception as exc:
             failure('database', 'longbridge_cache_write', symbol=symbol, error=exc)
     return payload
@@ -190,7 +209,7 @@ def normalize(symbol: str, blocks: dict, fetched_at: str, quote_type: str) -> di
     output = dict(ticker=symbol, name=static.get('name_en') or symbol, currency=currency,
                   exchange=static.get('exchange'), exchange_timezone='America/New_York',
                   quote_date=quote_date, quote_at=quote_time.isoformat(), volume_complete=complete,
-                  fetched_at=fetched_at, market_provider='longbridge', market_version=VERSION,
+                  fetched_at=blocks['quote'].get('fetched_at', fetched_at), market_provider='longbridge', market_version=VERSION,
                   market_type=quote_type, metrics=m, sources={'quote': url, 'market_eps': EPS_SOURCE},
                   errors=[], delay_minutes=None)
     if quote_type == 'ETF':
@@ -229,10 +248,15 @@ def normalize(symbol: str, blocks: dict, fetched_at: str, quote_type: str) -> di
                         'consensus': ('eps_q0', 'eps_q1', 'forward_eps_next', 'pe_forward_4q')}.get(name, ())
             for key in affected:
                 m[key].update(stale=True, cache_fetched_at=block.get('fetched_at'))
+    output['provider_blocks'] = {name: {'fetched_at': block.get('fetched_at'),
+                                      'stale': bool(block.get('stale'))} for name, block in blocks.items()}
+    if blocks.get('quote', {}).get('stale'):
+        output['stale'] = True
     return output
 
 
-def market_snapshot(symbol: str, store: Any, quote_type: str, force: bool = False) -> dict:
+def market_snapshot(symbol: str, store: Any, quote_type: str, force: bool = False,
+                    on_quote: Any = None, financial_refresh: bool | None = None) -> dict:
     """Fetch only market/EPS blocks; never requests orders or trading endpoints."""
     if not re.fullmatch(r'[A-Z0-9][A-Z0-9.\-]{0,19}', symbol):
         raise ValueError('Unsupported Longbridge US symbol')
@@ -255,18 +279,34 @@ def market_snapshot(symbol: str, store: Any, quote_type: str, force: bool = Fals
                           for b in qctx.candlesticks(code, Period.Day, 280, AdjustType.ForwardAdjust, TradeSessions.Intraday)], 60),
     ]
     if quote_type != 'ETF':
-        requests += [('financial', lambda: _plain(_fundamental_call(lambda: fctx.financial_report(code, FinancialReportKind.All, FinancialReportPeriod.QuarterlyFull))), 60),
-                     ('consensus', lambda: _plain(_fundamental_call(lambda: fctx.consensus(code))), 60)]
+        requests += [('financial', lambda: _plain(_fundamental_call(lambda: fctx.financial_report(code, FinancialReportKind.All, FinancialReportPeriod.QuarterlyFull))), FUNDAMENTAL_TTL),
+                     ('consensus', lambda: _plain(_fundamental_call(lambda: fctx.consensus(code))), FUNDAMENTAL_TTL)]
     blocks = {}
     errors = []
     for name, action, ttl in requests:
         try:
-            blocks[name] = _cached(symbol, name, action, store, ttl, force)
+            block_force = force
+            if name in ('financial', 'consensus') and financial_refresh is not None:
+                block_force = financial_refresh
+            blocks[name] = _cached(symbol, name, action, store, ttl, block_force)
         except Exception as exc:
             if name in ('static', 'quote'):
                 raise
             errors.append('长桥 ' + name + ' 读取失败：' + type(exc).__name__)
             blocks[name] = {'data': {} if name != 'bars' else [], 'fetched_at': datetime.now(timezone.utc).isoformat()}
+        if name == 'bars' and on_quote:
+            preview_blocks = deepcopy(blocks)
+            if store and quote_type != 'ETF':
+                for extra in ('financial', 'consensus'):
+                    try:
+                        saved = store.get_cache(f'longbridge:v{VERSION}:{extra}:{symbol}')
+                    except Exception:
+                        saved = None
+                    if saved:
+                        preview_blocks[extra] = {**saved[0], 'stale': time.time()-saved[1] >= FUNDAMENTAL_TTL}
+            preview = normalize(symbol, preview_blocks, datetime.now(timezone.utc).isoformat(), quote_type)
+            preview['partial'] = True
+            on_quote(preview)
     output = normalize(symbol, blocks, datetime.now(timezone.utc).isoformat(), quote_type)
     output['errors'].extend(errors)
     return output
@@ -287,4 +327,6 @@ def apply(result: dict, market: dict) -> dict:
     result['metrics']['pe_quarter'] = deepcopy(result['metrics']['pe_ltm'])
     result['metrics']['pe_forward_quarter'] = deepcopy(result['metrics']['pe_forward_4q'])
     result['market_fetched_at'] = market['fetched_at']
+    result['longbridge_blocks'] = deepcopy(market.get('provider_blocks', {}))
+    result['stale'] = bool(market.get('stale'))
     return result

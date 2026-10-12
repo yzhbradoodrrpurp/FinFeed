@@ -32,6 +32,10 @@ yahoo_session.configure_transport()
 # yfinance protects cookie/crumb setup with its own lock. Bound concurrent
 # network work across all users in this single backend process.
 LIMIT = threading.Semaphore(4)
+STATEMENT_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='yahoo-statements')
+YAHOO_NETWORK_LIMIT = threading.BoundedSemaphore(4)
+YAHOO_RATE_GUARD = threading.Lock()
+YAHOO_RETRY_AT = 0.0
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60
@@ -181,7 +185,42 @@ def financial_due(saved, timestamp):
     return (not saved or saved.get("yahoo_session", {}).get("mode", "anonymous") != yahoo_session.mode()
             or saved.get("yahoo_session", {}).get("proxy_enabled", False) != yahoo_session.proxy_enabled()
             or (saved.get("quote_type") == "EQUITY" and "capex" not in saved.get("series", {}))
-            or _financial_age(saved, timestamp) >= TTL)
+            or _financial_age(saved, timestamp) >= (300 if saved.get('market_provider') == 'longbridge' else TTL))
+
+
+def _statement_blocks(symbol: str) -> dict:
+    """Fetch Yahoo statements while the caller independently retrieves Longbridge quotes."""
+    global YAHOO_RETRY_AT
+    yahoo_session.initialize()
+    output = {'errors': [], 'diagnostics': {}}
+    def read(name: str, action):
+        global YAHOO_RETRY_AT
+        started = time.monotonic()
+        with YAHOO_NETWORK_LIMIT:
+            with YAHOO_RATE_GUARD:
+                blocked = time.monotonic() < YAHOO_RETRY_AT
+            if blocked:
+                output['errors'].append('Yahoo 限流冷却中，保留成功财务缓存')
+                return None
+            try:
+                return action()
+            except Exception as exc:
+                category = provider_error_category(exc)
+                if 'RateLimit' in type(exc).__name__ or getattr(getattr(exc, 'response', None), 'status_code', None) == 429:
+                    with YAHOO_RATE_GUARD:
+                        YAHOO_RETRY_AT = max(YAHOO_RETRY_AT, time.monotonic()+60)
+                failure('yahoo', name, symbol=symbol, error=exc, started=started, category=category)
+                output['errors'].append(f'{name}读取失败：{type(exc).__name__}')
+                return None
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        tasks = {
+            'income': pool.submit(read, '利润表', lambda: yf.Ticker(symbol).get_income_stmt(freq='quarterly')),
+            'balance': pool.submit(read, '资产负债表', lambda: balance_with_diagnostics(yf.Ticker(symbol), output['diagnostics']) if symbol == 'GOOG' else yf.Ticker(symbol).get_balance_sheet(freq='quarterly')),
+            'cashflow': pool.submit(read, '现金流量表', lambda: yf.Ticker(symbol).get_cashflow(freq='quarterly')),
+        }
+        output.update({name: task.result() for name, task in tasks.items()})
+    output['fetched_at'] = now()
+    return output
 
 
 def reuse_financial(result, saved):
@@ -261,7 +300,7 @@ def revalue(result, estimate_store=None):
     return result
 
 
-def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=None, force=False, market=None):
+def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=None, force=False, market=None, statement_future=None):
     started = now()
     session_status = yahoo_session.initialize()
     if force:
@@ -429,19 +468,35 @@ def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=Non
     if symbol == "GOOG":
         result["financial_diagnostics"] = {}
     # Separate Ticker objects avoid concurrently mutating financial statement caches.
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        income_task = pool.submit(load, "利润表", lambda: yf.Ticker(symbol).get_income_stmt(freq="quarterly"), None)
-        balance_task = pool.submit(load, "资产负债表", lambda: (
-            balance_with_diagnostics(yf.Ticker(symbol), result["financial_diagnostics"])
-            if symbol == "GOOG" else yf.Ticker(symbol).get_balance_sheet(freq="quarterly")), None)
-        cashflow_task = pool.submit(load, "现金流量表", lambda: yf.Ticker(symbol).get_cashflow(freq="quarterly"), None)
+    if statement_future is not None:
+        try:
+            statements = statement_future.result()
+        except Exception as exc:
+            failure('yahoo', 'statement_task', symbol=symbol, error=exc)
+            statements = {'income':None, 'balance':None, 'cashflow':None,
+                          'errors':['Yahoo 财务任务未成功，保留成功缓存'],
+                          'diagnostics':{}, 'fetched_at':now()}
+        income, balance, cashflow = (statements[k] for k in ('income', 'balance', 'cashflow'))
+        errors.extend(statements['errors'])
+        result['financial_fetched_at'] = statements['fetched_at']
+        if symbol == 'GOOG':
+            result['financial_diagnostics'] = statements['diagnostics']
         shares_task = None
-        if market is None and m["market_cap"].get("value") is None:
-            shares_task = pool.submit(load, "流通股数", lambda: yf.Ticker(symbol).get_shares_full(
-                start=(datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()), None)
-        # Report forecast errors after statement_errors is captured below.
-        estimates_task = pool.submit(lambda: None) if market is not None else pool.submit(load, "盈利预测", item.get_earnings_estimate, None)
-        income, balance, cashflow = income_task.result(), balance_task.result(), cashflow_task.result()
+        estimates = None
+    else:
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            income_task = pool.submit(load, "利润表", lambda: yf.Ticker(symbol).get_income_stmt(freq="quarterly"), None)
+            balance_task = pool.submit(load, "资产负债表", lambda: (
+                balance_with_diagnostics(yf.Ticker(symbol), result["financial_diagnostics"])
+                if symbol == "GOOG" else yf.Ticker(symbol).get_balance_sheet(freq="quarterly")), None)
+            cashflow_task = pool.submit(load, "现金流量表", lambda: yf.Ticker(symbol).get_cashflow(freq="quarterly"), None)
+            shares_task = None
+            if market is None and m["market_cap"].get("value") is None:
+                shares_task = pool.submit(load, "流通股数", lambda: yf.Ticker(symbol).get_shares_full(
+                    start=(datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()), None)
+            # Report forecast errors after statement_errors is captured below.
+            estimates_task = pool.submit(lambda: None) if market is not None else pool.submit(load, "盈利预测", item.get_earnings_estimate, None)
+            income, balance, cashflow = income_task.result(), balance_task.result(), cashflow_task.result()
     if shares_task is not None:
         share_frame = shares_task.result()
         if share_frame is not None and not share_frame.empty:
@@ -490,7 +545,7 @@ def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=Non
     # Forecast permission failures must not discard successfully fetched actual
     # statements (including historical quarters needed for growth rates).
     statement_errors = errors[financial_error_start:]
-    estimates = load("分析师预期", estimates_task.result, None)
+    estimates = load("分析师预期", estimates_task.result, None) if statement_future is None else None
     if symbol == "GOOG":
         previous_probe = (saved or {}).get("provider_probe", {})
         if previous_probe.get("revision") == PROBE_REVISION:
@@ -518,7 +573,7 @@ def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=Non
     return revalue(result, estimate_store)
 
 
-def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, force=False):
+def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, force=False, financial_refresh=None):
     # Preserve the existing non-US and crypto routes outside Longbridge's US adapter.
     if symbol.endswith('-USD') or ('.' in symbol and symbol.rsplit('.', 1)[1] not in ('A', 'B')) or (saved or {}).get('quote_type') in ('CRYPTOCURRENCY', 'INDEX', 'MUTUALFUND', 'CURRENCY'):
         result = _fetch_yahoo_security(symbol, saved, estimate_store, on_update, force)
@@ -533,13 +588,58 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
         directory = json.loads((ROOT / "frontend/assets/symbol-directory.json").read_text())
         entry = next((r for r in directory["securities"] if r[0] == symbol), None)
         quote_type = "ETF" if entry and entry[2] else "EQUITY"
-    market = longbridge.market_snapshot(symbol, estimate_store, quote_type, force)
-    result = _fetch_yahoo_security(symbol, saved, estimate_store, on_update, force, market)
+    if estimate_store and quote_type == 'EQUITY':
+        try:
+            financial_cache = estimate_store.get_cache('yahoo-financial:v1:' + symbol)
+            if financial_cache and financial_cache[0].get('financial_checked_at', '') > (saved or {}).get('financial_checked_at', ''):
+                saved = deepcopy(saved) if saved else {'ticker': symbol, 'metrics': {}, 'sources': {}, 'series': {}}
+                reuse_financial(saved, financial_cache[0])
+                for key in ('financial_checked_at', 'yahoo_session', 'quote_type', 'market_provider'):
+                    saved[key] = financial_cache[0].get(key)
+        except Exception as exc:
+            failure('database', 'financial_cache_read', symbol=symbol, error=exc)
+    financial_force = (force if financial_refresh is None else financial_refresh) and _financial_age(saved or {}, now()) >= 60
+    due = quote_type == 'EQUITY' and (financial_force or financial_due(saved, now()))
+    if financial_force:
+        yf.data.YfData().cache_get.cache_clear()
+    statements = STATEMENT_POOL.submit(_statement_blocks, symbol) if due else None
+    def publish_quote(quote_snapshot):
+        if on_update:
+            preview = deepcopy(saved) if saved else {'ticker': symbol, 'metrics': {}, 'series': {}, 'sources': {}}
+            preview.update(schema_version=SCHEMA_VERSION, fetched_at=quote_snapshot['fetched_at'],
+                           partial=True, longbridge_market=quote_snapshot)
+            revalue(preview)
+            on_update(preview)
+    try:
+        market = longbridge.market_snapshot(symbol, estimate_store, quote_type, force,
+                                           on_quote=publish_quote if on_update else None,
+                                           financial_refresh=force if financial_refresh is None else financial_refresh)
+    except Exception as exc:
+        if saved and saved.get('longbridge_market'):
+            failure('longbridge', 'market_refresh', symbol=symbol, error=exc, fallback_available=True)
+            market = deepcopy(saved['longbridge_market'])
+            market.update(stale=True, errors=[*market.get('errors', []), '长桥行情刷新失败，使用成功缓存'])
+        else:
+            if statements is not None:
+                statements.cancel()
+            raise
+    result = _fetch_yahoo_security(symbol, saved, estimate_store, on_update, financial_force, market,
+                                   statement_future=statements)
+    if statements is not None and estimate_store and not result.get('financial_errors'):
+        snapshot = {key: deepcopy(result.get(key)) for key in ('series', 'quarter_0', 'quarter_1',
+                    'financial_currency', 'financial_checked_at', 'financial_fetched_at',
+                    'yahoo_session', 'quote_type', 'market_provider')}
+        snapshot['metrics'] = {key: deepcopy(result['metrics'][key]) for key in FINANCIAL_KEYS if key in result['metrics']}
+        snapshot['fetched_at'] = result['financial_fetched_at']
+        try:
+            getattr(estimate_store, 'publish_cache', estimate_store.set_cache)('yahoo-financial:v1:' + symbol, snapshot)
+        except Exception as exc:
+            failure('database', 'financial_cache_write', symbol=symbol, error=exc)
     result["errors"] = list(dict.fromkeys([*result.get("errors", []), *market.get("errors", [])]))
     return revalue(result, estimate_store)
 
 
-def security(symbol, refresh=False, store=None, on_update=None):
+def security(symbol, refresh=False, store=None, on_update=None, financial_refresh=None):
     with LOCK_GUARD:
         lock = LOCKS.setdefault(symbol, threading.Lock())
     with lock:
@@ -579,8 +679,12 @@ def security(symbol, refresh=False, store=None, on_update=None):
         stage = "fetch_security"
         try:
             with LIMIT:
-                result = (fetch_security(symbol, saved, estimate_store=store, on_update=on_update, force=refresh)
-                          if on_update else fetch_security(symbol, saved, estimate_store=store, force=refresh))
+                options = {'estimate_store': store, 'force': refresh}
+                if on_update:
+                    options['on_update'] = on_update
+                if financial_refresh is not None:
+                    options['financial_refresh'] = financial_refresh
+                result = fetch_security(symbol, saved, **options)
             if result.get("metrics", {}).get("price", {}).get("value") is None:
                 failure(result.get("market_provider", "longbridge"), "quote_refresh", symbol=symbol, reason="; ".join(result.get("errors", [])) or "price missing / empty response", started=fetch_started, fallback_available=bool(saved and saved.get("metrics", {}).get("price", {}).get("value") is not None))
                 fallback = failed_snapshot(result.get("errors", []) + ["行情刷新失败，保留上次成功快照"])
@@ -597,7 +701,11 @@ def security(symbol, refresh=False, store=None, on_update=None):
                             continue
                     if previous.get("value") is not None and incoming.get("value") is None:
                         result["metrics"][key] = {**deepcopy(previous), "stale": True}
-                result["financial_checked_at"] = saved.get("financial_checked_at")
+                if result.get('financial_errors'):
+                    result["financial_checked_at"] = saved.get("financial_checked_at")
+            if result.get('stale'):
+                fallback = failed_snapshot(result.get('errors', []))
+                return fallback or {**result, 'cached': True}
             stage = "quote_cache_write"
             try:
                 getattr(store, "publish_cache", store.set_cache)("quote:" + symbol, result)

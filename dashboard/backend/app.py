@@ -741,8 +741,10 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if not SYMBOL.fullmatch(symbol):
             abort(400, description="无效 ticker")
         refresh = request.args.get("refresh") == "1"
+        financial_refresh = request.args.get('financial_refresh') == '1'
         return refresh_jobs.response('security:' + symbol,
-            lambda publish: security(symbol, refresh, store=database, on_update=publish),
+            lambda publish: security(symbol, refresh, store=database, on_update=publish,
+                financial_refresh=financial_refresh),
             60, lambda value: value.get('metrics', {}).get('price', {}).get('value') is not None,
             persist=False, stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
 

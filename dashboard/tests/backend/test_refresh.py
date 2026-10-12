@@ -101,6 +101,55 @@ class RefreshCases(unittest.TestCase):
         self.assertEqual(result['metrics']['pe_ltm']['value'], 12.5)
         self.assertAlmostEqual(result['metrics']['pe_forward_4q']['value'], 100/14)
 
+    def test_quote_arrives_while_yahoo_statements_are_still_running(self):
+        from test_longbridge import blocks
+        started=threading.Event();release=threading.Event();quoted=threading.Event();events=[]
+        market=data.longbridge.normalize('QA',blocks(),data.now(),'EQUITY')
+        def statements(symbol):
+            started.set();release.wait(3)
+            return {'income':self.item.get_income_stmt(),'balance':self.item.get_balance_sheet(),
+                    'cashflow':self.item.get_cashflow(),'errors':[],'diagnostics':{},'fetched_at':data.now()}
+        def snapshot(symbol,store,quote_type,force,on_quote=None,financial_refresh=None):
+            self.assertTrue(started.wait(2));on_quote(market);return market
+        def publish(r):
+            events.append(r)
+            if r.get('metrics',{}).get('price',{}).get('value') is not None:quoted.set()
+        with patch.object(data,'_statement_blocks',side_effect=statements),patch.object(data.longbridge,'market_snapshot',side_effect=snapshot),ThreadPoolExecutor(max_workers=1) as pool:
+            future=pool.submit(data.fetch_security,'QA',on_update=publish)
+            try:
+                self.assertTrue(quoted.wait(2));self.assertFalse(future.done())
+                self.assertTrue(events[0]['partial'])
+            finally:release.set()
+            result=future.result(timeout=3)
+        self.assertEqual(result['metrics']['revenue_q0']['value'],100)
+
+    def test_financial_cache_has_separate_five_minute_ttl(self):
+        saved={'market_provider':'longbridge','quote_type':'EQUITY','series':{'capex':{}},
+               'financial_checked_at':'2026-10-12T00:00:00+00:00',
+               'yahoo_session':{'mode':data.yahoo_session.mode(),'proxy_enabled':data.yahoo_session.proxy_enabled()}}
+        self.assertFalse(data.financial_due(saved,'2026-10-12T00:04:59+00:00'))
+        self.assertTrue(data.financial_due(saved,'2026-10-12T00:05:00+00:00'))
+
+    def test_yahoo_task_failure_does_not_erase_fresh_longbridge_quote(self):
+        from test_longbridge import blocks
+        from concurrent.futures import Future
+        market=data.longbridge.normalize('QA',blocks(),data.now(),'EQUITY')
+        future=Future();future.set_exception(RuntimeError('offline'))
+        with patch.object(data.STATEMENT_POOL,'submit',return_value=future),patch.object(data.longbridge,'market_snapshot',return_value=market),patch.object(data,'failure'):
+            result=data.fetch_security('QA')
+        self.assertEqual(result['metrics']['price']['value'],100)
+        self.assertEqual(result['market_provider'],'longbridge')
+        self.assertTrue(result['financial_errors'])
+
+    def test_scheduled_quote_refresh_does_not_force_fresh_financials(self):
+        from test_longbridge import blocks
+        market=data.longbridge.normalize('QA',blocks(),data.now(),'EQUITY')
+        saved=data._fetch_yahoo_security('QA');saved['market_provider']='longbridge'
+        with patch.object(data.STATEMENT_POOL,'submit') as submit,patch.object(data.longbridge,'market_snapshot',return_value=market):
+            result=data.fetch_security('QA',saved,force=True,financial_refresh=False)
+        submit.assert_not_called()
+        self.assertEqual(result['metrics']['revenue_q0']['value'],100)
+
     def test_independent_yahoo_calls_overlap(self):
         quote_barrier = threading.Barrier(2)
         financial_barrier = threading.Barrier(5)

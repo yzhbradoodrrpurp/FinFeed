@@ -73,3 +73,7 @@ Unauthenticated account operations return 401. Cross-account writes are rejected
 ## Isolation limits
 
 Project processes do not modify global DNS, routing, firewall, package environments, or unrelated services. Loopback, private files, and separate SQL roles prevent accidental exposure and operational interference; they are not a strong boundary against another root process or a process using the same OS identity. CPU, memory, disk, and network remain shared host resources.
+
+## Concurrent market and statement pipeline
+
+Watchlist jobs start Yahoo statement retrieval and Longbridge market retrieval concurrently. Quote previews stream before full EPS/statement completion. Quote/index/bar snapshots refresh each minute; quarterly statements and EPS/consensus refresh every five minutes, with protected manual refresh. Shared per-symbol jobs, provider block locks, bounded Yahoo concurrency and Longbridge rate control prevent per-user fan-out. Public market snapshots are shared; account records and permissions remain isolated. See [cache and rate control](data-and-caching.md).

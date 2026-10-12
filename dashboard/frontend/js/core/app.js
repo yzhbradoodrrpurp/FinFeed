@@ -325,8 +325,8 @@ function render(){
   renderHoldings();
   if(surface==="watchlist")flashChangedCells();
 }
-async function getRecord(ticker,refresh=false,signal,onUpdate=()=>{}){
-  return FinFeedCache.market(`/api/security/${encodeURIComponent(ticker)}?stream=1${refresh?"&refresh=1":""}`,onUpdate,{signal,refresh,staleTtl:7*86400000,validate:value=>value?.schema_version===9&&value.metrics?.price?.value!=null});
+async function getRecord(ticker,refresh=false,signal,onUpdate=()=>{},financialRefresh=false){
+  return FinFeedCache.market(`/api/security/${encodeURIComponent(ticker)}?stream=1${refresh?"&refresh=1":""}${financialRefresh?"&financial_refresh=1":""}`,onUpdate,{signal,refresh,staleTtl:7*86400000,validate:value=>value?.schema_version===9&&value.metrics?.price?.value!=null});
 }
 function normalizeFinancialComparisons(record){
   for(const [key,metric] of Object.entries(record?.metrics||{})){
@@ -367,7 +367,7 @@ function pump(){
     const task=queue.shift(),controller=new AbortController();running++;recordRequests.add(controller);
     getRecord(task.ticker,task.refresh,controller.signal,record=>{
       if(task.generation===recordGeneration&&trackedTickers().includes(task.ticker)){acceptRecord(task.ticker,record);scheduleRender();}
-    }).then(record=>{
+    },task.financialRefresh).then(record=>{
       if(task.generation===recordGeneration&&trackedTickers().includes(task.ticker))acceptRecord(task.ticker,record);
     }).catch(error=>{
       if(task.generation===recordGeneration&&error.name!=="AbortError"&&trackedTickers().includes(task.ticker))acceptRecord(task.ticker,{ticker:task.ticker,name:records.get(task.ticker)?.name||task.ticker,metrics:{},errors:[error.message],sources:{}});
@@ -378,12 +378,12 @@ function pump(){
     });
   }
 }
-function load(tickersToLoad,refresh=false){tickersToLoad.forEach(t=>fetchingTickers.add(t));scheduleRender();queue.push(...tickersToLoad.map(ticker=>({ticker,refresh,generation:recordGeneration})));el("refresh").disabled=true;pump();}
+function load(tickersToLoad,refresh=false,financialRefresh=false){tickersToLoad.forEach(t=>fetchingTickers.add(t));scheduleRender();queue.push(...tickersToLoad.map(ticker=>({ticker,refresh,financialRefresh,generation:recordGeneration})));el("refresh").disabled=true;pump();}
 
-function refreshWatchlist(){
+function refreshWatchlist(financialRefresh=false){
   const tracked=trackedTickers();
   if(running||queue.length||!tracked.length)return;
-  load(tracked,true);
+  load(tracked,true,financialRefresh);
 }
 function addTickers(text){
   if(readOnly)throw new Error("其他账户仅供查看");
@@ -411,14 +411,14 @@ function detail(ticker,keyboard=false){
   const r=records.get(ticker);if(!r){feedback(`${ticker} 正在读取，请稍后查看。`);return;}
   el("detail-title").textContent=`${ticker} · ${r.name}`;
   const sourceNames={quote:"行情来源",financials:"利润表",balance:"资产负债表",cashflow:"现金流",estimates:"Yahoo 分析师预期",market_eps:"长桥季度 EPS 与预测",estimates_alpha:"Alpha Vantage 盈利预测",sec:"SEC 披露查询"};
-  el("detail-content").innerHTML=`<div class="meta-row">最近披露财季：${escapeHTML(r.quarter_0||"未提供")}　上财季：${escapeHTML(r.quarter_1||"未提供")}<br>行情来源：${escapeHTML(r.market_provider||"Yahoo")}<br>行情检索：${timestamp(r.market_fetched_at||r.fetched_at)}${r.cached?" · 缓存":""}${r.refreshing?" · 正在更新":r.stale?" · 刷新失败，保留旧快照":""}${r.refresh_checked_at?`<br>本次刷新检查：${timestamp(r.refresh_checked_at)}`:""}<br>季度财务检索：${timestamp(r.financial_fetched_at)}${r.financial_stale?" · 更新失败，使用旧财务数据":""}<br>长桥 EPS 财季：${escapeHTML(r.market_quarter_0||"未提供")}<br>财务检查：${timestamp(r.financial_checked_at)}<br>报价时间：${timestamp(r.quote_at)}　交易所：${escapeHTML(r.exchange||"未提供")} (${escapeHTML(r.exchange_timezone||"未提供")})<br>报价币种：${escapeHTML(r.currency||"未提供")}　财报币种：${escapeHTML(r.financial_currency||"未提供")}　延迟：${r.delay_minutes==null?"供应商未明确提供":escapeHTML(r.delay_minutes)+" 分钟（供应商标记）"}<br>申报日：未由免费聚合源提供，请到 SEC 核对。${r.errors?.length?`<br>${escapeHTML(r.errors.join("；"))}`:""}</div><nav class="source-links">${Object.entries(r.sources||{}).map(([k,url])=>`<a href="${escapeHTML(url)}" target="_blank" rel="noreferrer">${sourceNames[k]||k}</a>`).join("")}</nav>${allColumns.map(([key,title,sub,type])=>{
-    const m=r.metrics?.[key];return `<section class="metric-detail"><h3>${title}<br><span style="font-weight:400;color:#81909c">${sub}</span></h3><div><div class="value">${format(m,type)} ${escapeHTML(m?.currency||"")}</div>${m?.reason?`<p>${escapeHTML(m.reason)}</p>`:""}${m?.estimate_stale?"<p>预测更新失败，使用旧预测。</p>":""}${m?.historical_cache?`<p>包含历史缓存：Yahoo 本次未返回部分财季；缓存原始检索时间 ${timestamp(m.cache_fetched_at||m.fetched_at)}。后续修订尚待数据源核验。</p>`:""}<p>数据期：${escapeHTML(m?.period||m?.estimate_label||"未提供")}${m?.comparison_period?" · 比较期："+escapeHTML(m.comparison_period):""}</p><p>${escapeHTML(m?.basis||"未提供口径")}</p>${m?.analysts!=null?`<p>覆盖分析师：${m.analysts}</p>`:""}${m?.inputs?`<p>计算输入：${escapeHTML(JSON.stringify(m.inputs))}</p>`:""}${m?.source?`<a href="${escapeHTML(m.source)}" target="_blank" rel="noreferrer">查看来源</a>`:""}</div></section>`;
+  el("detail-content").innerHTML=`<div class="meta-row">最近披露财季：${escapeHTML(r.quarter_0||"未提供")}　上财季：${escapeHTML(r.quarter_1||"未提供")}<br>行情来源：${escapeHTML(r.market_provider||"Yahoo")}<br>行情检索：${timestamp(r.market_fetched_at||r.fetched_at)}${r.cached?" · 缓存":""}${r.refreshing?" · 正在更新":r.stale?" · 刷新失败，保留旧快照":""}${r.refresh_checked_at?`<br>本次刷新检查：${timestamp(r.refresh_checked_at)}`:""}<br>季度财务检索：${timestamp(r.financial_fetched_at)}${r.financial_stale?" · 更新失败，使用旧财务数据":""}<br>长桥 EPS／预测检索：${timestamp(r.longbridge_blocks?.consensus?.fetched_at)}${r.longbridge_blocks?.consensus?.stale?" · 刷新失败，使用成功缓存":""}<br>长桥 EPS 财季：${escapeHTML(r.market_quarter_0||"未提供")}<br>财务检查：${timestamp(r.financial_checked_at)}<br>报价时间：${timestamp(r.quote_at)}　交易所：${escapeHTML(r.exchange||"未提供")} (${escapeHTML(r.exchange_timezone||"未提供")})<br>报价币种：${escapeHTML(r.currency||"未提供")}　财报币种：${escapeHTML(r.financial_currency||"未提供")}　延迟：${r.delay_minutes==null?"供应商未明确提供":escapeHTML(r.delay_minutes)+" 分钟（供应商标记）"}<br>申报日：未由免费聚合源提供，请到 SEC 核对。${r.errors?.length?`<br>${escapeHTML(r.errors.join("；"))}`:""}</div><nav class="source-links">${Object.entries(r.sources||{}).map(([k,url])=>`<a href="${escapeHTML(url)}" target="_blank" rel="noreferrer">${sourceNames[k]||k}</a>`).join("")}</nav>${allColumns.map(([key,title,sub,type])=>{
+    const m=r.metrics?.[key];return `<section class="metric-detail"><h3>${title}<br><span style="font-weight:400;color:#81909c">${sub}</span></h3><div><div class="value">${format(m,type)} ${escapeHTML(m?.currency||"")}</div>${m?.reason?`<p>${escapeHTML(m.reason)}</p>`:""}${m?.stale?`<p>该指标使用成功缓存，检索时间 ${timestamp(m.cache_fetched_at||m.fetched_at)}；本次更新未成功。</p>`:""}${m?.estimate_stale?"<p>预测更新失败，使用旧预测。</p>":""}${m?.historical_cache?`<p>包含历史缓存：Yahoo 本次未返回部分财季；缓存原始检索时间 ${timestamp(m.cache_fetched_at||m.fetched_at)}。后续修订尚待数据源核验。</p>`:""}<p>数据期：${escapeHTML(m?.period||m?.estimate_label||"未提供")}${m?.comparison_period?" · 比较期："+escapeHTML(m.comparison_period):""}</p><p>${escapeHTML(m?.basis||"未提供口径")}</p>${m?.analysts!=null?`<p>覆盖分析师：${m.analysts}</p>`:""}${m?.inputs?`<p>计算输入：${escapeHTML(JSON.stringify(m.inputs))}</p>`:""}${m?.source?`<a href="${escapeHTML(m.source)}" target="_blank" rel="noreferrer">查看来源</a>`:""}</div></section>`;
   }).join("")}`;
   el("detail-dialog").dataset.pointerOpened=String(!keyboard);
   el("detail-dialog").showModal();el("detail-title").focus({preventScroll:true});
 }
 el("add-form").addEventListener("submit",event=>{event.preventDefault();try{const fresh=addTickers(el("ticker-input").value);el("ticker-input").value="";feedback(fresh.length?"":"这些标的已在关注列表中。");}catch(error){feedback(error.message);}});
-el("refresh").addEventListener("click",()=>{feedback("");refreshWatchlist();});
+el("refresh").addEventListener("click",()=>{feedback("");refreshWatchlist(true);});
 el("method-button").addEventListener("click",()=>el("method-dialog").showModal());
 document.querySelectorAll("[data-surface]").forEach(b=>b.addEventListener("click",()=>switchSurface(b.dataset.surface)));
 el("add-position").addEventListener("click",event=>openPosition(null,event.detail===0));

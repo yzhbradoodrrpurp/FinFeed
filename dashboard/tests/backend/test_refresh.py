@@ -99,7 +99,7 @@ class RefreshCases(unittest.TestCase):
         self.item.get_cashflow.assert_called_once()
         self.assertEqual(result['metrics']['revenue_q0']['value'], 100)
         self.assertEqual(result['metrics']['pe_ltm']['value'], 12.5)
-        self.assertAlmostEqual(result['metrics']['pe_forward_4q']['value'], 100/14)
+        self.assertAlmostEqual(result['metrics']['pe_forward_4q']['value'], 100/10)
 
     def test_quote_arrives_while_yahoo_statements_are_still_running(self):
         from test_longbridge import blocks

@@ -47,7 +47,7 @@ State saves use authenticated `/api/state`, with revision and transaction contro
 | Actual diluted EPS | Longbridge latest reported quarter and adjacent preceding quarter |
 | Forward EPS | Longbridge GAAP diluted analyst estimate for the immediately following fiscal quarter |
 | P/E | Longbridge TTM P/E: price relative to the last twelve months of earnings |
-| Forward P/E | Price / (latest reported actual quarterly GAAP diluted EPS + next three quarterly GAAP diluted EPS forecasts) |
+| Forward P/E | Price / (latest two reported actual quarterly GAAP diluted EPS + next two quarterly GAAP diluted EPS forecasts) |
 | Revenue | Reported quarterly revenue |
 | Debt | Quarter-end total debt under provider classification |
 | Gross / operating margin | Same-quarter gross profit / revenue and operating income / revenue; latest, year-ago, previous and second-previous quarters |
@@ -57,7 +57,7 @@ State saves use authenticated `/api/state`, with revision and transaction contro
 | Average volume | Mean of the ten complete trading days before the comparison day |
 | Relative volume | Complete comparison-day volume / that preceding mean |
 
-Market and EPS fields come from Longbridge; quarterly financial categories remain on Yahoo. Longbridge actual and forecast EPS use GAAP diluted consensus, matched to explicit fiscal-quarter labels. P/E uses the provider TTM index. Forward P/E uses one actual quarter plus the next three consecutive forecast quarters, not standard NTM. All four observations are required; a negative individual quarter is allowed when the total is positive. A nonpositive total, differing currencies, unavailable quarters, and invalid denominators are explicitly unavailable. Financial quarters must be consecutive, with a 65–120 day interval; missing values are not zero. Volume comparisons wait for a complete day rather than comparing partial-day volume with complete days.
+Market and EPS fields come from Longbridge; quarterly financial categories remain on Yahoo. Longbridge actual and forecast EPS use GAAP diluted consensus, matched to explicit fiscal-quarter labels. P/E uses the provider TTM index. Forward P/E uses two consecutive actual quarters plus the next two consecutive forecast quarters, not standard NTM. All four observations are required; negative totals are displayed as negative multiples with an earnings-loss label. A zero total, differing currencies, unavailable quarters, and invalid denominators are explicitly unavailable. Financial quarters must be consecutive, with a 65–120 day interval; missing values are not zero. Volume comparisons wait for a complete day rather than comparing partial-day volume with complete days.
 
 Company financial fields are not applied to ETFs. The Longbridge market adapter covers US stocks and ETFs; existing international/crypto routes remain on Yahoo with explicit provider labels. `BTC` is an ETF ticker; Bitcoin spot is `BTC-USD`.
 

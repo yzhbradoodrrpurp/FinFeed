@@ -4,7 +4,7 @@
 
 | Feature | Data chain | Current routing |
 | --- | --- | --- |
-| Watchlist / Portfolio market, EPS and valuation | Longbridge OpenAPI; TTM P/E index and one-actual/three-forecast forward calculation | Longbridge SDK connection |
+| Watchlist / Portfolio market, EPS and valuation | Longbridge OpenAPI; TTM P/E index and two-actual/two-forecast forward calculation | Longbridge SDK connection |
 | Quarterly financial categories, home indices and sector charts | Yahoo Finance through yfinance and Yahoo request adapters | Project proxy |
 | NFP levels, unemployment, hourly earnings | FRED series PAYEMS, UNRATE, CES0500000003; original publisher BLS | Direct |
 | PCE price indexes | FRED PCEPI / PCEPILFE; original publisher BEA | Direct |
@@ -22,7 +22,7 @@ A network route working once does not guarantee continued provider access. SEC r
 
 ## Parsing and calculation rules
 
-Securities use regular-session prices, currency/financial-period checks, consecutive quarters, and explicit missing reasons. Longbridge provides market capitalization, quotes, TTM P/E, historical bars and quarterly actual/forecast EPS. Forward EPS uses the next fiscal-quarter label after the latest reported Longbridge quarter. Forward P/E sums the latest released actual quarterly GAAP diluted EPS and the next three consecutive quarterly forecasts. This is a blended four-quarter denominator, not standard NTM; annual forecast labels or single-quarter multiplication are not substitutes. Missing estimates or a nonpositive aggregate denominator remain unavailable. Quarterly Revenue, Gross Margin, Operating Margin, CapEx, FCF and Debt remain on Yahoo, with their own quarter anchors. Market EPS can be newer than Yahoo quarterly statements; details show both anchors.
+Securities use regular-session prices, currency/financial-period checks, consecutive quarters, and explicit missing reasons. Longbridge provides market capitalization, quotes, TTM P/E, historical bars and quarterly actual/forecast EPS. Forward EPS uses the next fiscal-quarter label after the latest reported Longbridge quarter. Forward P/E sums the latest two consecutive released actual quarterly GAAP diluted EPS and the next two consecutive quarterly forecasts. This is a blended four-quarter denominator, not standard NTM; annual forecast labels or single-quarter multiplication are not substitutes. Missing estimates or a zero aggregate denominator remain unavailable. Negative multiples are displayed with an earnings-loss label and do not imply cheap valuation. Quarterly Revenue, Gross Margin, Operating Margin, CapEx, FCF and Debt remain on Yahoo, with their own quarter anchors. Market EPS can be newer than Yahoo quarterly statements; details show both anchors.
 
 The 52-week range is calculated over the latest 365 calendar days from Longbridge forward-adjusted regular-session daily bars, including corporate-action adjustment. It can differ from Yahoo's range definition and adjustment. Previous-ten-session average volume and relative volume retain the existing complete-day definition rather than using Longbridge's built-in volume ratio. NYSE holidays and early closes determine completion for US securities.
 

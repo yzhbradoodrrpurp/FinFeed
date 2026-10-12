@@ -94,10 +94,10 @@ class LongbridgeCases(unittest.TestCase):
             with patch.object(securities,'fetch_security',return_value=result):
                 value=securities.security('ISOLATED',refresh=True,store=store)
             self.assertEqual(value['metrics']['pe_forward_4q']['value'],20 if failed else None)
-    def test_ttm_is_vendor_index_and_forward_is_one_actual_three_forecasts(self):
+    def test_ttm_is_vendor_index_and_forward_is_two_actual_two_forecasts(self):
         r = lb.normalize('QA', blocks(), '2026-10-03T00:00:00+00:00', 'EQUITY')
         self.assertEqual(r['metrics']['pe_ltm']['value'], 12.5)
-        self.assertAlmostEqual(r['metrics']['pe_forward_4q']['value'], 100/14)
+        self.assertAlmostEqual(r['metrics']['pe_forward_4q']['value'], 100/10)
         self.assertEqual(r['metrics']['eps_q0']['value'], 2)
         self.assertEqual(r['metrics']['eps_q1']['value'], 1)
         self.assertEqual(r['metrics']['forward_eps_next']['estimate_label'], 'Q3 2026')
@@ -107,15 +107,30 @@ class LongbridgeCases(unittest.TestCase):
         r = lb.normalize('QA', blocks('Q4 2026'), '2026-10-03T00:00:00+00:00', 'EQUITY')
         self.assertIsNone(r['metrics']['pe_forward_4q']['value'])
         self.assertEqual(r['metrics']['forward_eps_next']['value'], 3)
-        self.assertIn('未来三个', r['metrics']['pe_forward_4q']['reason'])
+        self.assertIn('未来两个', r['metrics']['pe_forward_4q']['reason'])
 
     def test_negative_forecast_quarter_is_allowed_when_four_quarter_sum_positive(self):
         b = blocks();b['consensus']['data']['list'][2]['details'][0]['estimate'] = -3
         r = lb.normalize('QA', b, '2026-10-03T00:00:00+00:00', 'EQUITY')
-        self.assertAlmostEqual(r['metrics']['pe_forward_4q']['value'], 100/8)
+        self.assertAlmostEqual(r['metrics']['pe_forward_4q']['value'], 100/4)
         for item in b['consensus']['data']['list'][2:]:item['details'][0]['estimate'] = -1
         r = lb.normalize('QA', b, '2026-10-03T00:00:00+00:00', 'EQUITY')
+        self.assertAlmostEqual(r['metrics']['pe_forward_4q']['value'], 100)
+
+    def test_signed_pe_and_zero_denominators(self):
+        b = blocks();b['indexes']['data']['pe_ttm_ratio'] = -12.5
+        for row in b['consensus']['data']['list'][2:]:row['details'][0]['estimate'] = -4
+        r = lb.normalize('QA', b, '2026-10-03T00:00:00+00:00', 'EQUITY')
+        self.assertEqual(r['metrics']['pe_ltm']['value'], -12.5)
+        self.assertEqual(r['metrics']['pe_forward_4q']['value'], -20)
+        self.assertIn('负', r['metrics']['pe_forward_4q']['valuation_status'])
+        for row in b['consensus']['data']['list'][2:]:row['details'][0]['estimate'] = -1.5
+        r = lb.normalize('QA', b, '2026-10-03T00:00:00+00:00', 'EQUITY')
         self.assertIsNone(r['metrics']['pe_forward_4q']['value'])
+        self.assertIn('为零', r['metrics']['pe_forward_4q']['reason'])
+        for missing in ('Q1 2026', 'Q2 2026'):
+            r = lb.normalize('QA', blocks(missing), '2026-10-03T00:00:00+00:00', 'EQUITY')
+            self.assertIsNone(r['metrics']['pe_forward_4q']['value'])
 
     def test_currency_mismatch_etf_and_intraday_not_applicable(self):
         b = blocks();b['consensus']['data']['currency'] = 'EUR'
@@ -152,9 +167,9 @@ class LongbridgeCases(unittest.TestCase):
         self.assertTrue(r['metrics']['high_52w']['stale'])
         self.assertTrue(r['errors'])
 
-    def test_fourth_future_quarter_is_not_used_but_actual_is_required(self):
+    def test_unused_future_quarter_is_not_required_but_both_actuals_are(self):
         r = lb.normalize('QA', blocks('Q2 2027'), '2026-10-03T00:00:00+00:00', 'EQUITY')
-        self.assertAlmostEqual(r['metrics']['pe_forward_4q']['value'], 100/14)
+        self.assertAlmostEqual(r['metrics']['pe_forward_4q']['value'], 100/10)
         r = lb.normalize('QA', blocks('Q2 2026'), '2026-10-03T00:00:00+00:00', 'EQUITY')
         self.assertIsNone(r['metrics']['pe_forward_4q']['value'])
 

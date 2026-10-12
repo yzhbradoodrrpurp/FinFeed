@@ -9,7 +9,7 @@ import time
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from backend.domain.metrics import number, prior_quarter_period, trailing_pe, volume_metrics
+from backend.domain.metrics import number, prior_quarter_period, volume_metrics
 from backend.infrastructure.failure_log import failure
 
 VERSION = 1
@@ -126,7 +126,7 @@ def _cached_locked(symbol: str, block: str, action: Any, store: Any,
 
 
 def earnings(financial: dict, consensus: dict, fetched_at: str) -> dict:
-    """Match released diluted EPS and three future forecasts to fiscal labels."""
+    """Match released diluted EPS and two future forecasts to fiscal labels."""
     revenue = {}
     for statement in financial.get('list', {}).values():
         for indicator in statement.get('indicators', []):
@@ -155,7 +155,7 @@ def earnings(financial: dict, consensus: dict, fetched_at: str) -> dict:
     forecast_labels = []
     if q0:
         quarter, year = map(int, re.fullmatch(r'Q([1-4]) (\d{4})', revenue[q0]).groups())
-        for _ in range(3):
+        for _ in range(2):
             quarter, year = (quarter + 1, year) if quarter < 4 else (1, year + 1)
             forecast_labels.append(f'Q{quarter} {year}')
     forecasts = []
@@ -182,10 +182,13 @@ def normalize(symbol: str, blocks: dict, fetched_at: str, quote_type: str) -> di
     m['price'] = metric(quote.get('last_done'), quote_date, '长桥常规交易时段最近成交价；不合并盘前盘后', url, currency=currency)
     m['market_cap'] = metric(indexes.get('total_market_value'), quote_date, '长桥总市值指标；ETF 不用资产规模代替', SOURCE, currency=currency)
     pe = number(indexes.get('pe_ttm_ratio'))
-    m['pe_ltm'] = metric(pe if pe is not None and pe > 0 else None, quote_date,
+    m['pe_ltm'] = metric(pe if pe is not None and pe != 0 else None, quote_date,
                         '长桥 TTM P/E = 当前股价 / 最近十二个月 EPS；供应商计算指标', SOURCE)
-    if pe is not None and pe <= 0:
-        m['pe_ltm']['reason'] = 'TTM 盈利非正，P/E 不适用'
+    if pe is not None and pe < 0:
+        m['pe_ltm']['reason'] = 'TTM 盈利为负；负市盈率不宜按低倍数判断便宜'
+        m['pe_ltm']['valuation_status'] = '盈利为负'
+    elif pe == 0:
+        m['pe_ltm']['reason'] = '供应商 TTM P/E 返回零，无法得到有效市盈率'
     bars = blocks.get('bars', {}).get('data', [])
     dated = sorted([(datetime.fromisoformat(b['timestamp']).astimezone(tz).date().isoformat(), b)
                     for b in bars], key=lambda row: row[0])
@@ -222,23 +225,34 @@ def normalize(symbol: str, blocks: dict, fetched_at: str, quote_type: str) -> di
         output.update({k: v for k, v in actual.items() if k != 'metrics'})
         m.update(actual['metrics'])
         forecasts = actual['forecast_quarters']
-        quarters = [{'fiscal_label': m['eps_q0'].get('fiscal_label'),
+        quarters = [{'fiscal_label': m['eps_q1'].get('fiscal_label'),
+                     'period': actual['market_quarter_1'], 'kind': 'actual',
+                     'value': m['eps_q1']['value']},
+                    {'fiscal_label': m['eps_q0'].get('fiscal_label'),
                      'period': actual['market_quarter_0'], 'kind': 'actual',
                      'value': m['eps_q0']['value']},
                     *[{**x, 'kind': 'forecast'} for x in forecasts]]
         complete_eps = len(quarters) == 4 and all(x['value'] is not None for x in quarters)
         total = sum(x['value'] for x in quarters) if complete_eps else None
-        pe, reason = trailing_pe(m['price']['value'], total)
-        if complete_eps and total <= 0:
-            reason = '实际 1 季 + 预测 3 季的 EPS 合计为零或负值，Forward P/E 不适用'
+        price = number(m['price']['value'])
+        pe = price / total if price is not None and total is not None and total != 0 else None
+        reason = None
+        if complete_eps and total == 0:
+            reason = '实际 2 季 + 预测 2 季的 EPS 合计为零，Forward P/E 无法计算'
+        elif complete_eps and total < 0:
+            reason = '四季合计 EPS 为负；负市盈率不宜按低倍数判断便宜'
+        elif price is None:
+            reason = '缺少股价'
         if not complete_eps:
-            reason = '缺少最近已披露季度实际 EPS 或未来三个连续财季预测 EPS；未跳过缺季或使用单季年化'
+            reason = '缺少最近两个连续已披露季度实际 EPS 或未来两个连续财季预测 EPS；未跳过缺季或使用单季年化'
         if actual['eps_currency'] != currency:
             pe, reason = None, '报价与预测 EPS 币种不同，未自动换汇'
-        m['pe_forward_4q'] = metric(pe, None, 'Forward P/E = 当前股价 /（最近已披露季度实际 GAAP 稀释 EPS + 未来三个连续财季预测 GAAP 稀释 EPS）；实际 1 季 + 预测 3 季，不是标准 NTM', EPS_SOURCE,
+        m['pe_forward_4q'] = metric(pe, None, 'Forward P/E = 当前股价 /（最近两个连续已披露季度实际 GAAP 稀释 EPS + 未来两个连续财季预测 GAAP 稀释 EPS）；实际 2 季 + 预测 2 季，不是标准 NTM', EPS_SOURCE,
             estimate_label=' / '.join(x['fiscal_label'] or '缺失' for x in quarters),
             inputs={'price': m['price']['value'], 'quarters': quarters, 'four_quarter_eps_sum': total})
         m['pe_forward_4q']['reason'] = reason
+        if pe is not None and pe < 0:
+            m['pe_forward_4q']['valuation_status'] = '合计 EPS 为负'
     for name, block in blocks.items():
         if block.get('stale') or block.get('failed'):
             output['errors'].append('长桥 ' + name + (' 读取失败，暂无成功缓存' if block.get('failed') else ' 刷新失败，使用成功缓存'))

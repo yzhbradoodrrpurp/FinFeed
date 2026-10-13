@@ -12,12 +12,12 @@ class MihomoCases(unittest.TestCase):
                                            "external-controller": "0.0.0.0:9090", "allow-lan": True,
                                            "rules": ["MATCH,DIRECT"]}).encode()).decode()
 
-    def test_only_loopback_is_exposed_and_rules_cannot_bypass_proxy(self):
+    def test_only_loopback_is_exposed_and_only_tunnel_traffic_bypasses_proxy(self):
         cfg = private_config(self.encoded())
         self.assertEqual(cfg["bind-address"], "127.0.0.1")
         self.assertFalse(cfg["allow-lan"])
         self.assertEqual(cfg["external-controller"], "")
-        self.assertEqual(cfg["rules"], ["MATCH,upstream"])
+        self.assertEqual(cfg["rules"], ["DOMAIN-SUFFIX,tailscale.com,DIRECT", "MATCH,upstream"])
 
     def test_tls_bypass_requires_explicit_opt_in_and_errors_are_redacted(self):
         with patch.dict(os.environ, {}, clear=True), self.assertRaises(ValueError) as caught:

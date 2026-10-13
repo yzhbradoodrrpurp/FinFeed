@@ -24,6 +24,8 @@ Current host: `47.114.43.129`. Project root: `/mnt/data/users/shx/FinFeed`. Fron
 | `.pip-cache` | Project package download cache |
 | `app/dashboard/.cache` | Application/provider working cache; not user records |
 
+The project proxy routes `tailscale.com` and its subdomains directly before the upstream catch-all rule. This keeps tunnel control and DERP connections independent of the market-data VPN node. Yahoo, Gmail and other configured data requests continue using the upstream proxy. This rule affects only traffic through the FinFeed loopback proxy; it does not change system routing, DNS or other projects. Direct connectivity still depends on the server network.
+
 Private state is not in Git. A code checkout alone cannot reconstruct production credentials, live records, or tunnel identity.
 
 ## Supervision and startup

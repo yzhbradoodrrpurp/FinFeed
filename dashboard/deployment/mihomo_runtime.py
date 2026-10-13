@@ -51,4 +51,4 @@ def private_config(encoded):
             "mode": "rule", "log-level": "silent", "ipv6": False,
             "external-controller": "", "tun": {"enable": False},
             "dns": {"enable": False}, "geo-auto-update": False,
-            "proxies": [node], "rules": ["MATCH,upstream"]}
+            "proxies": [node], "rules": ["DOMAIN-SUFFIX,tailscale.com,DIRECT", "MATCH,upstream"]}

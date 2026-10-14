@@ -193,6 +193,14 @@ class CloudCases(unittest.TestCase):
         self.assertEqual(options.status_code, 200)
         self.assertEqual(options.json['rp']['id'], 'finfeed.vercel.app')
 
+    def test_browser_timeout_report_is_accepted(self):
+        with self.assertLogs('finfeed.failures', level='WARNING') as logs:
+            response = self.client.post('/api/auth/client-failure', json={
+                'path': '/api/state', 'method': 'GET', 'category': 'timeout',
+                'elapsed_ms': 10000}, headers=HEADERS)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(logs.records[0].message)['reason'], 'timeout')
+
     def test_browser_failure_report_is_sanitized_and_request_id_is_shared(self):
         with self.assertLogs('finfeed.failures', level='WARNING') as logs:
             response = self.client.post('/api/auth/client-failure', json={

@@ -1,11 +1,11 @@
 // Slow and out-of-order responses must not block navigation or restore an old account.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync(__dirname+'/../../frontend/js/core/app.js','utf8');
-const functions=source.slice(source.indexOf('function cancelRecordLoads(){'),source.indexOf('function feedback('));
+const functions=source.slice(source.indexOf('let accountRetryTimer='),source.indexOf('function feedback('));
 const pump=source.slice(source.indexOf('async function getRecord('),source.indexOf('function refreshWatchlist('));
 const elements=new Map(),pending=[],main={inert:false};
 const el=id=>{if(!elements.has(id))elements.set(id,{hidden:false,disabled:false});return elements.get(id);};
-const ctx={window:{},URL,Promise,AbortController,encodeURIComponent,surfaceNames:['home','watchlist','portfolio','macro','whales'],surface:'watchlist',currentUser:{id:'self',name:'Liam'},surfaceAccounts:{watchlist:'self',portfolio:'other'},viewedUserId:'self',accountStateVersion:0,accountRequest:null,recordGeneration:0,recordRequests:new Set(),queue:[],running:0,fetchingTickers:new Set(),tickers:['AAPL'],holdings:[],records:new Map(),readOnly:false,initialLoading:false,sortKey:null,cellValues:new Map(),cellFlashes:new Map(),stateWrites:Promise.resolve(),el,
+const ctx={window:{},URL,Promise,AbortController,clearTimeout,setTimeout,encodeURIComponent,surfaceNames:['home','watchlist','portfolio','macro','whales'],surface:'watchlist',currentUser:{id:'self',name:'Liam'},surfaceAccounts:{watchlist:'self',portfolio:'other'},viewedUserId:'self',accountStateVersion:0,accountRequest:null,recordGeneration:0,recordRequests:new Set(),queue:[],running:0,fetchingTickers:new Set(),tickers:['AAPL'],holdings:[],records:new Map(),readOnly:false,initialLoading:false,sortKey:null,cellValues:new Map(),cellFlashes:new Map(),stateWrites:Promise.resolve(),el,
  location:{href:'https://example.com/?surface=watchlist'},history:{state:null,replaceState(_state,_title,url){ctx.location.href=new URL(url,ctx.location.href).href;}},
  document:{querySelector:selector=>selector==='main'?main:el(selector),querySelectorAll:()=>[],body:{classList:{toggle(){}}}},
  rememberSurfaceAccount(name,id){ctx.surfaceAccounts[name]=id;},accountViewURL:(name,id)=>`/?surface=${name}&user=${id}`,feedback(){},render(){},scheduleRender(){},
@@ -41,5 +41,13 @@ const response=data=>({ok:true,json:async()=>data});
  oldQuote.resolve(response({ticker:'AAPL',name:'stale'}));await flush();
  assert.equal(ctx.records.get('AAPL').name,'new account');assert.equal(ctx.records.get('MSFT').name,'new');assert.equal(ctx.running,0);
  ctx.viewedUserId='self';ctx.applyAccountGroupOrder({});assert.deepEqual(Array.from(ctx.groupOrder),['price','security']);
+ // A failed same-account reload keeps already validated rows, stays read-only,
+ // and an obsolete retry cannot switch away from a newer account selection.
+ ctx.viewedUserId='self';ctx.initialLoading=false;ctx.tickers=['AAPL'];let retry;
+ ctx.setTimeout=f=>{retry=f;return 1;};
+ const again=ctx.changeViewedAccount('watchlist','self');await flush();
+ const failed=pending.at(-1);failed.resolve({ok:false,json:async()=>({error:'temporary'})});await again;
+ assert.deepEqual(Array.from(ctx.tickers),['AAPL']);assert.equal(ctx.readOnly,true);assert.equal(ctx.initialLoading,false);
+ const before=pending.length;ctx.accountStateVersion++;retry();await flush();assert.equal(pending.length,before);
  console.log('PASS: navigation and account selection stay interactive; cancelled and late responses cannot overwrite newer data');
 })().catch(error=>{console.error(error);process.exitCode=1;});

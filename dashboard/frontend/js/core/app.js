@@ -199,30 +199,46 @@ function persistState(patch){
 async function storeHoldings(next){
   await persistState({positions:next});holdings=next;
 }
+let accountRetryTimer=null;
+async function readAccount(url,signal){
+  if(FinFeedAuth.read)return FinFeedAuth.read(url,{signal});
+  const response=await FinFeedAuth.request(url,{signal});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"记录读取失败");
+  return data;
+}
+function retryAccount(name,id,version){
+  clearTimeout(accountRetryTimer);
+  accountRetryTimer=setTimeout(()=>{
+    if(version===accountStateVersion&&currentUser)void changeViewedAccount(name,id);
+  },15000);
+}
 function cancelRecordLoads(){
   recordGeneration++;
   queue=[];fetchingTickers.clear();
   for(const controller of recordRequests)controller.abort();
 }
 async function changeViewedAccount(name,id){
+  clearTimeout(accountRetryTimer);
   window.FinFeedWatchlistOrder?.cancel();
+  const retained=id===viewedUserId&&!initialLoading;
   const version=++accountStateVersion;
   accountRequest?.abort();accountRequest=new AbortController();
   const controller=accountRequest;
   viewedUserId=id;rememberSurfaceAccount(name,id);
   if(surface===name){el("view-account").value=id;window.FinFeedDropdowns?.sync();}
   readOnly=true;document.body.classList.toggle("read-only",true);
-  cancelRecordLoads();tickers=[];watchlistFavorites=[];holdings=[];initialLoading=true;
+  cancelRecordLoads();
+  if(!retained){tickers=[];watchlistFavorites=[];holdings=[];}
+  initialLoading=!retained;
   sortKey=null;cellValues.clear();cellFlashes.clear();feedback("");render();
   if(surface===name)window.FinFeedMotion?.enter(el(`${name}-surface`),{kind:'account'});
   if(surface===name)history.replaceState(history.state,"",accountViewURL(name,id));
   try{
     await stateWrites;
     if(version!==accountStateVersion)return false;
-    const response=await FinFeedAuth.request("/api/state?user="+encodeURIComponent(id),{signal:controller.signal});
-    const data=await response.json();
+    const data=await readAccount("/api/state?user="+encodeURIComponent(id),controller.signal);
     if(version!==accountStateVersion)return false;
-    if(!response.ok)throw new Error(data.error||"记录读取失败");
     const state=data.state||{watchlist:[],positions:[]};
     readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
     applyAccountGroupOrder(state);
@@ -233,8 +249,8 @@ async function changeViewedAccount(name,id){
     return true;
   }catch(error){
     if(version!==accountStateVersion||error.name==="AbortError")return false;
-    viewedUserId=null;initialLoading=false;render();
-    feedback(`账户加载失败：${error.message}`);return false;
+    initialLoading=!retained;render();
+    if(error.code!=="AUTH_REDIRECT"){feedback(`账户暂时无法加载：${error.message}${error.retryable===false?"":"。15 秒后自动重试。"}`);if(error.retryable!==false)retryAccount(name,id,version);}return false;
   }
 }
 async function switchSurface(next){
@@ -530,9 +546,7 @@ async function initializeState(){
     if(["watchlist","portfolio"].includes(surface))rememberSurfaceAccount(surface,requestedUser);
     el("view-account").disabled=true;
     // Directory and state are independent. Render private records as soon as ready.
-    const directoryTask=FinFeedAuth.request("/api/accounts").then(async response=>{
-      if(!response.ok)throw new Error("账户列表读取失败");
-      const directory=await response.json();
+    const loadDirectory=()=>readAccount("/api/accounts").then(directory=>{
       el("view-account").innerHTML=directory.accounts.map(a=>`<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}${a.id===currentUser.id?" · 我的账户":""}</option>`).join("");
       for(const name of ["watchlist","portfolio"]){
         if(name===surface)continue;
@@ -541,14 +555,15 @@ async function initializeState(){
       }
       el("view-account").value=viewedUserId;
       el("view-account").disabled=false;window.FinFeedDropdowns?.sync();
-    }).catch(error=>feedback(error.message+"，请稍后刷新。"));
+    }).catch(error=>{
+      if(error.code!=="AUTH_REDIRECT"){feedback(error.retryable===false?error.message:"账户列表暂时无法加载，15 秒后自动重试。");if(error.retryable!==false)setTimeout(loadDirectory,15000);}
+    });
+    const directoryTask=loadDirectory();
     const stateVersion=++accountStateVersion;
     accountRequest=new AbortController();
     readOnly=true;document.body.classList.toggle("read-only",true);
-    const stateTask=FinFeedAuth.request("/api/state"+(requestedUser!==currentUser.id?"?user="+encodeURIComponent(requestedUser):""),{signal:accountRequest.signal}).then(async response=>{
-      const data=await response.json();
+    const stateTask=readAccount("/api/state"+(requestedUser!==currentUser.id?"?user="+encodeURIComponent(requestedUser):""),accountRequest.signal).then(async data=>{
       if(stateVersion!==accountStateVersion)return;
-      if(!response.ok)throw new Error(data.error||"记录读取失败");
       readOnly=data.readOnly;document.body.classList.toggle("read-only",readOnly);
       let state=data.state;
       if(!state&&readOnly)state={watchlist:[],positions:[]};
@@ -562,8 +577,8 @@ async function initializeState(){
     }).catch(error=>{
       if(stateVersion!==accountStateVersion||error.name==="AbortError")return;
       readOnly=true;document.body.classList.toggle("read-only",true);
-      viewedUserId=null;initialLoading=false;render();
-      feedback(`记录加载失败：${error.message}。请稍后刷新页面。`);
+      initialLoading=true;render();
+      if(error.code!=="AUTH_REDIRECT"){feedback(`账户暂时无法加载：${error.message}${error.retryable===false?"":"。15 秒后自动重试。"}`);if(error.retryable!==false)retryAccount(surface,requestedUser,stateVersion);}
     }).finally(()=>{
       main.inert=false;
       // Private rows and snapshots have priority. Every other view still updates

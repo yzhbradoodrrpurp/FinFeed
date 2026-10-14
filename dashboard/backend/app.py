@@ -223,7 +223,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if not isinstance(path, str) or not path.startswith('/api/') or len(path) > 200 or '?' in path or '#' in path:
             abort(400, description='无效日志路径')
         category = body.get('category')
-        if category not in {'network_error', 'http_error', 'invalid_response'}:
+        if category not in {'network_error', 'http_error', 'invalid_response', 'timeout'}:
             abort(400, description='无效错误类别')
         try:
             endpoint, _ = app.url_map.bind(parsed.netloc).match(path, method=body.get('method', 'GET'))
@@ -767,4 +767,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(404)
         return send_from_directory(ROOT / "frontend", STATIC_ASSETS[filename])
 
+    if os.environ.get("FINFEED_TUNNEL_WATCHDOG") == "1":
+        from deployment.h20.tunnel_watchdog import start
+        start()
     return app

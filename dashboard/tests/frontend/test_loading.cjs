@@ -1,17 +1,18 @@
 // Verify startup ordering with slow independent requests, without real credentials.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync(__dirname+'/../../frontend/js/core/app.js','utf8');
+const helpers=source.slice(source.indexOf('let accountRetryTimer='),source.indexOf('function cancelRecordLoads(){'));
 const init=source.slice(source.indexOf('async function initializeState(){'),source.indexOf('\ninitializeState();'));
 const pending=new Map(),calls=[],elements=new Map(),main={inert:false};
 const el=id=>{if(!elements.has(id))elements.set(id,{disabled:false,hidden:false});return elements.get(id);};
 const deferred=url=>new Promise(resolve=>pending.set(url,resolve));
-const context={window:{},URLSearchParams,Promise,AbortController,accountStateVersion:0,accountRequest:null,location:{search:'',hostname:'finfeed-research.vercel.app'},surface:'portfolio',currentUser:null,surfaceAccounts:{},viewedUserId:null,records:new Map(),initialLoading:true,readOnly:false,tickers:[],holdings:[],
+const context={window:{},URLSearchParams,Promise,AbortController,clearTimeout,setTimeout,accountStateVersion:0,accountRequest:null,location:{search:'',hostname:'finfeed-research.vercel.app'},surface:'portfolio',currentUser:null,surfaceAccounts:{},viewedUserId:null,records:new Map(),initialLoading:true,readOnly:false,tickers:[],holdings:[],
  document:{addEventListener(){},querySelector:()=>main,querySelectorAll:()=>[],body:{classList:{toggle(){}}}},el,sessionStorage:{getItem:()=>null},escapeHTML:s=>s,switchSurface(){},rememberSurfaceAccount(name,id){context.surfaceAccounts[name]=id;},
  seedQuoteSnapshots(){},FinFeedNews:{initialize:()=>calls.push('news'),setWatchlist(){}},FinFeedAuth:{initialize:()=>deferred('auth'),request:deferred},FinFeedHome:{prefetch:()=>calls.push('home'),open:()=>calls.push('greeting')},FinFeedMacro:{open:()=>calls.push('macro')},FinFeedWhales:{open:()=>calls.push('whales')},
  trackedTickers:()=>[...new Set([...context.tickers,...context.holdings.map(p=>p.ticker)])],render:()=>calls.push('render'),load:tickers=>calls.push([...tickers]),setTimeout:callback=>{context.timers.push(callback);},timers:[],setInterval(){},refreshWatchlist(){},feedback:message=>calls.push(message)};
 context.groupIds=['security','price'];context.ownGroupOrder=['price','security'];
 const orderFunction=source.slice(source.indexOf('function applyAccountGroupOrder('),source.indexOf('const allColumns='));
-vm.createContext(context);vm.runInContext(orderFunction+init,context);
+vm.createContext(context);vm.runInContext(orderFunction+helpers+init,context);
 (async()=>{
  const done=context.initializeState();assert.deepEqual(calls,[]);
  assert.equal(main.inert,true);assert.equal(context.readOnly,true); // Dashboard waits for authentication.

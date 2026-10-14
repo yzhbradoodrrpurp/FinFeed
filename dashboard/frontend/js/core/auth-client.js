@@ -50,7 +50,7 @@ window.FinFeedAuth = (() => {
     const controller=new AbortController();
     const abort=()=>controller.abort(options.signal?.reason);
     if(options.signal?.aborted)abort();else options.signal?.addEventListener?.('abort',abort,{once:true});
-    const timer=setTimeout(()=>controller.abort(new DOMException('API 请求超过 30 秒','TimeoutError')),30000);
+    const timer=setTimeout(()=>controller.abort(new DOMException(`API 请求超过 ${options.timeoutMs?options.timeoutMs/1000:30} 秒`,'TimeoutError')),options.timeoutMs||30000);
     const finish=()=>{clearTimeout(timer);options.signal?.removeEventListener?.('abort',abort);};
     let response;
     try {
@@ -79,6 +79,28 @@ window.FinFeedAuth = (() => {
       finish();throw redirectToLogin();
     }
     return response;
+  }
+  async function read(url, {signal,...options}={}) {
+    // Retry complete JSON reads only: mutations and market streams are not replayed.
+    const retryable=new Set([408,429,502,503,504]);
+    for(let attempt=0;attempt<3;attempt++) {
+      try {
+        const response=await request(url,{...options,method:"GET",signal,timeoutMs:10000});
+        if(!response.ok) {
+          if(response.json)await response.json().catch(()=>{});
+          const error=new Error(`读取失败 (${response.status})`);error.retryable=retryable.has(response.status);throw error;
+        }
+        return await response.json();
+      } catch(error) {
+        if(signal?.aborted||error.code==='AUTH_REDIRECT'||error.name==='AbortError'||
+           !(error.retryable||error.name==='TypeError'||error.name==='SyntaxError'||error.name==='TimeoutError')||attempt===2)throw error;
+        await new Promise((resolve,reject)=>{
+          const abort=()=>{clearTimeout(timer);reject(signal.reason||new DOMException('已取消','AbortError'));};
+          const timer=setTimeout(()=>{signal?.removeEventListener('abort',abort);resolve();},500*(attempt+1));
+          if(signal?.aborted)abort();else signal?.addEventListener('abort',abort,{once:true});
+        });
+      }
+    }
   }
   async function post(url, body={}) {
     const response = await request(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -112,9 +134,7 @@ window.FinFeedAuth = (() => {
   async function initialize() {
     if(redirectError)throw redirectError;
     if(knownExpired())throw redirectToLogin();
-    const response=await request("/api/auth/status");
-    const status=await response.json();
-    if(!response.ok)throw new Error(status.error||"无法检查登录状态，请稍后刷新");
+    const status=await read("/api/auth/status");
     if(!status.authenticated)throw redirectToLogin();
     if(Number(status.sessionExpiresIn)>0)rememberExpiry(status.sessionExpiresIn);
     return status;
@@ -124,5 +144,5 @@ window.FinFeedAuth = (() => {
     if(error.name==="InvalidStateError")return "这把 Passkey 已绑定，请使用它登录或选择另一把。";
     return error.message||"验证失败，请重试。";
   }
-  return {request,post,passkey,initialize,message,setGate};
+  return {request,read,post,passkey,initialize,message,setGate};
 })();

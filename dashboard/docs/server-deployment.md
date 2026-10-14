@@ -109,3 +109,9 @@ Application failure logs include UTC time, operation/source, request ID, status,
 6. For host replacement, stop the old deployment, fence writes, transfer the final verified data, and move the unique tunnel identity only after the previous daemon stops.
 
 A rollback must include records written after release/cutover. See [database operations](database-migration.md). Daily off-server backups and automatic host-boot recovery are not yet configured.
+
+## Tunnel health recovery
+
+The FinFeed backend worker starts one lock-protected tunnel health thread when the project launcher enables `FINFEED_TUNNEL_WATCHDOG`. Every minute it checks the local API and the public Funnel route, with the Vercel API route as a second check. Three consecutive public failures while the local API remains healthy permit a restart of the verified FinFeed Tailscale process group through the existing supervisor. Recovery has a fifteen-minute cooldown retained across backend reloads. It never changes routing, credentials, or Funnel identity, and does not restart the database, proxy, or backend. State is recorded in `.runtime/tunnel-watchdog.json`.
+
+This detects a stalled public tunnel even when its daemon has not exited. It cannot guarantee availability during a wider network or provider outage. Account JSON reads retry transient failures up to three times with ten-second attempt deadlines; a failed account load retries after fifteen seconds and stays in a loading state. Already loaded records remain visible during a same-account retry, with editing disabled until the server validates the state again. Private account records are not persisted in browser market caches.

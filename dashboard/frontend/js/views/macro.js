@@ -174,7 +174,7 @@ window.FinFeedMacro=(()=>{
         <p class="macro-note">2026 年 10 月 27–28 日 FOMC 会议 · 联邦基金利率目标区间上限的变化</p>
         <div class="fed-legend">${series.map((s,i)=>`<span><i style="background:${fedColors[i%5]}"></i>${escape(s.label)} <strong>${number(s.price*100)}%</strong></span>`).join('')}</div>
         ${rows.length?`<figure class="fed-chart"><svg viewBox="0 0 970 270" role="img" tabindex="0" aria-label="美联储10月利率决议各结果的Polymarket历史市场定价，可用左右方向键查看采样数值">${ticks}${lines}<g class="fed-crosshair" visibility="hidden" pointer-events="none"><line y1="22" y2="242"/>${series.map((s,i)=>`<circle r="4" fill="${fedColors[i%5]}"/>`).join('')}</g></svg><div class="fed-chart-tooltip" hidden></div><figcaption><span>${time(new Date(first*1000).toISOString(),'Asia/Shanghai')}</span><span>${time(data.retrieved_at,'Asia/Shanghai')} 北京</span></figcaption></figure>`:''}
-        ${series.some(s=>s.history_error)?'<p class="macro-error">部分历史曲线暂不可用</p>':''}
+        ${series.filter(s=>s.history_error).map(s=>`<p class="macro-error">${escape(s.label)}：${s.history?.length?'历史更新失败，保留上次曲线':'历史曲线暂不可用'}${s.history_retrieved_at?' · 历史检索于 '+time(s.history_retrieved_at,'Asia/Shanghai')+' 北京':''}</p>`).join('')}
         ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
         <p class="macro-note">市场价格近似反映隐含概率，受价差、费用和流动性影响；不是美联储承诺。报价每分钟检查，历史曲线按约 6 小时采样、每小时补全；最新端点随报价更新。</p>
         <p class="macro-note">累计成交额 $${data.volume==null?'—':number(data.volume)} · 流动性 $${data.liquidity==null?'—':number(data.liquidity)}</p>

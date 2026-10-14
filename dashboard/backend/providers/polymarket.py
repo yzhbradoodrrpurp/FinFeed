@@ -18,13 +18,16 @@ _lock = threading.Lock()
 _value = None
 _expires = 0
 _history = {}
+_history_retry = {}
+_requests = threading.BoundedSemaphore(4)
 
 
 def get(url, **params):
     started = time.monotonic()
     try:
         options = {'proxy': os.environ['POLYMARKET_PROXY_URL']} if os.environ.get('POLYMARKET_PROXY_URL') else {}
-        response = requests.get(url, params=params, impersonate='chrome', timeout=30, **options)
+        with _requests:
+            response = requests.get(url, params=params, impersonate='chrome', timeout=15, **options)
         response.raise_for_status()
         return response.json()
     except Exception as exc:
@@ -41,24 +44,69 @@ def valid_price(value):
     return value
 
 
-def history(token, start, end):
+def cache_read(store, key):
+    try:
+        return store.get_cache(key) if store else None
+    except Exception as exc:
+        failure('database', 'polymarket_cache_read', error=exc)
+
+
+def cache_write(store, key, value):
+    try:
+        if store:
+            store.set_cache(key, value)
+    except Exception as exc:
+        failure('database', 'polymarket_cache_write', error=exc)
+
+
+def history_key(token):
+    return 'polymarket:history:v1:' + SLUG + ':' + token
+
+
+def history(token, start, end, store=None):
     cached = _history.get(token)
+    if cached is None:
+        saved = cache_read(store, history_key(token))
+        if saved and saved[0].get('history'):
+            value, updated = saved
+            cached = (time.monotonic() + max(0, 3600-(time.time()-updated)),
+                      value['history'], value['retrieved_at'])
+            _history[token] = cached
     if cached and time.monotonic() < cached[0]:
         return cached[1]
+    if time.monotonic() < _history_retry.get(token, 0):
+        raise RuntimeError('History refresh cooling down')
     # The API limits explicit time ranges. Fetch non-overlapping fortnight windows.
     windows = [(left, min(left + 14*86400, end)) for left in range(start, end, 14*86400)]
     def window(bounds):
-        data = get('https://clob.polymarket.com/prices-history', market=token,
-                   startTs=bounds[0], endTs=bounds[1], fidelity=360)
-        return [{'t': int(row['t']), 'p': valid_price(row['p'])} for row in data['history']]
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        rows = [row for chunk in pool.map(window, windows) for row in chunk]
-    rows = sorted({row['t']: row for row in rows}.values(), key=lambda row: row['t'])
-    _history[token] = (time.monotonic()+3600, rows)
+        for attempt in range(2):
+            try:
+                data = get('https://clob.polymarket.com/prices-history', market=token,
+                           startTs=bounds[0], endTs=bounds[1], fidelity=360)
+                return [{'t': int(row['t']), 'p': valid_price(row['p'])} for row in data['history']]
+            except Exception as exc:
+                failure('polymarket', 'history_window', error=exc,
+                        window_start=bounds[0], window_end=bounds[1], attempt=attempt+1)
+                if attempt:
+                    raise
+                time.sleep(.5)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            rows = [row for chunk in pool.map(window, windows) for row in chunk]
+        rows = sorted({row['t']: row for row in rows}.values(), key=lambda row: row['t'])
+        if not rows:
+            raise ValueError('Empty history response')
+    except Exception:
+        _history_retry[token] = time.monotonic()+60
+        raise
+    retrieved = datetime.now(timezone.utc).isoformat()
+    _history[token] = (time.monotonic()+3600, rows, retrieved)
+    _history_retry.pop(token, None)
+    cache_write(store, history_key(token), {'history': rows, 'retrieved_at': retrieved})
     return rows
 
 
-def load():
+def load(store=None):
     event = get('https://gamma-api.polymarket.com/events/slug/' + SLUG)
     now = datetime.now(timezone.utc)
     start = int(datetime.fromisoformat(event['startDate'].replace('Z', '+00:00')).timestamp())
@@ -68,12 +116,17 @@ def load():
         token = json.loads(m['clobTokenIds'])[yes]
         result = {'label': LABELS.get(m.get('groupItemTitle'), m['question']),
                   'price': valid_price(json.loads(m['outcomePrices'])[yes]),
-                  'history': [], 'history_error': False}
+                  'token': token, 'history': [], 'history_error': False}
         try:
-            result['history'] = history(token, start, int(now.timestamp()))
+            result['history'] = history(token, start, int(now.timestamp()), store)
         except Exception as exc:
             failure('polymarket', 'history', reason=result['label'], error=exc)
             result['history_error'] = True
+            cached = _history.get(token)
+            if cached:
+                result['history'] = cached[1]
+        cached = _history.get(token)
+        result['history_retrieved_at'] = cached[2] if cached else None
         return result
     markets = sorted(event['markets'], key=lambda m: list(LABELS).index(m['groupItemTitle']) if m.get('groupItemTitle') in LABELS else 99)
     with ThreadPoolExecutor(max_workers=5) as pool:
@@ -84,16 +137,22 @@ def load():
             'series': series, 'errors': []}
 
 
-def snapshot():
+def snapshot(store=None):
     global _value, _expires
     with _lock:
         if _value is not None and time.monotonic() < _expires:
             return _value
+        if _value is None:
+            saved = cache_read(store, 'polymarket:event:v1:' + SLUG)
+            if saved:
+                _value = saved[0]
         try:
-            _value = load()
+            _value = load(store) if store else load()
+            cache_write(store, 'polymarket:event:v1:' + SLUG, _value)
         except Exception as exc:
             failure('polymarket', 'event_snapshot', error=exc)
-            _value = {'series': [], 'source': SOURCE, 'retrieved_at': datetime.now(timezone.utc).isoformat(),
-                      'errors': ['Polymarket 数据暂不可用，请稍后重试']}
+            _value = {**(_value or {'series': [], 'source': SOURCE}),
+                      'stale': True,
+                      'errors': ['Polymarket 更新失败，保留上次数据，时间见下方']}
         _expires = time.monotonic()+60
         return _value

@@ -689,7 +689,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def macro_data(kind):
         if kind == "fed":
             from backend.providers.polymarket import snapshot as fed_snapshot
-            return jsonify(fed_snapshot())
+            return jsonify(fed_snapshot(database))
         from backend.services.macro import snapshot
         refresh = request.args.get('refresh') == '1'
         if kind not in {"jobs", "pce", "dxy", "treasury"}:

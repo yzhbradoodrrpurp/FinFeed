@@ -26,10 +26,10 @@ class RecoveryGate:
         return True
 
 
-def healthy(url):
+def healthy(url, *, proxy=None):
     try:
-        # Avoid inherited market proxy configuration and retain TLS verification.
-        with build_opener(ProxyHandler({})).open(url, timeout=5) as response:
+        # Use only explicitly chosen egress and retain TLS verification.
+        with build_opener(ProxyHandler({'https': proxy} if proxy else {})).open(url, timeout=8 if proxy else 5) as response:
             return response.status == 200 and json.loads(response.read(1024)).get('ok') is True
     except Exception:
         return False
@@ -77,9 +77,10 @@ def start():
         while True:
             local = healthy('http://127.0.0.1:18765/api/health')
             public = healthy('https://finfeed.tail03a68f.ts.net/api/health') if local else False
+            # A separate egress distinguishes blocked direct outbound HTTPS from a stalled tunnel.
             # One working public route is sufficient; do not restart for a single edge outage.
             if local and not public:
-                public = healthy('https://finfeed-research.vercel.app/api/health')
+                public = healthy('https://finfeed-research.vercel.app/api/health', proxy='http://127.0.0.1:17890')
             status = {'checked_at': time.time(), 'local_ok': local, 'public_ok': public,
                       'last_recovery': previous.get('last_recovery')}
             if gate.check(local, public, time.monotonic()):

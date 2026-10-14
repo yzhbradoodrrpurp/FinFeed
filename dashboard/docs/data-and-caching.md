@@ -99,3 +99,7 @@ Gross Margin, Operating Margin and Capital Expenditure each display Q0 single-qu
 ### Official company filings
 
 SEC filings use `company_tickers.json` to resolve CIKs and `data.sec.gov/submissions/CIK##########.json` for official filing metadata. Ticker aliases normalize dots to hyphens. The ticker map refreshes daily; an unmapped symbol is reported as unsupported, never guessed from another issuer. Submissions preserve accession, form, filing date, acceptance timestamp, report date, and primary document. Additional submissions pages are read when needed to find two original periodic-report anchors (10-Q, 10-K, 20-F, or 40-F). The page retains its report window; reminder detection reads the full retrieved index so display-window changes cannot hide newly indexed disclosures. Calls continue to use Yahoo. Requests share the existing SEC limiter and contact User-Agent with institutional holdings. API/schema failures retain prior successful caches and do not advance notification cursors. Official SEC caches have a separate versioned key from historical Yahoo caches.
+
+### Mubadala institutional holdings
+
+Mubadala Investment Co PJSC (CIK 1704268, application ID `mubadala`) is included in the Whale Holdings manager registry and sovereign-investment category. It uses the same SEC filings, amendment handling, prior-quarter comparison, cache and stale-data rules as the other managers. The 13F scope is not its complete global portfolio. Existing institutional-alert subscribers use the normal source-observation baseline and deduplication rules for this manager.

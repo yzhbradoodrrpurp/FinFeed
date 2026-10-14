@@ -21,7 +21,8 @@ FUNDS = {'berkshire': ('1067983', '伯克希尔'), 'pershing': ('1336528', '潘�
          'lightstreet': ('1569049', '光街资本'), 'hmi': ('1469026', 'HMI 资本'),
          'atika': ('1599731', '阿提卡资本'),
          'dorsey': ('1671657', '多西资产管理'), 'altarock': ('1631014', '阿尔塔洛克资本'),
-         'broadrun': ('1568621', '布罗德朗投资管理')}
+         'broadrun': ('1568621', '布罗德朗投资管理'),
+         'mubadala': ('1704268', '穆巴达拉投资')}
 _guard = threading.Lock()
 _last_request = 0.0
 # Public project maintainer contact; override for another deployment/operator.

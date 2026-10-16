@@ -179,6 +179,7 @@ body.sidebar-collapsed{--sidebar:64px!important}
 main.workspace{transition:margin-left 320ms cubic-bezier(.22,1,.36,1)}
 .sidebar-resizing .sidebar,.sidebar-resizing main.workspace{transition:none}
 .sidebar .brand-name,.sidebar .nav-caption,.sidebar .sidebar-bottom,.sidebar .surface-tabs button span{transition:opacity 180ms ease;white-space:nowrap}
+.sidebar .surface-tabs button span{min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
 .sidebar-collapsed .brand-name,.sidebar-collapsed .nav-caption,.sidebar-collapsed .sidebar-bottom,.sidebar-collapsed .surface-tabs button span{display:block;opacity:0;pointer-events:none;position:absolute;visibility:hidden}
 .motion-row-exit{position:fixed;overflow:hidden;pointer-events:none;background:white;z-index:20}
 dialog.motion-closing{animation:none!important}

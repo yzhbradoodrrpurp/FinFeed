@@ -689,7 +689,9 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def macro_data(kind):
         if kind == "fed":
             from backend.providers.polymarket import snapshot as fed_snapshot
-            return jsonify(fed_snapshot(database))
+            return refresh_jobs.response('macro:fed', lambda publish: fed_snapshot(database, on_update=publish),
+                60, lambda value: bool(value.get('series')) and not value.get('stale'),
+                stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
         from backend.services.macro import snapshot
         refresh = request.args.get('refresh') == '1'
         if kind not in {"jobs", "pce", "dxy", "treasury"}:

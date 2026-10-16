@@ -74,12 +74,11 @@ window.FinFeedNews=(()=>{
   }
   async function open(force=false,retryOnly=false){
     if(busy||(!force&&lastCheck!==null&&Date.now()-lastCheck<refreshInterval)){render();return;}
-    busy=true;done=0;total=symbols.length*kinds.length;listError='';seed();render();
+    busy=true;done=0;total=symbols.length*kinds.length;seed();render();
     try{
       // Read only the authenticated owner's list, regardless of the viewed account.
-      if(!retryOnly)try{
-        const response=await FinFeedAuth.request('/api/news?cached=1');if(!response.ok)throw new Error('自己的观察列表读取失败');
-        const data=await response.json();setWatchlist(data.tickers||[]);
+      if(!retryOnly||listError)try{
+        const data=FinFeedAuth.read?await FinFeedAuth.read('/api/news'):await (await FinFeedAuth.request('/api/news')).json();setWatchlist(data.tickers||[]);listError='';
         for(const value of Object.values(data.snapshots||{}))if(symbols.includes(value.ticker)&&kinds.includes(value.kind))accept(value,value);
         render();
       }catch(error){listError=error.message;render();}
@@ -89,7 +88,7 @@ window.FinFeedNews=(()=>{
         await FinFeedCache.market(`/api/news/${encodeURIComponent(task.ticker)}/${task.kind}?stream=1&window=${task.kind==='sec'?'sec-edgar-v1':'reported-v2'}${force?'&refresh=1':''}`,value=>{accept(task,value);scheduleRender();},{ttl:refreshInterval,staleTtl:cacheAge,refresh:force,validate:value=>Array.isArray(value.items)&&!value.errors?.length&&(task.kind!=='sec'||value.provider==='sec_edgar')});
       }catch{const saved=states.get(task.ticker+':'+task.kind)?.items?.length;accept(task,{items:[],errors:[saved?'本次更新失败，暂显示上次成功结果':'暂时无法取得数据，将自动重试'],stale:true});}finally{done++;scheduleRender();}}}
       await Promise.allSettled(Array.from({length:Math.min(4,tasks.length)},worker));
-    }finally{busy=false;if(!retryOnly){lastCheck=Date.now();retryAt=[...states.values()].some(value=>value.errors?.length)?lastCheck+60000:null;}else retryAt=null;render();}
+    }finally{busy=false;if(!retryOnly){lastCheck=Date.now();retryAt=listError||[...states.values()].some(value=>value.errors?.length)?lastCheck+60000:null;}else retryAt=listError?Date.now()+60000:null;render();}
   }
   document.querySelectorAll('[data-news-kind]').forEach(button=>button.addEventListener('click',()=>{if(kind===button.dataset.newsKind)return;const order=['all',...kinds],direction=order.indexOf(button.dataset.newsKind)>order.indexOf(kind)?1:-1;kind=button.dataset.newsKind;document.querySelectorAll('[data-news-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));render();window.FinFeedMotion?.enter(el('news-feed'),{kind:'tab',direction});}));
   el('news-tickers').addEventListener('wheel',event=>{

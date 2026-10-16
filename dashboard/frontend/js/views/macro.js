@@ -186,15 +186,16 @@ window.FinFeedMacro=(()=>{
   async function refreshFed(force=false){
     if(fedBusy)return;fedBusy=true;
     const card=document.getElementById('macro-fed');
-    if(!fedData){const saved=FinFeedCache.read('macro-fed',86400000);if(saved)renderFed(saved.data);}
-    if(!force&&fedData?.series?.length&&Date.now()-Date.parse(fedData.retrieved_at)<3600000){fedUpdated=Date.parse(fedData.retrieved_at);fedBusy=false;return;}
+    if(!fedData){const saved=FinFeedCache.read('macro-fed',7*86400000);if(saved)renderFed(saved.data);}
+    if(!force&&fedData?.series?.length&&Date.now()-Date.parse(fedData.retrieved_at)<60000){fedUpdated=Date.parse(fedData.retrieved_at);fedBusy=false;return;}
     if(fedData)notice(card,'缓存 · 正在更新，数据时间见下方');
     if(!fedData)card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-note">正在获取市场定价…</p>';
     try{
-      const response=await FinFeedAuth.request('/api/macro/fed');if(!response.ok)throw new Error();
-      const data=await response.json();
-      if(!data.series?.length)throw new Error();
-      renderFed(data);FinFeedCache.write('macro-fed',data);
+      await FinFeedCache.market('/api/macro/fed?stream=1'+(force?'&refresh=1':''),data=>{
+        if(!data.series?.length)return;
+        renderFed(data);FinFeedCache.write('macro-fed',data);
+        if(data.refreshing)notice(card,'缓存 · 正在更新，数据时间见下方');
+      },{ttl:60000,staleTtl:7*86400000,refresh:force,validate:data=>!!data.series?.length&&!data.stale});
       fedUpdated=Date.now();
     }catch{if(fedData)notice(card,'旧数据 · 本次更新失败，数据时间见下方');else card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-error">数据暂不可用，请稍后刷新</p>';}
     finally{fedBusy=false;}

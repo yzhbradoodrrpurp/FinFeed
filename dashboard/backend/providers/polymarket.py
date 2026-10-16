@@ -137,7 +137,7 @@ def load(store=None):
             'series': series, 'errors': []}
 
 
-def snapshot(store=None):
+def snapshot(store=None, on_update=None):
     global _value, _expires
     with _lock:
         if _value is not None and time.monotonic() < _expires:
@@ -146,6 +146,8 @@ def snapshot(store=None):
             saved = cache_read(store, 'polymarket:event:v1:' + SLUG)
             if saved:
                 _value = saved[0]
+        if on_update and _value and _value.get('series'):
+            on_update({**_value, 'cached': True, 'refreshing': True})
         try:
             _value = load(store) if store else load()
             cache_write(store, 'polymarket:event:v1:' + SLUG, _value)

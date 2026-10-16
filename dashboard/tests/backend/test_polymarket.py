@@ -89,4 +89,21 @@ class PolymarketCases(unittest.TestCase):
                 p.history('token',0,86400)
         self.assertEqual(p._history['token'][1],[{'t':1,'p':.5}])
 
+    def test_saved_snapshot_published_before_refresh_starts(self):
+        from unittest.mock import Mock
+        cached={'series':[{'price':.8,'history':[{'t':1,'p':.7}]}],
+                'retrieved_at':'2026-10-01T00:00:00Z'}
+        store=Mock()
+        store.get_cache.return_value=(cached,0)
+        published=[]
+        def load(store):
+            self.assertEqual(len(published),1)
+            self.assertTrue(published[0]['refreshing'])
+            self.assertEqual(published[0]['retrieved_at'],cached['retrieved_at'])
+            raise ConnectionError('offline')
+        with patch.object(p,'load',side_effect=load):
+            final=p.snapshot(store,on_update=published.append)
+        self.assertTrue(final['stale'])
+        self.assertEqual(final['series'],cached['series'])
+
 if __name__=='__main__':unittest.main()

@@ -87,7 +87,7 @@ window.FinFeedHome=(()=>{
     const chart=unchanged?'':window.FinFeedMacro.chart(data);
     state=[state,data.history_warning].filter(Boolean).join(' · ');
     if(sectorDragging===data.symbol)return; // Keep the native drag source attached during refresh.
-    const html=`<button class="sector-handle" ${window.FinFeedPreferences?.ready?'':'disabled'} draggable="true" type="button" aria-label="拖动排序 ${esc(data.symbol)}，也可用方向键移动" title="按住拖动排序">⠿</button><span class="eyebrow">${esc(data.symbol)}</span><h3>${esc(data.label)}</h3><strong class="home-index-price">${format(data.price)}<small>USD</small></strong><p class="${data.change>0?'positive':data.change<0?'negative':''}">${data.change>0?'+':''}${format(data.change)} / ${data.change_percent>0?'+':''}${format(data.change_percent)}%</p>${chart||'<div class="home-sector-chart-empty">日线数据暂不可用</div>'}<p class="home-quote-time">${esc(state)}${state?'<br>':''}${data.quoted_at?'报价于 '+date(data.quoted_at,'America/New_York')+' 美国东部':'等待报价'}</p><a class="home-source" href="https://finance.yahoo.com/quote/${esc(data.symbol)}/" target="_blank" rel="noreferrer">Yahoo Finance ↗</a>`;
+    const html=`<button class="sector-handle" ${window.FinFeedPreferences?.ready?'':'disabled'} draggable="true" type="button" aria-label="拖动排序 ${esc(data.symbol)}，也可用方向键移动" title="按住拖动排序">⠿</button><span class="eyebrow">${esc(data.symbol)}</span><h3>${esc(data.label)}</h3><strong class="home-index-price">${format(data.price)}<small>USD</small></strong><p class="${data.change>0?'positive':data.change<0?'negative':''}">${data.change>0?'+':''}${format(data.change)} / ${data.change_percent>0?'+':''}${format(data.change_percent)}%</p>${chart||(/正在|加载/.test(state)?'<div class="home-sector-chart-empty macro-skeleton" role="status" aria-label="正在加载历史走势"><span></span><span></span></div>':'<div class="home-sector-chart-empty">日线数据暂不可用</div>')}<p class="home-quote-time">${esc(state)}${state?'<br>':''}${data.quoted_at?'报价于 '+date(data.quoted_at,'America/New_York')+' 美国东部':'等待报价'}</p><a class="home-source" href="https://finance.yahoo.com/quote/${esc(data.symbol)}/" target="_blank" rel="noreferrer">Yahoo Finance ↗</a>`;
     if(!card.querySelector('.sector-handle')){card.innerHTML=html;window.FinFeedMacro.bindChart(card,data);}
     else{
       const draft=document.createElement('div');draft.innerHTML=html;
@@ -135,7 +135,7 @@ window.FinFeedHome=(()=>{
     sectors.forEach(([symbol,label])=>{
       const saved=FinFeedCache.read('request:/api/home/sectors/'+symbol+'&range=3y-v3',7*86400000)||FinFeedCache.read('sector-3y-v2-'+symbol,7*86400000);
       if(saved?.data?.sector?.price!=null){sectorGood.set(symbol,saved.data);renderSector(saved.data.sector,'缓存 · 正在更新');}
-      else renderSector({symbol,label},'正在加载…');
+      else document.getElementById('home-sector-'+symbol).innerHTML=`<span class="eyebrow">${esc(symbol)}</span><h3>${esc(label)}</h3><div class="macro-skeleton" role="status" aria-label="正在加载板块行情"><span></span><span></span><span></span></div><p class="home-quote-time">正在加载行情与历史走势…</p>`;
     });
     refreshSectors();
   }

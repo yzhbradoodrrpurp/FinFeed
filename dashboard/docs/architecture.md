@@ -24,7 +24,7 @@ The server is `47.114.43.129`; all persistent deployment files are beneath `/mnt
 | --- | --- |
 | `backend/app.py` | Flask factory, authentication, authorization, routes, response security |
 | `backend/services/` | Home, sectors, securities, macro, holdings, news, notification workflows |
-| `backend/providers/` | Longbridge market/EPS, Yahoo sessions/history, FRED, BLS, BEA, Alpha Vantage, Polymarket |
+| `backend/providers/` | Longbridge market/EPS/quarterly statements, Yahoo sessions/history, FRED, BLS, BEA, Alpha Vantage, Polymarket |
 | `backend/domain/` | Calculation definitions and account-state validation |
 | `backend/storage/` | PostgreSQL transactions, accounts, history, cache, notification state |
 | `backend/infrastructure/` | Coalesced refresh jobs, Gmail transport, sanitized failure logging |
@@ -76,4 +76,4 @@ Project processes do not modify global DNS, routing, firewall, package environme
 
 ## Concurrent market and statement pipeline
 
-Watchlist jobs start Yahoo statement retrieval and Longbridge market retrieval concurrently. Quote previews stream before full EPS/statement completion. Quote/index/bar snapshots refresh each minute; quarterly statements and EPS/consensus refresh every five minutes, with protected manual refresh. Shared per-symbol jobs, provider block locks, bounded Yahoo concurrency and Longbridge rate control prevent per-user fan-out. Public market snapshots are shared; account records and permissions remain isolated. See [cache and rate control](data-and-caching.md).
+Watchlist jobs start Yahoo statement retrieval and Longbridge market retrieval concurrently. Quote previews stream before full EPS/statement completion. Quote/index/bar snapshots refresh each minute; quarterly statements and EPS/consensus refresh every five minutes, with protected manual refresh. Shared per-symbol jobs, provider block locks, bounded statement concurrency and Longbridge rate control prevent per-user fan-out. Public market snapshots are shared; account records and permissions remain isolated. See [cache and rate control](data-and-caching.md).

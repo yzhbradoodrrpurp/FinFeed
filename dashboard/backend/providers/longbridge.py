@@ -98,7 +98,7 @@ def _cached_locked(symbol: str, block: str, action: Any, store: Any,
     except Exception as exc:
         failure('database', 'longbridge_cache_read', symbol=symbol, error=exc)
         saved = None
-    minimum = 60 if block in ('financial', 'consensus') else 10
+    minimum = 60 if (block in ('financial', 'consensus') or block.startswith('statement_')) else 10
     if saved and time.time() - saved[1] < (minimum if force else ttl):
         return saved[0]
     if time.monotonic() < _block_retry.get(key, 0):

@@ -747,7 +747,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         return refresh_jobs.response('security:' + symbol,
             lambda publish: security(symbol, refresh, store=database, on_update=publish,
                 financial_refresh=financial_refresh),
-            60, lambda value: value.get('metrics', {}).get('price', {}).get('value') is not None,
+            60, lambda value: value.get('schema_version') == SCHEMA_VERSION and value.get('metrics', {}).get('price', {}).get('value') is not None,
             persist=False, stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
 
     @app.get("/")

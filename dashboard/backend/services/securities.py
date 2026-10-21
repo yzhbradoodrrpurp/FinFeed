@@ -1,4 +1,4 @@
-"""Longbridge market/EPS and Yahoo quarterly statements with independent provenance."""
+"""Longbridge market, EPS and quarterly statements with dated provenance."""
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 import threading
@@ -32,14 +32,14 @@ yahoo_session.configure_transport()
 # yfinance protects cookie/crumb setup with its own lock. Bound concurrent
 # network work across all users in this single backend process.
 LIMIT = threading.Semaphore(4)
-STATEMENT_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='yahoo-statements')
+STATEMENT_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='quarterly-statements')
 YAHOO_NETWORK_LIMIT = threading.BoundedSemaphore(4)
 YAHOO_RATE_GUARD = threading.Lock()
 YAHOO_RETRY_AT = 0.0
 LOCKS = {}
 LOCK_GUARD = threading.Lock()
 TTL = 60
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 def epoch(value):
@@ -104,6 +104,8 @@ def growth(series, period, yearly=False):
             "basis": "相对变化率 =（本期 − 比较期）/ |比较期|；零基期无法计算百分比；利润率变化不是百分点差值" + ("；同比财季间隔须为 350–380 天" if yearly else "；环比财季间隔须为 65–120 天"),
             "change_status": change_status(current, previous),
             "change_unit": "%", "calculation_version": 3, "source": a["source"],
+            "stale": bool(a.get('stale') or b.get('stale')),
+            "fetched_at": min((e['fetched_at'] for e in (a,b) if e.get('fetched_at')),default=None),
             "historical_cache": bool(cached),
             "cache_fetched_at": min((entry["fetched_at"] for entry in cached if entry.get("fetched_at")), default=None),
             "inputs": {"current": a["value"], "previous_year_quarter" if yearly else "previous_quarter": b.get("value")}}
@@ -182,6 +184,8 @@ def _financial_age(saved, timestamp):
 
 
 def financial_due(saved, timestamp):
+    if saved and saved.get('financial_provider') == 'longbridge':
+        return _financial_age(saved, timestamp) >= 300
     return (not saved or saved.get("yahoo_session", {}).get("mode", "anonymous") != yahoo_session.mode()
             or saved.get("yahoo_session", {}).get("proxy_enabled", False) != yahoo_session.proxy_enabled()
             or (saved.get("quote_type") == "EQUITY" and "capex" not in saved.get("series", {}))
@@ -227,7 +231,7 @@ def reuse_financial(result, saved):
     for key in FINANCIAL_KEYS:
         if key in saved.get("metrics", {}):
             result["metrics"][key] = deepcopy(saved["metrics"][key])
-    for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at", "reported_shares", "financial_diagnostics", "provider_probe"):
+    for key in ("series", "quarter_0", "quarter_1", "financial_currency", "financial_fetched_at", "trailing_eps", "financial_stale", "financial_errors", "estimates_fetched_at", "reported_shares", "financial_diagnostics", "provider_probe", "financial_provider"):
         if key in saved:
             result[key] = deepcopy(saved[key])
     add_yearly_growth(result)
@@ -300,7 +304,7 @@ def revalue(result, estimate_store=None):
     return result
 
 
-def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=None, force=False, market=None, statement_future=None):
+def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=None, force=False, market=None, statement_future=None, quarterly=True):
     started = now()
     session_status = yahoo_session.initialize()
     if force:
@@ -449,6 +453,11 @@ def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=Non
         if quote_type == "ETF":
             m["market_cap"] = empty_metric("ETF 公司市值不适用；未用资产规模替代")
         return revalue(result, estimate_store) if market is not None else add_yearly_growth(result)
+    if not quarterly:
+        result['financial_provider'] = 'longbridge'
+        for key in FINANCIAL_KEYS:
+            m[key] = empty_metric('长桥季度财务暂不支持该市场')
+        return result
     if market is None and m["market_cap"].get("value") is None:
         # Shares endpoint is independent of quoteSummary; refresh with each minute cycle.
         shares = (saved or {}).get("shares_outstanding") if not force and not financial_due(saved, started) else None
@@ -576,66 +585,98 @@ def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=Non
 def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, force=False, financial_refresh=None):
     # Preserve the existing non-US and crypto routes outside Longbridge's US adapter.
     if symbol.endswith('-USD') or ('.' in symbol and symbol.rsplit('.', 1)[1] not in ('A', 'B')) or (saved or {}).get('quote_type') in ('CRYPTOCURRENCY', 'INDEX', 'MUTUALFUND', 'CURRENCY'):
-        result = _fetch_yahoo_security(symbol, saved, estimate_store, on_update, force)
+        result = _fetch_yahoo_security(symbol, saved, estimate_store, on_update, force, quarterly=False)
         result['market_provider'] = 'yahoo'
         pe, reason = trailing_pe(result['metrics'].get('price', {}).get('value'), result.get('trailing_eps') or result.get('security_info', {}).get('trailingEps'))
         result['metrics']['pe_ltm'] = field(pe, result.get('quote_date'), 'TTM P/E = 当前股价 / Yahoo 最近十二个月 EPS', result['sources']['quote'], reason=reason)
         result['metrics']['pe_forward_4q'] = empty_metric('该证券未接入长桥季度预测，组合 Forward P/E 缺失')
         return result
-    quote_type = (saved or {}).get("quote_type")
-    if quote_type not in ("EQUITY", "ETF"):
+    from backend.providers import longbridge_financial
+    quote_type = (saved or {}).get('quote_type')
+    if quote_type not in ('EQUITY', 'ETF'):
         import json
-        directory = json.loads((ROOT / "frontend/assets/symbol-directory.json").read_text())
-        entry = next((r for r in directory["securities"] if r[0] == symbol), None)
-        quote_type = "ETF" if entry and entry[2] else "EQUITY"
-    if estimate_store and quote_type == 'EQUITY':
-        try:
-            financial_cache = estimate_store.get_cache('yahoo-financial:v1:' + symbol)
-            if financial_cache and financial_cache[0].get('financial_checked_at', '') > (saved or {}).get('financial_checked_at', ''):
-                saved = deepcopy(saved) if saved else {'ticker': symbol, 'metrics': {}, 'sources': {}, 'series': {}}
-                reuse_financial(saved, financial_cache[0])
-                for key in ('financial_checked_at', 'yahoo_session', 'quote_type', 'market_provider'):
-                    saved[key] = financial_cache[0].get(key)
-        except Exception as exc:
-            failure('database', 'financial_cache_read', symbol=symbol, error=exc)
-    financial_force = (force if financial_refresh is None else financial_refresh) and _financial_age(saved or {}, now()) >= 60
-    due = quote_type == 'EQUITY' and (financial_force or financial_due(saved, now()))
-    if financial_force:
-        yf.data.YfData().cache_get.cache_clear()
-    statements = STATEMENT_POOL.submit(_statement_blocks, symbol) if due else None
-    def publish_quote(quote_snapshot):
+        directory = json.loads((ROOT / 'frontend/assets/symbol-directory.json').read_text())
+        entry = next((r for r in directory['securities'] if r[0] == symbol), None)
+        quote_type = 'ETF' if entry and entry[2] else 'EQUITY'
+    good = saved if (saved or {}).get('financial_provider') == 'longbridge' else None
+    manual = (force if financial_refresh is None else financial_refresh) and _financial_age(good or {}, now()) >= 60
+    due = quote_type == 'EQUITY' and (manual or financial_due(good, now()))
+    task = STATEMENT_POOL.submit(longbridge_financial.snapshot, symbol, estimate_store, manual) if due else None
+    def scaffold():
+        return {'ticker':symbol, 'metrics':{}, 'series':{}, 'sources':{},
+                'schema_version':SCHEMA_VERSION, 'financial_provider':'longbridge',
+                'quote_type':quote_type, 'fetched_at':now(), 'errors':[]}
+    def publish_quote(market):
         if on_update:
-            preview = deepcopy(saved) if saved else {'ticker': symbol, 'metrics': {}, 'series': {}, 'sources': {}}
-            preview.update(schema_version=SCHEMA_VERSION, fetched_at=quote_snapshot['fetched_at'],
-                           partial=True, longbridge_market=quote_snapshot)
+            preview = deepcopy(good) if good else scaffold()
+            preview.update(longbridge_market=market, fetched_at=market['fetched_at'], partial=True)
             revalue(preview)
             on_update(preview)
     try:
         market = longbridge.market_snapshot(symbol, estimate_store, quote_type, force,
-                                           on_quote=publish_quote if on_update else None,
-                                           financial_refresh=force if financial_refresh is None else financial_refresh)
-    except Exception as exc:
-        if saved and saved.get('longbridge_market'):
-            failure('longbridge', 'market_refresh', symbol=symbol, error=exc, fallback_available=True)
-            market = deepcopy(saved['longbridge_market'])
-            market.update(stale=True, errors=[*market.get('errors', []), '长桥行情刷新失败，使用成功缓存'])
-        else:
-            if statements is not None:
-                statements.cancel()
-            raise
-    result = _fetch_yahoo_security(symbol, saved, estimate_store, on_update, financial_force, market,
-                                   statement_future=statements)
-    if statements is not None and estimate_store and not result.get('financial_errors'):
-        snapshot = {key: deepcopy(result.get(key)) for key in ('series', 'quarter_0', 'quarter_1',
-                    'financial_currency', 'financial_checked_at', 'financial_fetched_at',
-                    'yahoo_session', 'quote_type', 'market_provider')}
-        snapshot['metrics'] = {key: deepcopy(result['metrics'][key]) for key in FINANCIAL_KEYS if key in result['metrics']}
-        snapshot['fetched_at'] = result['financial_fetched_at']
+            on_quote=publish_quote if on_update else None,
+            financial_refresh=force if financial_refresh is None else financial_refresh)
+    except Exception:
+        if task:
+            task.cancel()
+        raise
+    result = scaffold()
+    result.update(longbridge_market=market, currency=market.get('currency'),
+                  financial_currency=market.get('currency'), errors=market.get('errors', []))
+    if good:
+        reuse_financial(result, good)
+        result['financial_checked_at'] = good.get('financial_checked_at')
+    # Quotes and existing quarterly data are visible before statement completion.
+    revalue(result)
+    if on_update:
+        on_update({**deepcopy(result), 'partial':bool(task)})
+    if task:
         try:
-            getattr(estimate_store, 'publish_cache', estimate_store.set_cache)('yahoo-financial:v1:' + symbol, snapshot)
+            financial = task.result()
         except Exception as exc:
-            failure('database', 'financial_cache_write', symbol=symbol, error=exc)
-    result["errors"] = list(dict.fromkeys([*result.get("errors", []), *market.get("errors", [])]))
+            failure('longbridge','quarterly_statements',symbol=symbol,error=exc)
+            financial = {'series':{}, 'errors':['长桥季度财务更新失败'], 'fetched_at':None}
+        if financial.get('series', {}).get('revenue'):
+            result['series'] = financial['series']
+            if good:
+                for name, values in good.get('series', {}).items():
+                    for period, item in values.items():
+                        if period not in result['series'].setdefault(name, {}):
+                            result['series'][name][period] = {**deepcopy(item), 'historical_cache':True}
+            # Actual diluted EPS comes from the same provider's released consensus.
+            for key in ('eps_q0', 'eps_q1'):
+                item = market.get('metrics', {}).get(key, {})
+                if item.get('value') is not None and item.get('period'):
+                    result['series']['eps'][item['period']] = deepcopy(item)
+            calendar = set(result['series']['revenue']) | set(result['series']['eps'])
+            result['quarter_0'] = max(calendar) if calendar else None
+            result['quarter_1'] = prior_quarter_period(result['quarter_0'],calendar) if calendar else None
+            for label in ('revenue','debt','fcf'):
+                values = result['series'][label]
+                result['metrics'][label+'_q0'] = values.get(result['quarter_0'],
+                    empty_metric('长桥未提供该财季值',period=result['quarter_0'],source=longbridge_financial.SOURCE))
+                for suffix, period in [('qoq_q0',result['quarter_0']),('qoq_q1',result['quarter_1'])]:
+                    result['metrics'][label+'_'+suffix] = growth(values,period)
+            result['financial_currency'] = financial.get('currency')
+            result['financial_fetched_at'] = financial['fetched_at']
+            result['financial_checked_at'] = now()
+            result['financial_errors'] = financial['errors']
+            result['financial_stale'] = bool(financial['errors'])
+            for source in ('financials','balance','cashflow'):
+                result['sources'][source] = longbridge_financial.SOURCE
+        else:
+            result['financial_errors'] = financial['errors'] or ['长桥未提供季度财务']
+            result['financial_stale'] = True
+            # Only same-provider snapshots can be retained after this source cutover.
+            for key in FINANCIAL_KEYS:
+                if key not in longbridge.KEYS and key in result['metrics']:
+                    result['metrics'][key]['stale'] = True
+    if quote_type == 'ETF':
+        reason='该证券是 ETF，季度财务不适用'
+        for key in FINANCIAL_KEYS:
+            if key not in longbridge.KEYS:
+                result['metrics'][key] = empty_metric(reason)
+    result['errors'] = list(dict.fromkeys([*result.get('errors',[]),*result.get('financial_errors',[])]))
     return revalue(result, estimate_store)
 
 
@@ -653,7 +694,7 @@ def security(symbol, refresh=False, store=None, on_update=None, financial_refres
         saved = stored[0] if stored else None
         age = time.time() - stored[1] if stored else float("inf")
         needs_market_upgrade = bool(saved and saved.get('schema_version') == 8)
-        if saved and saved.get("schema_version") not in (8, SCHEMA_VERSION):
+        if saved and saved.get("schema_version") not in (8, 9, SCHEMA_VERSION):
             saved = None
             age = float("inf")
         elif saved and saved.get("schema_version") == 8:
@@ -663,6 +704,18 @@ def security(symbol, refresh=False, store=None, on_update=None, financial_refres
             saved["market_provider"] = "yahoo"
             for key in ("pe_ltm", "pe_ntm", "pe_forward_4q", "pe_quarter", "pe_forward_quarter"):
                 saved["metrics"][key] = empty_metric("旧估值口径，等待长桥 TTM/Forward P/E 数据")
+        if saved and saved.get('financial_provider') != 'longbridge' and not symbol.endswith('-USD'):
+            # A source/NetDebt change must never relabel old Yahoo TotalDebt.
+            saved = deepcopy(saved)
+            for key in FINANCIAL_KEYS:
+                if key not in longbridge.KEYS:
+                    saved.get('metrics', {}).pop(key, None)
+            for key in ('series','quarter_0','quarter_1','financial_checked_at','financial_fetched_at',
+                        'financial_errors','financial_stale','provider_probe','financial_diagnostics'):
+                saved.pop(key, None)
+            saved['series'] = {}
+            saved['schema_version'] = SCHEMA_VERSION
+            age = max(age, TTL+1)
         if saved:
             add_yearly_growth(saved)
         # Market requests refresh each minute; same-minute tabs share the cache.

@@ -28,7 +28,7 @@ class YearlyGrowthCases(unittest.TestCase):
         self.assertEqual(m['comparison_period'],'2025-06-30')
 
     def test_existing_daily_cache_gets_yoy_without_network(self):
-        saved={'schema_version':data.SCHEMA_VERSION,'financial_checked_at':data.now(),'quarter_0':'2026-06-30','metrics':{},'series':{k:self.series() for k in ['revenue','debt','fcf']}}
+        saved={'financial_provider':'longbridge','schema_version':data.SCHEMA_VERSION,'financial_checked_at':data.now(),'quarter_0':'2026-06-30','metrics':{},'series':{k:self.series() for k in ['revenue','debt','fcf']}}
         store=MagicMock();store.get_cache.return_value=(saved,time.time())
         with patch.object(data,'financial_due',return_value=False),patch.object(data,'fetch_security') as fetch:
             r=data.security('YOYTEST',store=store)

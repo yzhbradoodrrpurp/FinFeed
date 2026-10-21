@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 import pandas as pd
 import backend.services.securities as data
+from backend.providers import longbridge_financial as lb_financial
+from test_longbridge_financial import fixtures
 class RefreshCases(unittest.TestCase):
     def test_provider_limit_is_four(self):
         acquired = 0
@@ -90,38 +92,37 @@ class RefreshCases(unittest.TestCase):
     def test_active_longbridge_route_keeps_statements_without_yahoo_market_calls(self):
         from test_longbridge import blocks
         market = data.longbridge.normalize('QA', blocks(), '2026-10-03T00:00:00+00:00', 'EQUITY')
-        with patch.object(data.longbridge, 'market_snapshot', return_value=market):
+        with patch.object(data.longbridge, 'market_snapshot', return_value=market), patch.object(lb_financial,'snapshot',return_value=lb_financial.normalize(fixtures())):
             result = data.fetch_security('QA')
         for method in ('get_info', 'history', 'get_history_metadata', 'get_earnings_estimate', 'get_shares_full'):
             getattr(self.item, method).assert_not_called()
-        self.item.get_income_stmt.assert_called_once()
-        self.item.get_balance_sheet.assert_called_once()
-        self.item.get_cashflow.assert_called_once()
-        self.assertEqual(result['metrics']['revenue_q0']['value'], 100)
+        self.item.get_income_stmt.assert_not_called()
+        self.item.get_balance_sheet.assert_not_called()
+        self.item.get_cashflow.assert_not_called()
+        self.assertEqual(result['metrics']['revenue_q0']['value'], 200)
         self.assertEqual(result['metrics']['pe_ltm']['value'], 12.5)
         self.assertAlmostEqual(result['metrics']['pe_forward_4q']['value'], 100/10)
 
-    def test_quote_arrives_while_yahoo_statements_are_still_running(self):
+    def test_quote_arrives_while_longbridge_statements_are_still_running(self):
         from test_longbridge import blocks
         started=threading.Event();release=threading.Event();quoted=threading.Event();events=[]
         market=data.longbridge.normalize('QA',blocks(),data.now(),'EQUITY')
-        def statements(symbol):
+        def statements(symbol,store,force):
             started.set();release.wait(3)
-            return {'income':self.item.get_income_stmt(),'balance':self.item.get_balance_sheet(),
-                    'cashflow':self.item.get_cashflow(),'errors':[],'diagnostics':{},'fetched_at':data.now()}
+            return lb_financial.normalize(fixtures())
         def snapshot(symbol,store,quote_type,force,on_quote=None,financial_refresh=None):
             self.assertTrue(started.wait(2));on_quote(market);return market
         def publish(r):
             events.append(r)
             if r.get('metrics',{}).get('price',{}).get('value') is not None:quoted.set()
-        with patch.object(data,'_statement_blocks',side_effect=statements),patch.object(data.longbridge,'market_snapshot',side_effect=snapshot),ThreadPoolExecutor(max_workers=1) as pool:
+        with patch.object(lb_financial,'snapshot',side_effect=statements),patch.object(data.longbridge,'market_snapshot',side_effect=snapshot),ThreadPoolExecutor(max_workers=1) as pool:
             future=pool.submit(data.fetch_security,'QA',on_update=publish)
             try:
                 self.assertTrue(quoted.wait(2));self.assertFalse(future.done())
                 self.assertTrue(events[0]['partial'])
             finally:release.set()
             result=future.result(timeout=3)
-        self.assertEqual(result['metrics']['revenue_q0']['value'],100)
+        self.assertEqual(result['metrics']['revenue_q0']['value'],200)
 
     def test_financial_cache_has_separate_five_minute_ttl(self):
         saved={'market_provider':'longbridge','quote_type':'EQUITY','series':{'capex':{}},
@@ -144,7 +145,7 @@ class RefreshCases(unittest.TestCase):
     def test_scheduled_quote_refresh_does_not_force_fresh_financials(self):
         from test_longbridge import blocks
         market=data.longbridge.normalize('QA',blocks(),data.now(),'EQUITY')
-        saved=data._fetch_yahoo_security('QA');saved['market_provider']='longbridge'
+        saved=data._fetch_yahoo_security('QA');saved['market_provider']='longbridge';saved['financial_provider']='longbridge'
         with patch.object(data.STATEMENT_POOL,'submit') as submit,patch.object(data.longbridge,'market_snapshot',return_value=market):
             result=data.fetch_security('QA',saved,force=True,financial_refresh=False)
         submit.assert_not_called()
@@ -285,7 +286,7 @@ class RefreshCases(unittest.TestCase):
         self.assertFalse(result['cached'])
 
     def test_empty_provider_response_cannot_poison_successful_cache(self):
-        saved={'schema_version':data.SCHEMA_VERSION,'name':'Test Company',
+        saved={'financial_provider':'longbridge','schema_version':data.SCHEMA_VERSION,'name':'Test Company',
                'fetched_at':'2026-10-04T01:00:00+00:00','quote_date':'2026-10-02',
                'metrics':{'price':{'value':100},'eps_q0':{'value':2}}}
         store=MagicMock();store.get_cache.return_value=(saved,0)

@@ -9,6 +9,12 @@ import backend.providers.yahoo.session as yahoo_session
 from backend.infrastructure.failure_log import failure
 
 LIMIT = threading.BoundedSemaphore(4)
+SEC_LIMIT = threading.BoundedSemaphore(2)
+
+
+def public_snapshot(value):
+    """Exclude the full reminder index from browser transport, not stored snapshots."""
+    return {key: item for key, item in value.items() if key != 'notification_items'}
 
 
 def safe_url(value):
@@ -134,7 +140,8 @@ def snapshot(symbol, kind):
     if kind not in {'calls', 'sec'}:
         raise ValueError('Unsupported news category')
     value = {'ticker': symbol, 'kind': kind, 'items': [], 'retrieved_at': datetime.now(timezone.utc).isoformat(), 'errors': []}
-    acquired = LIMIT.acquire(timeout=3)
+    limit = SEC_LIMIT if kind == 'sec' else LIMIT
+    acquired = limit.acquire(timeout=3)
     try:
         if not acquired:
             raise TimeoutError('News provider slots busy')
@@ -157,5 +164,5 @@ def snapshot(symbol, kind):
         value['errors'] = ['该来源暂时无法获取，下次更新重试']
     finally:
         if acquired:
-            LIMIT.release()
+            limit.release()
     return value

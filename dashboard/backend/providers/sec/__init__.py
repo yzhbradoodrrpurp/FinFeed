@@ -5,26 +5,66 @@ import re
 import threading
 import time
 from urllib.parse import quote
+from urllib.error import HTTPError, URLError
+import ssl
 from backend.services.whales import fetch
+from backend.infrastructure.failure_log import failure
 
 _lock = threading.Lock()
 _tickers = None
 _loaded = 0
+_retry_at = 0
+
+
+def download(url, deadline):
+    """Retry transient network/HTTP failures within the original total budget.
+
+    Every attempt still passes through the shared SEC rate limiter. Certificate
+    errors and permanent HTTP failures are never bypassed or retried.
+    """
+    for attempt in range(3):
+        try:
+            return fetch(url, min(deadline, time.monotonic() + 8))
+        except (OSError, URLError) as error:
+            reason = getattr(error, 'reason', error)
+            transient = not isinstance(reason, ssl.SSLError) and (
+                not isinstance(error, HTTPError) or error.code in {408, 429, 500, 502, 503, 504})
+            delay = 2 ** attempt
+            if isinstance(error, HTTPError) and error.code == 429:
+                # Honor integer Retry-After only when it fits the total budget.
+                retry_after = error.headers.get('Retry-After', '') if error.headers else ''
+                if retry_after.isdigit():
+                    delay = max(delay, int(retry_after))
+            if not transient or attempt == 2 or time.monotonic() + delay >= deadline:
+                raise
+            time.sleep(delay)
 
 
 def company_cik(symbol, deadline):
-    global _tickers, _loaded
+    global _tickers, _loaded, _retry_at
     with _lock:
         if _tickers is None or time.monotonic() - _loaded > 86400:
-            data = json.loads(fetch('https://www.sec.gov/files/company_tickers.json', deadline))
-            if not isinstance(data, dict) or not data:
-                raise ValueError('Invalid SEC ticker map')
-            mapping = {}
-            for row in data.values():
-                if not isinstance(row, dict) or not isinstance(row.get('ticker'), str) or not str(row.get('cik_str', '')).isdigit():
-                    raise ValueError('Invalid SEC ticker row')
-                mapping[row['ticker'].upper().replace('.', '-')] = int(row['cik_str'])
-            _tickers, _loaded = mapping, time.monotonic()
+            if time.monotonic() < _retry_at:
+                if _tickers is None or symbol.upper().replace('.', '-') not in _tickers:
+                    raise TimeoutError('SEC ticker map refresh cooling down')
+            else:
+                try:
+                    data = json.loads(download('https://www.sec.gov/files/company_tickers.json', deadline))
+                    if not isinstance(data, dict) or not data:
+                        raise ValueError('Invalid SEC ticker map')
+                    mapping = {}
+                    for row in data.values():
+                        if not isinstance(row, dict) or not isinstance(row.get('ticker'), str) or not str(row.get('cik_str', '')).isdigit():
+                            raise ValueError('Invalid SEC ticker row')
+                        mapping[row['ticker'].upper().replace('.', '-')] = int(row['cik_str'])
+                    _tickers, _loaded, _retry_at = mapping, time.monotonic(), 0
+                except Exception as error:
+                    _retry_at = time.monotonic() + 60
+                    # Keep already verified issuer identities; fetch fresh filings
+                    # normally. Unknown symbols never become false unsupported results.
+                    if _tickers is None or symbol.upper().replace('.', '-') not in _tickers:
+                        raise
+                    failure('sec_edgar', 'ticker_map_refresh', error=error)
         return _tickers.get(symbol.upper().replace('.', '-'))
 
 
@@ -65,7 +105,7 @@ def index(symbol):
     cik = company_cik(symbol, deadline)
     if cik is None:
         return [], 'SEC 官方公司索引未覆盖该标的', None
-    data = json.loads(fetch(f'https://data.sec.gov/submissions/CIK{cik:010d}.json', deadline))
+    data = json.loads(download(f'https://data.sec.gov/submissions/CIK{cik:010d}.json', deadline))
     if int(data.get('cik', -1)) != cik:
         raise ValueError('SEC company identity mismatch')
     items = submission_items(data, cik)
@@ -77,5 +117,5 @@ def index(symbol):
         name = page.get('name', '')
         if not re.fullmatch(r'CIK\d{10}-submissions-\d+\.json', name):
             raise ValueError('Invalid SEC submissions page')
-        items.extend(submission_items(json.loads(fetch('https://data.sec.gov/submissions/' + name, deadline)), cik))
+        items.extend(submission_items(json.loads(download('https://data.sec.gov/submissions/' + name, deadline)), cik))
     return sorted({r['accession']: r for r in items}.values(), key=lambda r: (r['published_at'], r['accession']), reverse=True), '', cik

@@ -16,6 +16,31 @@ def payload():
 
 
 class SecIndexCases(unittest.TestCase):
+    def test_transient_retry_keeps_budget_and_does_not_retry_forbidden_or_tls(self):
+        import time, ssl
+        from urllib.error import HTTPError, URLError
+        with patch.object(sec, 'fetch', side_effect=[TimeoutError('network'), '{}']) as fetch, patch.object(sec.time, 'sleep'):
+            deadline = time.monotonic() + 30
+            self.assertEqual(sec.download('https://data.sec.gov/test', deadline), '{}')
+            self.assertEqual(fetch.call_count, 2)
+            self.assertLessEqual(fetch.call_args.args[1], deadline)
+            self.assertLessEqual(fetch.call_args.args[1], time.monotonic()+8)
+        for error in (HTTPError('https://data.sec.gov',403,'Forbidden',{},None), URLError(ssl.SSLError('certificate'))):
+            with patch.object(sec, 'fetch', side_effect=error) as fetch:
+                with self.assertRaises(type(error)): sec.download('https://data.sec.gov/test', time.monotonic()+30)
+                self.assertEqual(fetch.call_count, 1)
+        with patch.object(sec, 'fetch', side_effect=HTTPError('https://data.sec.gov',429,'Rate limit',{'Retry-After':'120'},None)) as fetch, patch.object(sec.time, 'sleep') as sleep:
+            with self.assertRaises(HTTPError): sec.download('https://data.sec.gov/test',time.monotonic()+30)
+            self.assertEqual(fetch.call_count,1);sleep.assert_not_called()
+
+    def test_expired_mapping_keeps_verified_cik_but_unknown_does_not_become_unsupported(self):
+        import time
+        with patch.object(sec, '_tickers', {'MU':723125}), patch.object(sec, '_loaded', 0), patch.object(sec, '_retry_at', 0), patch.object(sec, 'download', side_effect=TimeoutError('temporary')) as download:
+            self.assertEqual(sec.company_cik('MU',time.monotonic()+30),723125)
+            self.assertEqual(sec.company_cik('MU',time.monotonic()+30),723125)
+            with self.assertRaises(TimeoutError): sec.company_cik('UNKNOWN',time.monotonic()+30)
+            self.assertEqual(download.call_count,1)
+
     def test_primary_document_and_metadata(self):
         rows = sec.submission_items(payload(), 723125)
         report = next(r for r in rows if r['form'] == '10-K')

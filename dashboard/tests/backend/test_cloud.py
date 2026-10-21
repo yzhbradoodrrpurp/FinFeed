@@ -148,6 +148,24 @@ class CloudCases(unittest.TestCase):
         self.assertEqual([value['ticker'] for value in result['snapshots'].values()], ['AAPL'])
         self.assertTrue(next(iter(result['snapshots'].values()))['cached'])
 
+    def test_sec_browser_responses_omit_reminder_index_without_mutating_cache(self):
+        self.frontend_setup()
+        self.client.put('/api/state', json={'watchlist':['AAPL'], 'positions':[]}, headers=HEADERS)
+        key='market:v1:news:sec-edgar:v1:AAPL'
+        value={'ticker':'AAPL','kind':'sec','provider':'sec_edgar','items':[{'title':'10-K'}],
+               'notification_items':[{'title':'old filing','accession':'kept'}], 'errors':[]}
+        self.store.set_cache(key,value)
+        with patch('backend.services.news.snapshot') as provider:
+            for path in ('/api/news/AAPL/sec','/api/news/AAPL/sec?stream=1'):
+                response=self.client.get(path)
+                self.assertEqual(response.status_code,200)
+                self.assertNotIn(b'notification_items',response.data)
+                self.assertIn(b'10-K',response.data)
+            bootstrap=self.client.get('/api/news?cached=1').json
+            self.assertNotIn('notification_items',next(iter(bootstrap['snapshots'].values())))
+            provider.assert_not_called()
+        self.assertEqual(self.store.get_cache(key)[0]['notification_items'],value['notification_items'])
+
     def test_news_reuses_legacy_cache_and_authorizes_in_one_transaction(self):
         self.frontend_setup()
         self.client.put('/api/state', json={'watchlist':['AAPL'], 'positions':[]}, headers=HEADERS)

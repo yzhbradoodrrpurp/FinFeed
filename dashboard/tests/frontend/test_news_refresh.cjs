@@ -17,7 +17,25 @@ const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/st
  let calls=0;
  sandbox.FinFeedCache={read:()=>null,write(){},market:async(url,consume)=>{calls++;if(url.includes('/calls?'))throw Error('temporary outage');consume({ticker:'AAPL',kind:'sec',items:[],errors:[]});}};
  await window.FinFeedNews.open(true);assert.equal(calls,2);
+ sandbox.FinFeedCache.read=key=>key==='news:AAPL:calls'?{data:{ticker:'AAPL',kind:'calls',items:[],errors:[]}}:null;
  now+=60000;timer();await new Promise(r=>setImmediate(r));assert.equal(calls,3,'retry only failed source after a minute');
- now+=60000;timer();await new Promise(r=>setImmediate(r));assert.equal(calls,3,'bounded retry must not loop');
- console.log('PASS: hourly refresh, hidden surfaces, no duplicates, bounded failed-source retry');
+ now+=60000;timer();await new Promise(r=>setImmediate(r));assert.equal(calls,3,'backoff prevents rapid repeated retry');
+ now+=60000;timer();await new Promise(r=>setImmediate(r));assert.equal(calls,4,'source continues retrying after second failure');
+ sandbox.FinFeedCache.market=async(url,consume)=>{calls++;consume({ticker:'AAPL',kind:url.includes('/sec?')?'sec':'calls',provider:'sec_edgar',items:[],errors:[]});};
+ now+=240000;timer();await new Promise(r=>setImmediate(r));assert.equal(calls,5,'retry only failed source');
+ now+=900000;timer();await new Promise(r=>setImmediate(r));assert.equal(calls,5,'success stops recovery retries');
+ sandbox.FinFeedAuth.request=async()=>({ok:true,json:async()=>({tickers:['AAPL','MU','NFLX']})});
+ const release=[],finished=[];
+ sandbox.FinFeedCache.market=async(url,consume)=>{
+   if(url.includes('/calls?'))await new Promise(resolve=>release.push(resolve));
+   finished.push(url);consume({ticker:url.split('/')[3],kind:url.includes('/sec?')?'sec':'calls',provider:'sec_edgar',items:[],errors:[]});
+ };
+ const updating=window.FinFeedNews.open(true);
+ await new Promise(r=>setImmediate(r));
+ assert.equal(finished.filter(url=>url.includes('/sec?')).length,3,'all SEC requests finish while first two Yahoo requests remain blocked');
+ while(release.length)release.shift()();
+ await new Promise(r=>setImmediate(r));
+ while(release.length)release.shift()();
+ await updating;
+ console.log('PASS: hourly refresh, hidden surfaces, no duplicates, source recovery backoff and reset');
 })();

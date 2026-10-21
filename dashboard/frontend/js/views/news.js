@@ -5,7 +5,7 @@ window.FinFeedNews=(()=>{
   const sourceLink=(ticker,kind)=>kind==='sec'?`https://www.sec.gov/edgar/search/#/q=${encodeURIComponent(ticker)}`:`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/earnings-calls/`;
   const kinds=['calls','sec'];
   const refreshInterval=60*60*1000;
-  let lastCheck=null,owner=null,pendingRender=false,retryAt=null;
+  let lastCheck=null,owner=null,pendingRender=false,retryAt=null,retryFailures=0;
   function scheduleRender(){
     if(pendingRender)return;pendingRender=true;
     const frame=window.requestAnimationFrame|| (callback=>Promise.resolve().then(callback));
@@ -14,7 +14,7 @@ window.FinFeedNews=(()=>{
   const cacheAge=7*86400000;
   const matches=value=>(selectedTicker==='all'||value.ticker===selectedTicker)&&(kind==='all'||value.kind===kind);
   function tickers(){el('news-tickers').innerHTML=['all',...symbols].map(ticker=>`<button class="secondary" data-news-ticker="${escape(ticker)}" aria-pressed="${ticker===selectedTicker}">${ticker==='all'?'全部':escape(ticker)}</button>`).join('');}
-  function seed(){for(const ticker of symbols)for(const kind of kinds){const saved=FinFeedCache.read('news:'+ticker+':'+kind,cacheAge);if(saved)accept({ticker,kind},saved.data,false);}}
+  function seed(){for(const ticker of symbols)for(const kind of kinds){const saved=FinFeedCache.read('news:'+ticker+':'+kind,cacheAge);if(saved&&!states.has(ticker+':'+kind))accept({ticker,kind},saved.data,false);}}
   function setWatchlist(values){
     if(JSON.stringify(symbols)!==JSON.stringify(values))lastCheck=null;
     symbols=[...new Set(values.filter(value=>typeof value==='string'))];
@@ -83,12 +83,20 @@ window.FinFeedNews=(()=>{
         render();
       }catch(error){listError=error.message;render();}
       total=symbols.length*kinds.length;
-      const tasks=symbols.flatMap(ticker=>kinds.map(kind=>({ticker,kind}))).filter(task=>!retryOnly||states.get(task.ticker+':'+task.kind)?.errors?.length);total=tasks.length;let next=0;
-      async function worker(){while(next<tasks.length){const task=tasks[next++];try{
+      const tasks=kinds.flatMap(kind=>symbols.map(ticker=>({ticker,kind}))).filter(task=>!retryOnly||states.get(task.ticker+':'+task.kind)?.errors?.length);total=tasks.length;
+      async function worker(queue){while(queue.length){const task=queue.shift();try{
         await FinFeedCache.market(`/api/news/${encodeURIComponent(task.ticker)}/${task.kind}?stream=1&window=${task.kind==='sec'?'sec-edgar-v1':'reported-v2'}${force?'&refresh=1':''}`,value=>{accept(task,value);scheduleRender();},{ttl:refreshInterval,staleTtl:cacheAge,refresh:force,validate:value=>Array.isArray(value.items)&&!value.errors?.length&&(task.kind!=='sec'||value.provider==='sec_edgar')});
       }catch{const saved=states.get(task.ticker+':'+task.kind)?.items?.length;accept(task,{items:[],errors:[saved?'本次更新失败，暂显示上次成功结果':'暂时无法取得数据，将自动重试'],stale:true});}finally{done++;scheduleRender();}}}
-      await Promise.allSettled(Array.from({length:Math.min(4,tasks.length)},worker));
-    }finally{busy=false;if(!retryOnly){lastCheck=Date.now();retryAt=listError||[...states.values()].some(value=>value.errors?.length)?lastCheck+60000:null;}else retryAt=listError?Date.now()+60000:null;render();}
+      // Reserve browser slots for each source so slow Yahoo calls cannot block SEC.
+      const queues=kinds.map(kind=>tasks.filter(task=>task.kind===kind));
+      await Promise.allSettled(queues.flatMap(queue=>Array.from({length:Math.min(2,queue.length)},()=>worker(queue))));
+    }finally{
+      busy=false;if(!retryOnly)lastCheck=Date.now();
+      const failed=listError||[...states.values()].some(value=>value.errors?.length);
+      if(failed){retryFailures++;retryAt=Date.now()+Math.min(900000,60000*2**Math.min(retryFailures-1,4));}
+      else{retryFailures=0;retryAt=null;}
+      render();
+    }
   }
   document.querySelectorAll('[data-news-kind]').forEach(button=>button.addEventListener('click',()=>{if(kind===button.dataset.newsKind)return;const order=['all',...kinds],direction=order.indexOf(button.dataset.newsKind)>order.indexOf(kind)?1:-1;kind=button.dataset.newsKind;document.querySelectorAll('[data-news-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));render();window.FinFeedMotion?.enter(el('news-feed'),{kind:'tab',direction});}));
   el('news-tickers').addEventListener('wheel',event=>{

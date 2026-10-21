@@ -722,7 +722,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         except (PoolTimeout, psycopg.OperationalError) as error:
             failure('database', 'news_bootstrap_cache', error=error)
             snapshots = {}
-        return jsonify(tickers=symbols, snapshots=snapshots)
+        from backend.services.news import public_snapshot
+        return jsonify(tickers=symbols, snapshots={key: public_snapshot(value) for key, value in snapshots.items()})
 
     @app.get("/api/news/<symbol>/<kind>")
     def news_data(symbol, kind):
@@ -731,11 +732,11 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(404)
         if symbol not in own_news_symbols():
             abort(403, description="仅支持自己的观察列表")
-        from backend.services.news import snapshot
+        from backend.services.news import snapshot, public_snapshot
         return refresh_jobs.response(('news:sec-edgar:v1:' if kind == 'sec' else 'news:v1:calls:') + symbol,
             lambda publish: snapshot(symbol, kind), 3600,
             lambda value: isinstance(value.get('items'), list) and not value.get('errors'),
-            stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
+            stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1', present=public_snapshot)
 
     @app.get("/api/security/<symbol>")
     def quote(symbol: str):

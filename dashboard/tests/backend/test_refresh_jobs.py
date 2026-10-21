@@ -138,6 +138,21 @@ class RefreshJobCases(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(list(jobs.events('home:B', slow, 60, self.good))[-1]['price'], 101)
 
+    def test_slow_yahoo_jobs_cannot_starve_sec_refresh_lane(self):
+        jobs=RefreshJobs(self.store,deadline=.01,limits={'news':1,'news_sec':1})
+        release=threading.Event()
+        def slow(publish):
+            release.wait(2)
+            return {'price':1}
+        try:
+            self.assertTrue(list(jobs.events('news:v1:calls:A',slow,60,self.good))[-1]['pending'])
+            value=list(jobs.events('news:sec-edgar:v1:A',lambda publish:{'price':2},60,self.good))[-1]
+            self.assertEqual(value['price'],2)
+            self.assertFalse(release.is_set())
+        finally:
+            release.set()
+            for lane in jobs.queues.values():lane.join()
+
     def test_late_cache_write_cannot_overwrite_new_snapshot(self):
         new = {'price': 102, 'retrieved_at': '2026-01-02T00:00:00Z'}
         old = {'price': 101, 'retrieved_at': '2026-01-01T00:00:00Z'}

@@ -40,7 +40,7 @@ The `h20` directory and `FINFEED_H20_ROOT` variable are retained executable name
 
 The supervisor launches one Gunicorn worker with 64 HTTP threads and a 180-second worker timeout. Database pools are created inside the worker, not inherited from a preloaded parent. The supervisor also owns PostgreSQL, the project proxy, Tailscale, and the daily backup loop.
 
-Refresh jobs have independent lanes: security 4 workers; home, sector, macro, whales, and news 2 each. Total queued/running capacity is 256. Same-key work is coalesced inside a worker; notification source leases provide additional database coordination. Increasing Gunicorn worker count would multiply in-memory lanes, provider sessions, and database pools and therefore requires capacity analysis.
+Refresh jobs have independent lanes: security 4 workers; home, sector, macro, whales, Yahoo news, and SEC news 2 each. SEC news retains its existing cache keys but runs in an independent lane. Total queued/running capacity is 256. Same-key work is coalesced inside a worker; notification source leases provide additional database coordination. Increasing Gunicorn worker count would multiply in-memory lanes, provider sessions, and database pools and therefore requires capacity analysis.
 
 ## Passkey and session security
 

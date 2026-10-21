@@ -18,12 +18,12 @@ class RefreshJobs:
         self.guard = threading.Lock()
         self.entries = {}
         self.capacity = threading.BoundedSemaphore(256)
-        self.limits = limits or {'security': 4, 'news': 2, 'whales': 2, 'macro': 2, 'home': 2, 'sector': 2}
+        self.limits = limits or {'security': 4, 'news': 2, 'news_sec': 2, 'whales': 2, 'macro': 2, 'home': 2, 'sector': 2}
         self.queues = {}
 
     def submit(self, key, work):
         # Separate lanes keep long SEC/provider jobs from starving minute quotes.
-        lane = key.split(':', 1)[0]
+        lane = 'news_sec' if key.startswith('news:sec-edgar:') else key.split(':', 1)[0]
         with self.guard:
             if lane not in self.queues:
                 pending = self.queues[lane] = queue.Queue()
@@ -139,8 +139,10 @@ class RefreshJobs:
         if initial is None:
             yield {'errors': ['数据暂不可用，稍后重试'], 'stale': True}
 
-    def response(self, key, loader, ttl, valid, persist=True, stream=False, force=False):
+    def response(self, key, loader, ttl, valid, persist=True, stream=False, force=False, present=None):
         events = self.events(key, loader, ttl, valid, persist, force)
+        if present is not None:
+            events = map(present, events)
         if stream:
             from flask import Response
             return Response((json.dumps(value, ensure_ascii=False, allow_nan=False) + '\n' for value in events),

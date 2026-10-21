@@ -28,6 +28,7 @@ from webauthn.helpers.structs import (
 
 from backend.storage.store import Store, digest
 from backend.services.securities import security, SCHEMA_VERSION
+from backend.services.presentation import security_snapshot
 from backend.domain.state_validation import SYMBOL, validate
 
 from backend.paths import DASHBOARD_ROOT as ROOT
@@ -643,12 +644,23 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(404, description="账户不存在")
         symbols = list(dict.fromkeys(state["watchlist"] + [p["ticker"] for p in state["positions"]])) if state else []
         try:
-            snapshots = database.get_cached_quotes(symbols)
+            snapshots = database.get_cached_quotes(symbols) if request.args.get('quotes') != 'none' else {}
         except (PoolTimeout, psycopg.OperationalError) as error:
             failure('database', 'quote_bootstrap_cache', error=error)
             snapshots = {}
-        return jsonify(account={"id": account["id"], "name": account["name"]}, readOnly=user_id != viewer_id, state=state, quotes={symbol: record for symbol, record in snapshots.items()
+        return jsonify(account={"id": account["id"], "name": account["name"]}, readOnly=user_id != viewer_id, state=state, quotes={symbol: security_snapshot(record) for symbol, record in snapshots.items()
                                            if record.get("schema_version") == SCHEMA_VERSION})
+
+    @app.get("/api/quotes")
+    def cached_quote_summaries():
+        # Public snapshots only, behind the same authentication as /api/security.
+        # No provider calls or private account records in this response.
+        symbols = list(dict.fromkeys(request.args.get('symbols', '').upper().split(',')))
+        if not symbols or len(symbols) > 128 or any(not SYMBOL.fullmatch(symbol) for symbol in symbols):
+            abort(400, description="无效 ticker 列表")
+        snapshots = database.get_cached_quotes(symbols)
+        return jsonify(quotes={symbol: security_snapshot(value, summary=True)
+            for symbol, value in snapshots.items() if value.get('schema_version') == SCHEMA_VERSION})
 
     @app.put("/api/state")
     def state_write():
@@ -749,7 +761,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             lambda publish: security(symbol, refresh, store=database, on_update=publish,
                 financial_refresh=financial_refresh),
             60, lambda value: value.get('schema_version') == SCHEMA_VERSION and value.get('metrics', {}).get('price', {}).get('value') is not None,
-            persist=False, stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
+            persist=False, stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1', present=security_snapshot)
 
     @app.get("/")
     @app.get("/index.html")

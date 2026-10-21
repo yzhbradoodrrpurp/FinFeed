@@ -1,0 +1,24 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('dashboard/frontend/js/core/app.js','utf8');
+const account=source.slice(source.indexOf('async function readAccount('),source.indexOf('function retryAccount('));
+const bootstrap=source.slice(source.indexOf('async function loadInitialRecords('),source.indexOf('function acceptRecord('));
+(async()=>{
+ const requests=[],accepted=[],loads=[];let finished;
+ const context={accountStateVersion:1,trackedTickers:()=>['AAPL','VOO'],records:new Map(),FinFeedAuth:{read:async url=>{requests.push(url);return{};},request:(url,options)=>{requests.push({url,options});return new Promise(resolve=>finished=resolve);}},acceptRecord:(ticker,value)=>accepted.push(ticker),scheduleRender(){},load:tickers=>loads.push(tickers)};
+ vm.createContext(context);vm.runInContext(account+bootstrap,context);
+ await context.readAccount('/api/state');await context.readAccount('/api/state?user=other');
+ assert.equal(requests[0],'/api/state?quotes=none');assert.equal(requests[1],'/api/state?user=other&quotes=none');
+ const c=new AbortController();let job=context.loadInitialRecords(1,c.signal);
+ assert.equal(loads.length,0);assert.equal(requests.at(-1).options.timeoutMs,5000);
+ finished({ok:true,json:async()=>({quotes:{AAPL:{},OTHER:{}}})});await job;
+ assert.deepEqual(accepted,['AAPL']);assert.equal(loads.length,1,'full records follow small summary');
+ context.FinFeedAuth.request=async()=>{throw Error('summary unavailable');};await context.loadInitialRecords(1,c.signal);
+ assert.equal(loads.length,2,'summary failure cannot prevent individual reads');
+ context.FinFeedAuth.request=()=>new Promise(resolve=>finished=resolve);job=context.loadInitialRecords(1,c.signal);
+ context.accountStateVersion=2;finished({ok:true,json:async()=>({quotes:{VOO:{}}})});await job;
+ assert.deepEqual(accepted,['AAPL']);assert.equal(loads.length,2,'late summary must not affect another account');
+ context.accountStateVersion=1;context.records.set('AAPL',{metrics:{price:{value:100}}});context.records.set('VOO',{metrics:{price:{value:200}}});
+ context.FinFeedAuth.request=async()=>{throw Error('must not fetch warm summary');};await context.loadInitialRecords(1,c.signal);
+ assert.equal(loads.length,3,'local snapshots skip summary and update in background');
+ console.log('PASS: small account reads, independent market summary, failure fallback, warm cache and late-account isolation');
+})().catch(e=>{console.error(e);process.exitCode=1;});

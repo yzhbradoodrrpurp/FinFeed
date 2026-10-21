@@ -34,6 +34,7 @@ const response=data=>({ok:true,json:async()=>data});
  assert.equal(new URL(ctx.location.href).searchParams.get('surface'),'macro');
  firstState.resolve(response({state:{watchlist:['WRONG'],positions:[]},readOnly:false,quotes:{}}));await first;
  assert.deepEqual(Array.from(ctx.tickers),['AAPL','MSFT']);assert.equal(ctx.readOnly,true);
+ pending.find(p=>p.url.startsWith('/api/quotes?symbols=')).resolve(response({quotes:{}}));await flush();
  const newAapl=pending.filter(p=>p.url.startsWith('/api/security/AAPL?')).at(-1);
  newAapl.resolve(response({ticker:'AAPL',name:'new account'}));await flush();
  const newQuote=pending.find(p=>p.url.startsWith('/api/security/MSFT?'));

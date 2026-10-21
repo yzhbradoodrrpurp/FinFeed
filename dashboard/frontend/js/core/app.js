@@ -201,6 +201,8 @@ async function storeHoldings(next){
 }
 let accountRetryTimer=null;
 async function readAccount(url,signal){
+  // Private records must not wait for multi-megabyte market snapshots.
+  if(url.startsWith('/api/state'))url+=(url.includes('?')?'&':'?')+'quotes=none';
   if(FinFeedAuth.read)return FinFeedAuth.read(url,{signal});
   const response=await FinFeedAuth.request(url,{signal});
   const data=await response.json();
@@ -244,7 +246,7 @@ async function changeViewedAccount(name,id){
     applyAccountGroupOrder(state);
     tickers=state.watchlist;watchlistFavorites=state.watchlistFavorites||[];holdings=state.positions;initialLoading=false;
     seedQuoteSnapshots(data.quotes);
-    feedback("");render();load(trackedTickers());
+    feedback("");render();await loadInitialRecords(version,controller.signal);
     if(surface===name)window.FinFeedMotion?.enter(el(`${name}-surface`),{kind:'account'});
     return true;
   }catch(error){
@@ -327,7 +329,7 @@ function render(){
       const metric=m[key];if(!record)return `<td><span class="skeleton"></span></td>`;
       const value=format(metric,type);const color=value==="—"?"missing":type==="growth"?(metric.value>=0?"positive":"negative"):"";
       return `<td data-group="${groups.find(g=>g.columns.some(c=>c[0]===key)).id}" data-column="${key}" ${changeAttributes(`watch:${t}:${key}:${metric?.currency||record.currency||""}`,metric?.value)} class="${color}${fetchingTickers.has(t)?" cell-fetching":""}">${value}${value==="—"?`<span class="missing-label">${escapeHTML(metric?.change_status||shortMissing(metric))}</span>`:metric?.valuation_status?`<span class="missing-label">${escapeHTML(metric.valuation_status)}</span>`:metric?.change_status?`<span class="missing-label">${escapeHTML(metric.change_status)}</span>`:metric?.currency?`<span class="currency">${escapeHTML(metric.currency)}</span>`:""}</td>`;
-    }).join("")}<td class="status-cell">${escapeHTML(record?.quote_date||"—")}<div class="missing-label">${record?.partial?"行情已取得 · 正在补充数据":record?.refreshing?"缓存 · 正在更新":record?.stale?"旧快照 · 刷新失败":record?.errors?.length?"部分数据未取得":record?record.volume_complete?"完整交易日":"部分数据待确认":"读取中"}</div></td></tr>`;
+    }).join("")}<td class="status-cell">${escapeHTML(record?.quote_date||"—")}<div class="missing-label">${record?.bootstrap?"缓存摘要 · 正在补齐明细":record?.partial?"行情已取得 · 正在补充数据":record?.refreshing?"缓存 · 正在更新":record?.stale?"旧快照 · 刷新失败":record?.errors?.length?"部分数据未取得":record?record.volume_complete?"完整交易日":"部分数据待确认":"读取中"}</div></td></tr>`;
   }).join(""):initialLoading?Array.from({length:8},()=>`<tr class="initial-loading"><td class="sticky"><span class="skeleton"></span></td>${cols.map(()=>`<td><span class="skeleton"></span></td>`).join("")}<td><span class="skeleton"></span></td></tr>`).join(""):`<tr class="empty-row"><td colspan="${cols.length+2}"></td></tr>`;
   patchRows(el("table-body"),watchHTML,"ticker");
   el("watchlist-empty").hidden=Boolean(tickers.length||initialLoading);
@@ -366,6 +368,25 @@ function seedQuoteSnapshots(quotes={}){
     const latest=normalizeFinancialComparisons(candidates[0]);if(!latest)continue;
     records.set(ticker,{...latest,cached:true,refreshing:Date.now()-(Date.parse(latest.fetched_at||latest.retrieved_at)||0)>=60000});
     if(!latest.stale&&!latest.partial)FinFeedCache.write(key,latest);
+  }
+}
+async function loadInitialRecords(version,signal){
+  const tracked=trackedTickers();
+  const missing=tracked.filter(ticker=>records.get(ticker)?.metrics?.price?.value==null);
+  let continueLoading=true;
+  try{
+    if(missing.length){
+      const response=await FinFeedAuth.request('/api/quotes?symbols='+encodeURIComponent(missing.join(',')),{signal,timeoutMs:5000});
+      const data=await response.json();
+      if(!response.ok)throw new Error('缓存摘要暂不可用');
+      if(version!==accountStateVersion||signal.aborted)return;
+      for(const [ticker,value] of Object.entries(data.quotes||{}))if(tracked.includes(ticker))acceptRecord(ticker,value);
+      scheduleRender();
+    }
+  }catch(error){if(error.code==='AUTH_REDIRECT'||signal.aborted)continueLoading=false;}
+  finally{
+    // A failed summary request never prevents individual cache/refresh reads.
+    if(continueLoading&&version===accountStateVersion&&!signal.aborted)load(tracked);
   }
 }
 function acceptRecord(ticker,incoming){
@@ -427,7 +448,7 @@ function detail(ticker,keyboard=false){
   const r=records.get(ticker);if(!r){feedback(`${ticker} 正在读取，请稍后查看。`);return;}
   el("detail-title").textContent=`${ticker} · ${r.name}`;
   const sourceNames={quote:"行情来源",financials:"利润表",balance:"资产负债表",cashflow:"现金流",estimates:"Yahoo 分析师预期",market_eps:"长桥季度 EPS 与预测",estimates_alpha:"Alpha Vantage 盈利预测",sec:"SEC 披露查询"};
-  el("detail-content").innerHTML=`<div class="meta-row">数据源最新财季：${escapeHTML(r.quarter_0||"未提供")}　上财季：${escapeHTML(r.quarter_1||"未提供")}<br>行情来源：${escapeHTML(r.market_provider||"Yahoo")}<br>行情检索：${timestamp(r.market_fetched_at||r.fetched_at)}${r.cached?" · 缓存":""}${r.refreshing?" · 正在更新":r.stale?" · 刷新失败，保留旧快照":""}${r.refresh_checked_at?`<br>本次刷新检查：${timestamp(r.refresh_checked_at)}`:""}<br>季度财务来源：${escapeHTML(r.financial_provider||"未提供")}<br>季度财务检索：${timestamp(r.financial_fetched_at)}${r.financial_stale?" · 更新失败，使用旧财务数据":""}<br>长桥 EPS／预测检索：${timestamp(r.longbridge_blocks?.consensus?.fetched_at)}${r.longbridge_blocks?.consensus?.stale?" · 刷新失败，使用成功缓存":""}<br>长桥 EPS 财季：${escapeHTML(r.market_quarter_0||"未提供")}<br>财务检查：${timestamp(r.financial_checked_at)}<br>报价时间：${timestamp(r.quote_at)}　交易所：${escapeHTML(r.exchange||"未提供")} (${escapeHTML(r.exchange_timezone||"未提供")})<br>报价币种：${escapeHTML(r.currency||"未提供")}　财报币种：${escapeHTML(r.financial_currency||"未提供")}　延迟：${r.delay_minutes==null?"供应商未明确提供":escapeHTML(r.delay_minutes)+" 分钟（供应商标记）"}<br>申报日：未由免费聚合源提供，请到 SEC 核对。${r.errors?.length?`<br>${escapeHTML(r.errors.join("；"))}`:""}</div><nav class="source-links">${Object.entries(r.sources||{}).map(([k,url])=>`<a href="${escapeHTML(url)}" target="_blank" rel="noreferrer">${sourceNames[k]||k}</a>`).join("")}</nav>${allColumns.map(([key,title,sub,type])=>{
+  el("detail-content").innerHTML=`<div class="meta-row">${r.bootstrap?"缓存摘要：指标来源与计算输入正在后台补齐。<br>":""}数据源最新财季：${escapeHTML(r.quarter_0||"未提供")}　上财季：${escapeHTML(r.quarter_1||"未提供")}<br>行情来源：${escapeHTML(r.market_provider||"Yahoo")}<br>行情检索：${timestamp(r.market_fetched_at||r.fetched_at)}${r.cached?" · 缓存":""}${r.refreshing?" · 正在更新":r.stale?" · 刷新失败，保留旧快照":""}${r.refresh_checked_at?`<br>本次刷新检查：${timestamp(r.refresh_checked_at)}`:""}<br>季度财务来源：${escapeHTML(r.financial_provider||"未提供")}<br>季度财务检索：${timestamp(r.financial_fetched_at)}${r.financial_stale?" · 更新失败，使用旧财务数据":""}<br>长桥 EPS／预测检索：${timestamp(r.longbridge_blocks?.consensus?.fetched_at)}${r.longbridge_blocks?.consensus?.stale?" · 刷新失败，使用成功缓存":""}<br>长桥 EPS 财季：${escapeHTML(r.market_quarter_0||"未提供")}<br>财务检查：${timestamp(r.financial_checked_at)}<br>报价时间：${timestamp(r.quote_at)}　交易所：${escapeHTML(r.exchange||"未提供")} (${escapeHTML(r.exchange_timezone||"未提供")})<br>报价币种：${escapeHTML(r.currency||"未提供")}　财报币种：${escapeHTML(r.financial_currency||"未提供")}　延迟：${r.delay_minutes==null?"供应商未明确提供":escapeHTML(r.delay_minutes)+" 分钟（供应商标记）"}<br>申报日：未由免费聚合源提供，请到 SEC 核对。${r.errors?.length?`<br>${escapeHTML(r.errors.join("；"))}`:""}</div><nav class="source-links">${Object.entries(r.sources||{}).map(([k,url])=>`<a href="${escapeHTML(url)}" target="_blank" rel="noreferrer">${sourceNames[k]||k}</a>`).join("")}</nav>${allColumns.map(([key,title,sub,type])=>{
     const m=r.metrics?.[key];return `<section class="metric-detail"><h3>${title}<br><span style="font-weight:400;color:#81909c">${sub}</span></h3><div><div class="value">${format(m,type)} ${escapeHTML(m?.currency||"")}</div>${m?.reason?`<p>${escapeHTML(m.reason)}</p>`:""}${m?.stale?`<p>该指标使用成功缓存，检索时间 ${timestamp(m.cache_fetched_at||m.fetched_at)}；本次更新未成功。</p>`:""}${m?.estimate_stale?"<p>预测更新失败，使用旧预测。</p>":""}${m?.historical_cache?`<p>包含历史缓存：供应商本次未返回部分财季；缓存原始检索时间 ${timestamp(m.cache_fetched_at||m.fetched_at)}。后续修订尚待数据源核验。</p>`:""}<p>数据期：${escapeHTML(m?.period||m?.estimate_label||"未提供")}${m?.comparison_period?" · 比较期："+escapeHTML(m.comparison_period):""}</p><p>${escapeHTML(m?.basis||"未提供口径")}</p>${m?.analysts!=null?`<p>覆盖分析师：${m.analysts}</p>`:""}${m?.inputs?`<p>计算输入：${escapeHTML(JSON.stringify(m.inputs))}</p>`:""}${m?.source?`<a href="${escapeHTML(m.source)}" target="_blank" rel="noreferrer">查看来源</a>`:""}</div></section>`;
   }).join("")}`;
   el("detail-dialog").dataset.pointerOpened=String(!keyboard);
@@ -573,7 +594,7 @@ async function initializeState(){
       initialLoading=false;tickers=state.watchlist;watchlistFavorites=state.watchlistFavorites||[];holdings=state.positions;
       if(viewedUserId===currentUser.id)window.FinFeedNews?.setWatchlist(tickers);
       seedQuoteSnapshots(data.quotes);
-      render();load(trackedTickers());
+      render();await loadInitialRecords(stateVersion,accountRequest.signal);
     }).catch(error=>{
       if(stateVersion!==accountStateVersion||error.name==="AbortError")return;
       readOnly=true;document.body.classList.toggle("read-only",true);
@@ -587,7 +608,13 @@ async function initializeState(){
         macro:()=>FinFeedMacro.open(),whales:()=>FinFeedWhales.open()};
       if(surface==="home")FinFeedHome.open(currentUser);
       if(starters[surface])starters[surface]();
-      Object.entries(starters).filter(([name])=>name!==surface).forEach(([,start],index)=>setTimeout(start,1500*(index+1)));
+      const background=Object.entries(starters).filter(([name])=>name!==surface);
+      const startupAt=Date.now();
+      const startBackground=()=>{
+        if((running||queue.length)&&Date.now()-startupAt<15000){setTimeout(startBackground,500);return;}
+        background.forEach(([,start],index)=>setTimeout(start,1500*(index+1)));
+      };
+      startBackground();
     });
     setInterval(refreshWatchlist,60_000);
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWatchlist();});

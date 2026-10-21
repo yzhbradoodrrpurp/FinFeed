@@ -107,3 +107,11 @@ News browser responses (JSON, NDJSON and optional cache bootstrap) omit `notific
 ### Mubadala institutional holdings
 
 Mubadala Investment Co PJSC (CIK 1704268, application ID `mubadala`) is included in the Whale Holdings manager registry and sovereign-investment category. It uses the same SEC filings, amendment handling, prior-quarter comparison, cache and stale-data rules as the other managers. The 13F scope is not its complete global portfolio. Existing institutional-alert subscribers use the normal source-observation baseline and deduplication rules for this manager.
+
+### Account startup and market payloads
+
+Watchlist and Portfolio first read `/api/state?quotes=none`. This authenticated request returns private records and permissions without reading or serializing market-cache entries. The default `/api/state` response remains compatible and includes current-schema cached snapshots, with browser-only projection applied.
+
+The browser immediately renders records and existing local market snapshots. For tickers without local prices, authenticated `/api/quotes?symbols=...` returns database-only summaries, with no provider requests or private account fields. This separate request has a five-second browser deadline; failure falls through to normal per-ticker reads. Summaries retain values, units, periods, missing reasons and stale indicators but defer calculation inputs and source/basis text to the complete snapshot. They are marked partial/bootstrap, labelled in the UI, and never persisted as completed browser snapshots. Account generation and cancellation checks reject late responses after switching accounts.
+
+Browser security responses omit internal `series` and `longbridge_market` blocks; complete metric explanations and inputs remain in normal security responses. Durable server snapshots retain those internal blocks for recalculation and source reuse. Other views' staggered background startup waits for the initial ticker queue, for at most fifteen seconds, giving the active account view priority without removing background updates.

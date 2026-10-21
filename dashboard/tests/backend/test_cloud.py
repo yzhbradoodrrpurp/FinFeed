@@ -361,6 +361,33 @@ class CloudCases(unittest.TestCase):
             self.store.execute(connection, "INSERT INTO disabled_accounts VALUES (?,?)", (user_id, time.time()))
         self.assertEqual(frontend.post("/api/auth/frontend-exchange", json={"ticket": ticket, "verifier": verifier}, headers=headers).status_code, 401)
 
+    def test_account_records_do_not_wait_for_market_cache_and_summaries_are_public_only(self):
+        from psycopg_pool import PoolTimeout
+        from backend.services.securities import SCHEMA_VERSION
+        self.enroll()
+        self.store.update_state({'initialize':True,'watchlist':['AAPL'],'positions':[]})
+        with patch.object(self.store,'get_cached_quotes',side_effect=PoolTimeout('market cache slow')) as cache:
+            response=self.client.get('/api/state?quotes=none')
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.json['state']['watchlist'],['AAPL'])
+            self.assertEqual(response.json['quotes'],{})
+            cache.assert_not_called()
+        value={'ticker':'AAPL','schema_version':SCHEMA_VERSION,'series':{'internal':[1]*1000},
+               'longbridge_market':{'internal':True},'metrics':{'price':{'value':100,'currency':'USD','period':'2026-10-21','basis':'kept in full','inputs':{'a':1},'source':'official'}}}
+        self.store.set_cache('quote:AAPL',value)
+        self.assertEqual(self.app.test_client().get('/api/quotes?symbols=AAPL').status_code,401)
+        self.assertEqual(self.client.get('/api/quotes?symbols=INVALID!').status_code,400)
+        with patch('backend.app.security') as provider:
+            summary=self.client.get('/api/quotes?symbols=AAPL').json['quotes']['AAPL']
+            self.assertTrue(summary['bootstrap']);self.assertTrue(summary['partial'])
+            self.assertEqual(summary['metrics']['price']['value'],100)
+            self.assertNotIn('inputs',summary['metrics']['price'])
+            response=self.client.get('/api/security/AAPL?stream=1')
+            self.assertNotIn(b'longbridge_market',response.data)
+            self.assertIn(b'kept in full',response.data)
+            provider.assert_not_called()
+        self.assertEqual(self.store.get_cache('quote:AAPL')[0],value)
+
     def test_initial_state_returns_only_tracked_current_snapshots_without_provider(self):
         from backend.services.securities import SCHEMA_VERSION
         self.store.update_state({"initialize": True, "watchlist": ["AAPL", "OLD"], "positions": [{"ticker": "VOO", "quantity": 1, "averageCost": 10, "currency": "USD"}]})

@@ -100,3 +100,11 @@ Before activating the official SEC provider, coordinate a restart of only the ve
 ### Recovery after automatic scheduler disablement
 
 Check local backend health, public Funnel health and the scheduler execution history separately. Proxy upstream failure can interrupt tunnel connectivity even while Flask is healthy. The project proxy now routes Tailscale control and DERP domains directly; supplier and Gmail traffic retain the configured proxy. After connectivity recovers, test the existing authenticated POST for HTTP 202, re-enable the same cron-job.org job, and verify subsequent scheduled executions succeed. HTTP 202 proves trigger acceptance, not email delivery. Preserve notification baselines, cursors, seen accessions and outbox history; never reset them to recover connectivity. Validate Gmail token refresh without sending a test alert.
+
+### Active authorization recovery
+
+A configured sender only means the required credential fields exist; it does not prove Google still accepts the refresh token. On a missed-reminder report, check scheduled HTTP acceptance, source cursors, outbox states, and an actual token refresh independently. An HTTP 400 `invalid_grant` response means the credential was rejected; it must not be treated as a provider-network failure.
+
+After a server migration or configuration restore, validate the active server authorization instead of assuming the local production authorization was synchronized. A previously authorized valid credential for the unchanged sender/client can be restored from its private source after validation. Back up the active private configuration, preserve other fields, and restart only the verified backend. If no valid credential remains, complete the existing send-only OAuth authorization again; do not broaden Gmail scopes.
+
+After authorization recovers, an existing unexpired `pending` message without a provider acceptance ID or active lease can be made due for the normal scheduler. Preserve its original event ID, creation time, recipient, body and attempt history. Back up affected retry dates privately. Do not reset observation baselines, replay expired failures, or automatically resend `sending`/`uncertain` messages. Confirm actual provider acceptance in the outbox; inbox reception remains a separate check.

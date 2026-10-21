@@ -26,6 +26,8 @@ Current host: `47.114.43.129`. Project root: `/mnt/data/users/shx/FinFeed`. Fron
 
 The project proxy routes `tailscale.com` and its subdomains directly before the upstream catch-all rule. This keeps tunnel control and DERP connections independent of the market-data VPN node. Yahoo, Gmail and other configured data requests continue using the upstream proxy. This rule affects only traffic through the FinFeed loopback proxy; it does not change system routing, DNS or other projects. Direct connectivity still depends on the server network.
 
+As of 2026-10-21, the project uses the replacement subscription’s Hong Kong 03 node. The owner explicitly approved the subscription’s self-signed proxy-node TLS exception; certificate verification remains enabled for destination HTTPS requests, including Yahoo and SEC. This exception applies only to the proxy transport. The previous private configuration is retained under the dated runtime cutover directory for recovery. Node credentials and subscription contents must remain outside Git.
+
 Private state is not in Git. A code checkout alone cannot reconstruct production credentials, live records, or tunnel identity.
 
 ## Supervision and startup

@@ -35,7 +35,7 @@ class SecIndexCases(unittest.TestCase):
 
     def test_expired_mapping_keeps_verified_cik_but_unknown_does_not_become_unsupported(self):
         import time
-        with patch.object(sec, '_tickers', {'MU':723125}), patch.object(sec, '_loaded', 0), patch.object(sec, '_retry_at', 0), patch.object(sec, 'download', side_effect=TimeoutError('temporary')) as download:
+        with patch.object(sec, '_tickers', {'MU':723125}), patch.object(sec, '_loaded', time.monotonic()-86401), patch.object(sec, '_retry_at', 0), patch.object(sec, 'download', side_effect=TimeoutError('temporary')) as download:
             self.assertEqual(sec.company_cik('MU',time.monotonic()+30),723125)
             self.assertEqual(sec.company_cik('MU',time.monotonic()+30),723125)
             with self.assertRaises(TimeoutError): sec.company_cik('UNKNOWN',time.monotonic()+30)

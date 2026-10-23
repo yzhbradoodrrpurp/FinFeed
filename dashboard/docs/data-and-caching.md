@@ -118,4 +118,4 @@ Browser security responses omit internal `series` and `longbridge_market` blocks
 
 ### Bridgewater institutional holdings
 
-Bridgewater Associates, LP (CIK 1350694, application ID `bridgewater`) is included in Whale Holdings under global macro and multi-asset investing. Its SEC 13F holdings use the existing verified totals, adjacent-quarter comparison, amendment, cache and stale-data handling. These disclosures cover reportable securities rather than the complete global macro portfolio. Institutional reminders follow the existing observation baseline and deduplication rules.
+Bridgewater Associates, LP (CIK 1350694, application ID `bridgewater`) is included in Whale Holdings under the Quantitative Funds category. Its SEC 13F holdings use the existing verified totals, adjacent-quarter comparison, amendment, cache and stale-data handling. These disclosures cover reportable securities rather than the complete global macro portfolio. Institutional reminders follow the existing observation baseline and deduplication rules.

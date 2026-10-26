@@ -1,65 +1,46 @@
-# FinFeed
+<p align="center">
+  <img src="dashboard/docs/assets/finfeed-overview.svg" alt="FinFeed — a market research workspace for market trends, watchlists, portfolios, macro indicators, institutional holdings and company disclosures" width="1200">
+</p>
 
-FinFeed is a capital-market research dashboard with US market quotes, sector ETF charts, watchlists, portfolios, macroeconomic indicators, institutional holdings, company disclosures, Passkey accounts, and email alerts.
+<p align="center">
+  <strong>Your markets. Your portfolio. A clearer view.</strong><br>
+  A focused workspace for following US markets and connecting prices, company fundamentals, macro trends and institutional activity.
+</p>
 
-## Production system
+<p align="center">
+  <a href="https://finfeed-research.vercel.app"><strong>Open FinFeed →</strong></a>
+</p>
 
-| Component | Current implementation |
+---
+
+## A workspace for the whole research picture
+
+| Follow the market | Understand the company |
 | --- | --- |
-| Website | [finfeed-research.vercel.app](https://finfeed-research.vercel.app), static frontend on Vercel |
-| API | Python / Flask / Gunicorn on the dedicated project at `47.114.43.129` |
-| Public API entry | [finfeed.tail03a68f.ts.net](https://finfeed.tail03a68f.ts.net), Tailscale Funnel HTTPS |
-| Database | Project-owned PostgreSQL 17.11, loopback TLS, `finfeed_private` schema |
-| Outbound connectivity | Project-only Mihomo proxy; explicit provider routing |
-| Email | Gmail HTTPS API with send-only OAuth authorization |
-| Alert scheduling | External cron-job.org POST every minute |
-| Process management | Project Python supervisor, independent of interactive SSH sessions |
+| **Market overview** — Follow the S&P 500, Nasdaq Composite and Dow Jones, alongside eleven sector ETFs and three-year price charts. Arrange sectors to match your focus. | **Watchlists** — Keep stocks and ETFs together. Compare prices, valuation, quarterly revenue, profitability, net debt, capital spending and free cash flow. |
+| **Macro outlook** — Track employment, PCE inflation, the dollar and ten-year Treasury yields. Explore meeting-specific Polymarket expectations alongside their history. | **Company disclosures** — Browse SEC filings and earnings-call entries for your watchlist, filter by company or type, and open original sources. |
+| **Institutional holdings** — Explore eighteen institutions across long-term value, technology and growth, quantitative funds and sovereign wealth. Compare reported quarters, new positions, increases, reductions and exits. | **Portfolio tracking** — Track quantities, average costs, market values, unrealized gains and allocation by currency. Keep portfolio records separate from your watchlist. |
 
-Production configuration was checked on October 10, 2026 (Asia/Shanghai). Runtime status and provider availability can change. Frontend publishing and backend deployment are separate operations.
+## Go from overview to detail
 
-## Features
+- **Compare at a glance.** Switch between market valuation, quarterly financials and the complete metric table.
+- **Inspect the numbers.** Open metric details for reporting periods, source links, calculation inputs and missing-data explanations.
+- **Make it yours.** Reorder watched symbols, metric groups and sector cards; save account display preferences across devices.
+- **Explore institutional conviction.** View an institution's reported portfolio or search a security to compare changes across tracked institutions.
+- **Keep your records portable.** Import and export watchlists and portfolio records.
 
-- Three major US equity indices and eleven Select Sector SPDR ETFs with three-year daily charts and draggable ordering.
-- Independent watchlists and portfolios with Longbridge market/EPS data, TTM and blended forward valuation, Yahoo quarterly financial categories, currency-aware valuation, imports, and exports.
-- NFP, PCE, DXY, ten-year Treasury yields, and meeting-specific Polymarket pricing.
-- SEC 13F institutional holdings and company earnings-call / filing indexes.
-- Passkey login, invitation registration, account sharing, administration, and verified email subscriptions.
+## Stay informed
 
-Market polling does not make upstream data real-time. Daily yields and quarterly holdings are not intraday quotes or trading records. See the [application guide](dashboard/README.md) for calculation and access boundaries.
+Choose email reminders for company disclosures and earnings-call entries, institutional filings, employment and PCE releases, or crossings of your own ten-year Treasury yield threshold.
 
-## Repository layout
+Previously loaded data stays visible during updates. Reporting periods, retrieval times and stale-data indicators help you see what each snapshot represents.
 
-| Path | Responsibility |
-| --- | --- |
-| `frontend/` | Vercel build wrapper, rewrites, and authentication bridge |
-| `dashboard/frontend/` | Canonical pages, styles, browser scripts, and asset manifest |
-| `dashboard/backend/` | API, business services, providers, calculations, storage, and transport |
-| `dashboard/deployment/` | Build tools, worker entry points, project service management |
-| `dashboard/tests/` | Backend and frontend regression checks |
-| `dashboard/docs/` | Technical documentation and operational runbooks |
-| `AGENTS.md` | Development and security instructions |
+## Your research workspace
 
-Personal research under `personal/`, local credentials, runtime caches, and database archives are excluded from version control and deployments. Git history is not a private storage mechanism.
+Sign in with a Passkey. Registration is invitation-based. Enabled accounts can share watchlists and portfolios with other signed-in users; editing stays with the record owner.
 
-## Technical documentation
+## Read the context with the number
 
-- [Architecture and authentication](dashboard/docs/architecture.md)
-- [Production configuration and deployment](dashboard/docs/deployment.md)
-- [Server operations and code synchronization](dashboard/docs/server-deployment.md)
-- [Database updates, backup, and restore](dashboard/docs/database-migration.md)
-- [Data providers, requests, and caching](dashboard/docs/data-and-caching.md)
-- [Gmail and notification delivery](dashboard/docs/email-notifications.md)
+Market data may be delayed. Quarterly statements and institutional filings describe reporting periods; 13F reports show reportable holdings rather than a complete investment portfolio. Portfolio results cover unrealized gains and losses, and currency totals remain separate. Polymarket prices reflect a contract's market pricing, not an official policy commitment.
 
-## Development verification
-
-From the repository root, with the dashboard virtual environment prepared:
-
-```sh
-dashboard/.venv/bin/python dashboard/tests/run.py
-node frontend/build.cjs
-git diff --check
-```
-
-Use the unified test runner for code changes; documentation-only changes require link, configuration, and consistency checks. A passing health check is not a functional acceptance test.
-
-Account display preferences synchronize Watchlist metric-group order and Home sector-card order through authenticated backend endpoints and PostgreSQL account state. Watchlist group headings support long-press dragging and keyboard reordering.
+<p align="center"><strong>Follow the market. Check the source. Build your own view.</strong></p>

@@ -1,6 +1,6 @@
 # Architecture and Authentication
 
-Configuration baseline: October 10, 2026, Asia/Shanghai. See [deployment](deployment.md), [server operations](server-deployment.md), [database](database-migration.md), [data and caching](data-and-caching.md), and [email](email-notifications.md).
+Documentation reviewed against source on October 26, 2026, Asia/Shanghai. The same-day operational check confirmed the configured project services and local API were running; this does not establish every provider or delivery path as healthy. See [deployment](deployment.md), [server operations](server-deployment.md), [database](database-migration.md), [data and caching](data-and-caching.md), and [email](email-notifications.md).
 
 ## Request topology
 
@@ -17,6 +17,8 @@ flowchart LR
 ```
 
 The server is `47.114.43.129`; all persistent deployment files are beneath `/mnt/data/users/shx/FinFeed`. Database and proxy ports are not public listeners. Funnel exposes the web API only; an HTTPS tunnel does not bypass application authentication.
+
+The application is a modular monolith with a separate static browser frontend. Browser modules use native JavaScript and a Node copying build; Vue, TypeScript, Vite, React and Next.js are not installed application frameworks. Framework discussions are proposals, not completed migrations.
 
 ## Source boundaries
 
@@ -57,7 +59,9 @@ The frontend login bridge and callback exchange short-lived authentication ticke
 | `/api/health` | Public process liveness |
 | `/api/ready` | Authenticated database and refresh-queue readiness |
 | `/api/auth/*` | Registration, login, logout, credentials, frontend ticket exchange |
-| `/api/accounts`, `/api/state` | Authenticated directory, shared reads, owner-only updates |
+| `/api/accounts`, `/api/state` | Authenticated directory, shared reads, owner-only updates; `quotes=none` skips market snapshots |
+| `/api/quotes?symbols=...` | Authenticated database-only public quote summaries; no provider requests |
+| `/api/preferences` | Authenticated account display-order reads and owner-only updates |
 | `/api/invitations`, `/api/admin/*` | Invitations and administrator operations |
 | `/api/home`, `/api/home/sectors/<symbol>` | Index and sector snapshots |
 | `/api/security/<symbol>` | Shared quote and financial results |
@@ -76,4 +80,4 @@ Project processes do not modify global DNS, routing, firewall, package environme
 
 ## Concurrent market and statement pipeline
 
-Watchlist jobs start Yahoo statement retrieval and Longbridge market retrieval concurrently. Quote previews stream before full EPS/statement completion. Quote/index/bar snapshots refresh each minute; quarterly statements and EPS/consensus refresh every five minutes, with protected manual refresh. Shared per-symbol jobs, provider block locks, bounded statement concurrency and Longbridge rate control prevent per-user fan-out. Public market snapshots are shared; account records and permissions remain isolated. See [cache and rate control](data-and-caching.md).
+For supported US equities, Watchlist jobs start Longbridge quarterly-financial retrieval and Longbridge market/EPS retrieval concurrently. Yahoo remains in Home/sectors, earnings-call indexes, DXY, and supported non-US/crypto market routes; it is not the active US quarterly-financial fallback. Quote previews stream before full EPS/statement completion. Quote/index/bar snapshots refresh each minute; quarterly statements and EPS/consensus refresh every five minutes, with protected manual refresh. Shared per-symbol jobs, provider block locks, bounded statement concurrency and Longbridge rate control prevent per-user fan-out. Public market snapshots are shared; account records and permissions remain isolated. See [cache and rate control](data-and-caching.md).

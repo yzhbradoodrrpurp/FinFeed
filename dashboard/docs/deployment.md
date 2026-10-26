@@ -12,7 +12,7 @@
 | PostgreSQL listener | `127.0.0.1:18766`, database `finfeed`, TLS required |
 | Proxy listener | `127.0.0.1:17890` |
 
-This is the production configuration checked on October 10, 2026. Use [server operations](server-deployment.md) for synchronization and restart, and [database operations](database-migration.md) for recovery.
+Reviewed on October 26, 2026 against the repository and a read-only project-service check. The server release marker identifies the October 23 category update (`de79594`); it lists that update's files, not an exhaustive hash of every deployed file. Use [server operations](server-deployment.md) for synchronization and restart, and [database operations](database-migration.md) for recovery.
 
 ## Frontend publishing
 
@@ -71,7 +71,7 @@ Do not rotate origins casually: Passkeys, cookie transfer, and request validatio
 
 Tailscale runs in userspace mode with an abstract control socket `@finfeed-h20-control`. Its persistent identity and certificates stay in `.tailscale`. DNS acceptance, route acceptance, and Tailscale SSH are disabled. Funnel forwards only the FinFeed HTTP listener. Keep the public identity unique; do not start the same state on two machines.
 
-Mihomo runs from `.proxy/config.json` and listens only on loopback. Selected provider clients explicitly use the project proxy. The current route uses a server-side relay to a US exit; it does not depend on the user's laptop. Preserve TLS verification. Never enable a global VPN/TUN or alter other projects' proxy settings to troubleshoot FinFeed.
+Mihomo runs from `.proxy/config.json` and listens only on loopback. Selected provider clients explicitly use the project proxy. The project uses a server-side configured subscription node, independent of the user's laptop. The last recorded October 21 cutover selected Hong Kong 03; treat the private runtime configuration as authoritative for later node changes. Destination HTTPS verification remains enabled. The explicitly approved proxy-transport TLS exception is scoped to the node connection; see [server operations](server-deployment.md). Never enable a global VPN/TUN or alter other projects' proxy settings to troubleshoot FinFeed.
 
 ## Release acceptance
 
@@ -83,4 +83,4 @@ Mihomo runs from `.proxy/config.json` and listens only on loopback. Selected pro
 6. Check upstream requests, stale-data behavior, Gmail token refresh, and external scheduler acceptance.
 7. Observe a real delivery when validating mail changes. Token refresh and HTTP 202 do not prove inbox delivery.
 
-The last server migration ran 161 backend tests, exact content checks for fifteen application tables, provider connectivity checks, and automatic scheduler checks. Those dated checks are evidence of that release, not a guarantee of future availability or every alert category's delivery.
+The October 23 Bridgewater release passed 224 backend tests, frontend regression checks and the static build; SEC current/prior-quarter retrieval and cover/detail totals were checked. The earlier database transfer checked all fifteen application tables. These are dated release receipts, not proof of current provider health or every alert category's delivery. Documentation-only changes require link, source-consistency and asset checks rather than a full application regression run.

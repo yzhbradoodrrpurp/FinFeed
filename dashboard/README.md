@@ -1,6 +1,6 @@
 # FinFeed Application Guide
 
-This document describes current behavior; operational details are in [the technical documentation](docs/architecture.md). Documentation is English; the application interface and alert bodies currently remain primarily Chinese.
+Reviewed against application source on October 26, 2026 (Asia/Shanghai). This document describes current behavior; operational details are in [the technical documentation](docs/architecture.md). Documentation is English; the application interface and alert bodies currently remain primarily Chinese.
 
 ## Views and refresh behavior
 
@@ -9,7 +9,7 @@ This document describes current behavior; operational details are in [the techni
 | Home | S&P 500, Nasdaq Composite, Dow Jones, eleven sector ETFs | Every minute |
 | Watchlist / Portfolio | Quotes, financial statements, quarterly forecasts, valuation | Minute quotes; five-minute statements and EPS/forecasts |
 | Macro | NFP, PCE, DXY, ten-year Treasury yields | Every hour |
-| Polymarket | Meeting-specific outcome prices and history | Every minute |
+| Polymarket | Meeting-specific outcome prices and history | Hourly while the view is initialized; also on entry/focus when its snapshot is at least one minute old |
 | Whale Holdings | Supported institutions' SEC 13F reports | Every hour |
 | News | Company earnings calls and SEC filing indexes | Every hour |
 
@@ -38,6 +38,10 @@ Zero-cost returns are unavailable. Missing quotes or differing quote/cost curren
 
 State saves use authenticated `/api/state`, with revision and transaction controls and the latest fifty prior states retained. Import/export is available in the account dialog. Browser localStorage is not the source of account records.
 
+## Account startup and cached views
+
+Watchlist and Portfolio load account records separately from public market data. Existing browser snapshots appear first; a separate database-only batch supplies missing price summaries, followed by per-symbol refreshes. A summary explicitly waits for complete calculation details. Provider failures retain usable dated snapshots; a recent retrieval time is not a guarantee that the provider has published the latest quarter. See [cache semantics](docs/data-and-caching.md).
+
 ## Financial definitions
 
 | Field | Definition |
@@ -49,11 +53,11 @@ State saves use authenticated `/api/state`, with revision and transaction contro
 | P/E | Longbridge TTM P/E: price relative to the last twelve months of earnings |
 | Forward P/E | Price / (latest two reported actual quarterly GAAP diluted EPS + next two quarterly GAAP diluted EPS forecasts) |
 | Revenue | Reported quarterly revenue |
-| Debt | Quarter-end total debt under provider classification |
+| Net Debt | Quarter-end Longbridge NetDebt under provider classification; negative values indicate provider-defined net cash |
 | Gross / operating margin | Same-quarter gross profit / revenue and operating income / revenue; latest, year-ago, previous and second-previous quarters |
 | Capital expenditure | Quarterly cash outflow displayed positive, using the same four quarter anchors; not company-adjusted net capex |
 | Free cash flow | Quarterly operating cash flow minus positive capital expenditure |
-| Quarterly growth | Current / adjacent previous quarter − 1 |
+| Quarterly growth | (Current − comparison) / abs(comparison); QoQ uses the adjacent quarter, YoY uses the matching year-ago quarter; zero bases have no percentage |
 | Average volume | Mean of the ten complete trading days before the comparison day |
 | Relative volume | Complete comparison-day volume / that preceding mean |
 
@@ -63,11 +67,11 @@ Company financial fields are not applied to ETFs. The Longbridge market adapter 
 
 ## Charts and research boundaries
 
-Home sector symbols are XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLK, XLB, XLRE, and XLU. Charts cover three years of daily closes, with `auto_adjust=False`; they are not dividend total-return series. Split handling follows the provider and the current day can change before close. Sector order is a browser preference, preserved through quote refreshes. Handles support dragging and keyboard moves; charts support pointer, touch, and keyboard inspection.
+Home sector symbols are XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLK, XLB, XLRE, and XLU. Charts cover three years of daily closes, with `auto_adjust=False`; they are not dividend total-return series. Split handling follows the provider and the current day can change before close. Sector order is an authenticated account preference stored in PostgreSQL, preserved through quote refreshes and loaded on other devices. Handles support dragging and keyboard moves; charts support pointer, touch, and keyboard inspection.
 
 NFP employment changes are derived from monthly PAYEMS levels. PCE monthly and annual growth are derived from price indexes. The previous observation reflects current revisions; pre-release consensus and original unrevised vintages are not supplied. DXY is Yahoo `DX-Y.NYB`, not a broad trade-weighted dollar index. DGS10 is H.15 daily constant-maturity yield, not an intraday bond quote. The application default observation line is 5.1%; each email subscriber can set their own threshold.
 
-Polymarket prices describe a specific contract and meeting, not an official commitment or QE forecast. Institution comparisons use quarterly 13F holdings, not trade times or a complete fund portfolio. News contains indexes and original links, not stored article bodies.
+Polymarket has a one-minute server quote-cache TTL; that TTL is distinct from the current hourly browser timer. History is supplemented hourly, and failed updates preserve successful outcome curves with their original timestamps. Polymarket prices describe a specific contract and meeting, not an official commitment or QE forecast. Institution comparisons use quarterly 13F holdings, not trade times or a complete fund portfolio. The current registry contains eighteen institutions in Long-term Value, Technology and Growth, Quantitative Funds, and Sovereign Wealth categories; Bridgewater appears under Quantitative Funds and Mubadala under Sovereign Wealth. News contains indexes and original links, not stored article bodies.
 
 ## Email and interface behavior
 

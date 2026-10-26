@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">FinFeed — your market research workspace</title>
+  <desc id="desc">A conceptual product illustration showing six research areas: markets, watchlists, portfolios, macro, institutional holdings and disclosures. No live market or account data is shown.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#fffaf5"/><stop offset="1" stop-color="#fff0df"/></linearGradient>
+    <linearGradient id="orange" x2="1" y2="1"><stop stop-color="#ff9145"/><stop offset="1" stop-color="#f36b21"/></linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#edddcf" stroke-width=".6"/></pattern>
+  </defs>
+  <rect width="1200" height="650" rx="28" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1198" height="648" rx="27" fill="none" stroke="#efdcc9"/>
+  <rect x="48" y="44" width="48" height="48" rx="14" fill="url(#orange)"/>
+  <path d="M63 79V57H81V62H69V66H79V71H69V79Z" fill="white"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
+    <text x="110" y="77" font-size="30" font-weight="750" fill="#242b30">FinFeed<tspan fill="#f47729">.</tspan></text>
+    <rect x="958" y="51" width="194" height="34" rx="17" fill="#fff" stroke="#f0d9c5"/>
+    <circle cx="978" cy="68" r="4" fill="#f47729"/>
+    <text x="991" y="73" font-size="12" letter-spacing="1.3" fill="#805c40">MARKET RESEARCH</text>
+    <text x="48" y="169" font-size="53" font-weight="750" letter-spacing="-2" fill="#242b30">Follow markets.</text>
+    <text x="48" y="230" font-size="53" font-weight="750" letter-spacing="-2" fill="#f47729">Connect the signals.</text>
+    <text x="50" y="273" font-size="18" fill="#7b7269">From the daily overview to the detail behind each number.</text>
+    <rect x="824" y="117" width="328" height="165" rx="18" fill="#fff" stroke="#efdfd2"/>
+    <rect x="844" y="135" width="288" height="127" rx="8" fill="url(#grid)"/>
+    <path d="M844 245L865 233L883 238L903 211L924 219L943 197L964 208L984 177L1004 184L1025 169L1044 177L1065 152L1087 159L1113 137" fill="none" stroke="#f47729" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="1113" cy="137" r="5" fill="#f47729"/>
+    <text x="1090" y="304" font-size="10" fill="#9b8a7c" text-anchor="end">Illustration · not market data</text>
+    <g fill="#fff" stroke="#efdfd2">
+      <rect x="48" y="328" width="352" height="118" rx="16"/><rect x="424" y="328" width="352" height="118" rx="16"/><rect x="800" y="328" width="352" height="118" rx="16"/>
+      <rect x="48" y="466" width="352" height="118" rx="16"/><rect x="424" y="466" width="352" height="118" rx="16"/><rect x="800" y="466" width="352" height="118" rx="16"/>
+    </g>
+    <g fill="#c76729" font-size="11" font-weight="650" letter-spacing="1.6"><text x="72" y="357">01 / MARKETS</text><text x="448" y="357">02 / WATCHLISTS</text><text x="824" y="357">03 / PORTFOLIOS</text><text x="72" y="495">04 / MACRO</text><text x="448" y="495">05 / INSTITUTIONS</text><text x="824" y="495">06 / DISCLOSURES</text></g>
+    <g fill="#293138" font-size="22" font-weight="650"><text x="72" y="391">See the bigger picture</text><text x="448" y="391">Keep your focus</text><text x="824" y="391">Know your exposure</text><text x="72" y="529">Read the backdrop</text><text x="448" y="529">Follow reported moves</text><text x="824" y="529">Go to the source</text></g>
+    <g fill="#83796e" font-size="14"><text x="72" y="420">Major indices &amp; eleven sectors</text><text x="448" y="420">Prices, valuation &amp; fundamentals</text><text x="824" y="420">Holdings, returns &amp; allocation</text><text x="72" y="558">Employment, inflation &amp; rates</text><text x="448" y="558">Quarterly holdings &amp; changes</text><text x="824" y="558">SEC filings &amp; earnings calls</text></g>
+    <text x="48" y="619" font-size="12" fill="#947d69" letter-spacing="1">YOUR MARKETS. YOUR PORTFOLIO. A CLEARER VIEW.</text>
+    <text x="1152" y="619" font-size="12" fill="#c76729" text-anchor="end">finfeed-research.vercel.app ↗</text>
+  </g>
+</svg>

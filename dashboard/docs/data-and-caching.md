@@ -1,5 +1,7 @@
 # Data Providers, Request Scheduling, and Caching
 
+Reviewed against provider, refresh-job, storage and browser code on October 26, 2026. A retrieval timestamp records a fetch, not the issuer's disclosure time or proof of provider completeness.
+
 ## Provider map
 
 | Feature | Data chain | Current routing |
@@ -42,7 +44,7 @@ SEC 13F retrieval locates filings and compares adjacent reported quarters. Posit
 
 News stores normalized titles, dates, document URLs, and identifiers, not article bodies. Earnings calls are limited to the latest two published fiscal quarters. Filings use a window anchored by the latest two original quarterly/annual filings. Unsafe URLs, future/unpublished entries, duplicates, and unrecognized periods are filtered.
 
-Polymarket history uses six-hour historical sampling with hourly supplementation and a live endpoint update. Quotes are contract-specific market pricing subject to liquidity and spread; they are not official policy or a QE forecast.
+Polymarket history uses six-hour historical sampling with hourly supplementation and a current-price endpoint update. The server quote-cache TTL is one minute. The current browser timer requests Fed snapshots hourly; entering the view or returning to visibility checks the one-minute age, and manual refresh also requests an update. The UI currently says updates are checked every minute, while the implemented continuous browser timer is hourly; this is a known wording/behavior mismatch, not a guarantee of minute polling. Each outcome retains its successful durable history independently when a refresh fails; it must not be erased by an empty replacement. Quotes are contract-specific market pricing subject to liquidity and spread; they are not official policy or a QE forecast.
 
 ## Browser request cycle
 
@@ -57,7 +59,8 @@ A third-party provider thread cannot safely be killed just because its HTTP subs
 | Layer | Location | What it stores / lifetime |
 | --- | --- | --- |
 | Browser market snapshots | localStorage `finfeed-market:v1:*` | Public market data; read age depends on caller, helper default seven days |
-| Browser preferences | localStorage | Sidebar settings, not holdings or credentials |
+| Browser preferences and auth hint | localStorage | Sidebar settings and a non-secret session-expiry hint; no bearer credentials or holdings |
+| Tab-local context | sessionStorage | News owner ticker list and account-selection context; not authoritative records |
 | Account display preferences | PostgreSQL account state JSON | Watchlist metric-group order and Home sector-card order, isolated per account |
 | Worker refresh entries | Process memory | In-flight work, last successful value, TTL and retry state |
 | Store hot cache | Process memory | Up to 1,024 database cache entries, sixty-second hot lifetime |

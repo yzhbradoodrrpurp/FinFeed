@@ -1,5 +1,7 @@
 # Server Operations and Synchronization
 
+Reviewed on October 26, 2026 against deployment sources and a read-only check of the release marker, owned service PIDs, local health and scheduler markers. No credentials or account records were exported.
+
 Current host: `47.114.43.129`. Project root: `/mnt/data/users/shx/FinFeed`. Frontend hosting remains on Vercel. This runbook manages only FinFeed; do not restart or reconfigure unrelated host services.
 
 ## Filesystem layout
@@ -73,7 +75,7 @@ A safe release workflow is:
 4. Compare the staged snapshot and validate dependencies before replacing application files.
 5. Synchronize only `dashboard` application source into `app/dashboard`; preserve runtime cache paths explicitly. Never apply deletion to the entire project root.
 6. Install changed dependencies into `.venv`, run `pip check`, and retain the previous code/dependency snapshot for rollback.
-7. Restart the verified backend, then check private/public requests and real feature behavior.
+7. Restart the verified backend only when application code or runtime configuration requires a reload, then check private/public requests and real feature behavior. Documentation and README assets alone do not require a service restart. Record a documentation-only synchronization separately from the application release marker.
 
 For dependency installation, avoid the host's inherited package-manager configuration. Use process-local overrides, without changing global settings:
 
@@ -111,6 +113,10 @@ Application failure logs include UTC time, operation/source, request ID, status,
 6. For host replacement, stop the old deployment, fence writes, transfer the final verified data, and move the unique tunnel identity only after the previous daemon stops.
 
 A rollback must include records written after release/cutover. See [database operations](database-migration.md). Daily off-server backups and automatic host-boot recovery are not yet configured.
+
+## Documentation and product assets
+
+The root `README.md` is a product-facing overview. Keep architecture, repository layout, runtime endpoints and development verification in `AGENTS.md` and the linked technical runbooks. `dashboard/docs/assets/finfeed-overview.svg` is a conceptual feature illustration, not an authenticated screenshot or a source of market observations. It is repository documentation, not a new application asset or frontend build dependency.
 
 ## Tunnel health recovery
 

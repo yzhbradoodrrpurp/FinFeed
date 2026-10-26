@@ -1,5 +1,7 @@
 # PostgreSQL Storage, Updates, Backup, and Recovery
 
+Reviewed against storage and deployment source on October 26, 2026. The operational check confirmed the project database process and backup-marker presence; it did not run a fresh backup/restore verification.
+
 Production storage is a dedicated PostgreSQL 17.11 installation inside `/mnt/data/users/shx/FinFeed` on `47.114.43.129`. This document covers the current database and safe transfer procedures, not previous infrastructure.
 
 ## Cluster and access
@@ -35,6 +37,8 @@ The cluster uses data checksums with `fsync`, `full_page_writes`, and `synchrono
 | `notification_cursors` | Previously seen event state and baselines |
 | `notification_sources` | Source polling state and coordination |
 | `notification_outbox` | Durable delivery queue and status |
+
+Account display orders live inside account state JSON, not a separate preferences table. Market summaries from `/api/quotes` project existing cache rows without writing account records.
 
 These fifteen application tables include both user records and reusable market state. Counts change during normal saves, polling, and expiry cleanup; old row counts are not a permanent acceptance criterion.
 
@@ -77,7 +81,7 @@ snapshot(config['DATABASE_URL'], root / '.postgres/backups' / name)
 
 With `.private/postgresql-enabled`, the supervisor runs `database_backup.py`. It creates one consistent archive per UTC day, checks again every hour, retries failures on the next check, and atomically updates `.runtime/database-backup.json` after success. Archives, manifests, and logs are under `.postgres/backups`. There is no automatic deletion or off-server replication.
 
-The October 10 production backup was checked successfully. A separate final transfer archive and manifest were copied off-server and SHA-256 checked during deployment. This does not constitute a continuing off-server backup policy. Configure and test a separate encrypted off-server copy if protection against host/storage loss is required; monitor archive growth meanwhile.
+The historical October 10 production backup was checked successfully; that receipt is not verification of the newest daily archive. A separate final transfer archive and manifest were copied off-server and SHA-256 checked during deployment. This does not constitute a continuing off-server backup policy. Configure and test a separate encrypted off-server copy if protection against host/storage loss is required; monitor archive growth meanwhile.
 
 ## Restore and host/database transfer
 

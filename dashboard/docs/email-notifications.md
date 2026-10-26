@@ -1,5 +1,7 @@
 # Gmail Authorization and Notification Delivery
 
+Reviewed against notification, storage and Gmail transport sources on October 26, 2026.
+
 The account dialog owns recipient verification and category selection. The current server uses the Gmail HTTPS API with only `gmail.send` authorization; it does not require SMTP or a custom sender domain. Recipient accounts do not need Google OAuth authorization.
 
 ## OAuth setup and private configuration
@@ -49,7 +51,7 @@ Categories are per account: NFP, PCE, Treasury, institutions, and the user's own
 | NFP / PCE release time | Once when the planned time is reached, with a six-hour catch-up window; explicitly distinguishes planned release from retrieved data |
 | NFP / PCE data update | New complete observation period after a prior baseline; values, units, corresponding dates, retrieval time and source |
 | Ten-year Treasury | Successful daily yield crosses above/equal to or below the subscriber's threshold; prior/current values and dates, H.15/FRED links |
-| Institutional holdings | Newly observed reports/amendments for supported institutions; report period, filing/publication date and original SEC link |
+| Institutional holdings | Newly observed reports/amendments for the eighteen supported institutions, including Bridgewater and Mubadala; report period, filing/publication date and original SEC link |
 | Watchlist News | New earnings calls or SEC index entries for the recipient's own watchlist; titles, dates and original document links |
 
 The Treasury default is 5.1%, adjustable per account. First reads and changed thresholds establish baselines rather than sending an existing above-line state as a new crossing. This is daily-statistic monitoring, not intraday touching alerts. Institution and company first reads also establish baselines, avoiding historical floods. Calls follow the page's two-quarter window; SEC detection uses the full retrieved official submissions index, independently of the display window. SEC reminders deduplicate by EDGAR accession, so a switch between the primary document and an exhibit cannot create another alert. A fixed monitoring-start timestamp and subscription start times filter historical backfill, unknown dates, and future dates; Official SEC acceptance timestamps are used for precise eligibility; legacy day-level dates remain supported. First reads establish a baseline, and legacy cursors gain a timestamp without replaying older filings. The monitoring-start boundary does not advance on each poll: genuine disclosures published after monitoring began remain eligible if the provider indexes them late or a monitoring outage delays retrieval. Future or undated entries are not marked as seen until they have a valid publication date. Previously seen identifiers are retained.
@@ -87,7 +89,7 @@ Subjects begin with `FinFeed` for market events. Bodies identify planned release
 
 ## Operational acceptance and troubleshooting
 
-The current deployment has verified Gmail token refresh, prior real verification-code reception and binding, and automatic every-minute trigger acceptance. Every category has not yet been observed delivering a new production event; mock transport tests and HTTP 202 must not be reported as proof of those deliveries.
+The October 21 authorization recovery verified a valid sender token and seven recipient-inbox messages: six company News alerts and one Treasury threshold crossing. Verification-code reception/binding and scheduled trigger acceptance also have earlier receipts. These dated observations do not prove current authorization or delivery for every category. The October 26 check confirmed only that the local scheduler marker remained absent; it did not inspect cron-job.org execution history, refresh OAuth, or send mail. Mock transport tests and HTTP 202 must not be reported as proof of delivery.
 
 Authenticated `GET /api/notifications` provides the account's queue counts. A `sent` state means channel acceptance, not guaranteed delivery, reading, or absence from spam. Check authorization, proxy connectivity, source/calendar validity, event baseline, subscription state, and outbox status in that order. Respect Gmail account sending limits and do not repeatedly trigger real mail as a health probe.
 

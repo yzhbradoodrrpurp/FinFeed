@@ -20,6 +20,7 @@ Personal research and records belong in ignored `personal/`. Do not upload that 
 - Separate official facts, market expectations, and inference. Prediction-market prices are not official policy commitments; do not promise investment returns.
 - Respect provider licenses, rate limits, and SEC fair-access requirements. Keep successful snapshots when refreshes fail and label stale data.
 - Never commit or print API keys, cookies, OAuth credentials, proxy subscriptions, database passwords, account records, or backups.
+- Keep proxy subscription URLs/tokens, provider subscription domains, node names, node hostnames/IPs, ports and credentials in ignored private files only. Public runbooks may record generic connectivity checks and rollback procedures without node identifiers.
 - Never force-add ignored private files. Build and synchronize explicit application paths rather than the entire working tree.
 - Do not introduce authentication bypasses for testing or deployment.
 

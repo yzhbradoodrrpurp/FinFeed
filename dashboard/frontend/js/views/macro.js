@@ -170,10 +170,13 @@ window.FinFeedMacro=(()=>{
       const x=t=>12+(t-first)/(end-first||1)*896,y=p=>242-p*220;
       const lines=series.map((s,i)=>fedPoints(s,end).length?`<polyline points="${fedPoints(s,end).map(r=>`${x(r.t)},${y(r.p)}`).join(' ')}" fill="none" stroke="${fedColors[i%5]}" stroke-width="2" vector-effect="non-scaling-stroke"/>`:'').join('');
       const ticks=[0,.25,.5,.75,1].map(p=>`<line x1="12" x2="908" y1="${y(p)}" y2="${y(p)}" stroke="#e8e4df" stroke-dasharray="3 4"/><text x="920" y="${y(p)+4}" fill="#8a8177" font-size="12">${p*100}%</text>`).join('');
-      card.innerHTML=`<div class="macro-card-heading"><div><span class="eyebrow">POLYMARKET · 市场隐含预期</span><h2>美联储 10 月利率决议</h2></div><span class="macro-badge">${data.closed?'已结束':'每分钟更新'}</span></div>
-        <p class="macro-note">2026 年 10 月 27–28 日 FOMC 会议 · 联邦基金利率目标区间上限的变化</p>
+      const meeting=data.meeting;
+      const title=meeting?`美联储 ${Number(meeting.end.slice(5,7))} 月利率决议`:(data.title||'美联储利率决议');
+      const period=meeting?`${meeting.start} 至 ${meeting.end} FOMC 会议`:'会议日期见原始市场';
+      card.innerHTML=`<div class="macro-card-heading"><div><span class="eyebrow">POLYMARKET · 市场隐含预期</span><h2>${escape(title)}</h2></div><span class="macro-badge">${data.closed?'已结束':'每分钟更新'}</span></div>
+        <p class="macro-note">${escape(period)} · 联邦基金利率目标区间上限的变化</p>
         <div class="fed-legend">${series.map((s,i)=>`<span><i style="background:${fedColors[i%5]}"></i>${escape(s.label)} <strong>${number(s.price*100)}%</strong></span>`).join('')}</div>
-        ${rows.length?`<figure class="fed-chart"><svg viewBox="0 0 970 270" role="img" tabindex="0" aria-label="美联储10月利率决议各结果的Polymarket历史市场定价，可用左右方向键查看采样数值">${ticks}${lines}<g class="fed-crosshair" visibility="hidden" pointer-events="none"><line y1="22" y2="242"/>${series.map((s,i)=>`<circle r="4" fill="${fedColors[i%5]}"/>`).join('')}</g></svg><div class="fed-chart-tooltip" hidden></div><figcaption><span>${time(new Date(first*1000).toISOString(),'Asia/Shanghai')}</span><span>${time(data.retrieved_at,'Asia/Shanghai')} 北京</span></figcaption></figure>`:''}
+        ${rows.length?`<figure class="fed-chart"><svg viewBox="0 0 970 270" role="img" tabindex="0" aria-label="${escape(title)}各结果的Polymarket历史市场定价，可用左右方向键查看采样数值">${ticks}${lines}<g class="fed-crosshair" visibility="hidden" pointer-events="none"><line y1="22" y2="242"/>${series.map((s,i)=>`<circle r="4" fill="${fedColors[i%5]}"/>`).join('')}</g></svg><div class="fed-chart-tooltip" hidden></div><figcaption><span>${time(new Date(first*1000).toISOString(),'Asia/Shanghai')}</span><span>${time(data.retrieved_at,'Asia/Shanghai')} 北京</span></figcaption></figure>`:''}
         ${series.filter(s=>s.history_error).map(s=>`<p class="macro-error">${escape(s.label)}：${s.history?.length?'历史更新失败，保留上次曲线':'历史曲线暂不可用'}${s.history_retrieved_at?' · 历史检索于 '+time(s.history_retrieved_at,'Asia/Shanghai')+' 北京':''}</p>`).join('')}
         ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
         <p class="macro-note">市场价格近似反映隐含概率，受价差、费用和流动性影响；不是美联储承诺。报价每分钟检查，历史曲线按约 6 小时采样、每小时补全；最新端点随报价更新。</p>
@@ -189,7 +192,7 @@ window.FinFeedMacro=(()=>{
     if(!fedData){const saved=FinFeedCache.read('macro-fed',7*86400000);if(saved)renderFed(saved.data);}
     if(!force&&fedData?.series?.length&&Date.now()-Date.parse(fedData.retrieved_at)<60000){fedUpdated=Date.parse(fedData.retrieved_at);fedBusy=false;return;}
     if(fedData)notice(card,'缓存 · 正在更新，数据时间见下方');
-    if(!fedData)card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-note">正在获取市场定价…</p>';
+    if(!fedData)card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储利率决议</h2><p class="macro-note">正在获取市场定价…</p>';
     try{
       await FinFeedCache.market('/api/macro/fed?stream=1'+(force?'&refresh=1':''),data=>{
         if(!data.series?.length)return;
@@ -197,7 +200,7 @@ window.FinFeedMacro=(()=>{
         if(data.refreshing)notice(card,'缓存 · 正在更新，数据时间见下方');
       },{ttl:60000,staleTtl:7*86400000,refresh:force,validate:data=>!!data.series?.length&&!data.stale});
       fedUpdated=Date.now();
-    }catch{if(fedData)notice(card,'旧数据 · 本次更新失败，数据时间见下方');else card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储 10 月利率决议</h2><p class="macro-error">数据暂不可用，请稍后刷新</p>';}
+    }catch{if(fedData)notice(card,'旧数据 · 本次更新失败，数据时间见下方');else card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储利率决议</h2><p class="macro-error">数据暂不可用，请稍后刷新</p>';}
     finally{fedBusy=false;}
   }
   async function refresh(force=false){
@@ -221,7 +224,7 @@ window.FinFeedMacro=(()=>{
   }
   document.getElementById('macro-refresh').addEventListener('click',()=>{refresh(true);refreshFed(true);});
   setInterval(()=>{if(started)refresh(true);},3600000);
-  setInterval(()=>{if(started)refreshFed(true);},3600000);
-  document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=3600000)refreshFed(true);}});
-  return {chart,bindChart,open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=3600000)refreshFed(true);}};
+  setInterval(()=>{if(started&&!document.hidden)refreshFed(true);},60000);
+  document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=60000)refreshFed(true);}});
+  return {chart,bindChart,open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=60000)refreshFed(true);}};
 })();

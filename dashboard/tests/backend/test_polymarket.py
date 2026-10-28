@@ -8,6 +8,9 @@ class PolymarketCases(unittest.TestCase):
         p._history_retry.clear()
         p._expires = 0
         p._value = None
+        self.selector = patch('backend.providers.fed_market.select_event', side_effect=lambda get, store: ({**get('events/slug/test'), 'slug': p.SLUG}, {'start':'2026-10-27','end':'2026-10-28'}))
+        self.selector.start()
+        self.addCleanup(self.selector.stop)
 
     def test_yes_token_is_selected_by_outcome_not_position(self):
         event={'startDate':'2026-10-01T00:00:00Z','title':'Fed', 'markets':[{
@@ -51,8 +54,8 @@ class PolymarketCases(unittest.TestCase):
             p._history.clear()
             with patch.object(p, 'get', side_effect=AssertionError('Fresh cache must avoid network')):
                 self.assertEqual(p.history('yes-token',0,86400,store),[{'t':1,'p':.5}])
-            cached = p._history['yes-token']
-            p._history['yes-token'] = (0,cached[1],cached[2])
+            cached = p._history[(p.SLUG, 'yes-token')]
+            p._history[(p.SLUG, 'yes-token')] = (0,cached[1],cached[2])
             event={'startDate':'2026-10-01T00:00:00Z','title':'Fed','markets':[{
                 'question':'Fed?', 'groupItemTitle':'No change','outcomes':'["Yes","No"]',
                 'outcomePrices':'["0.8","0.2"]','clobTokenIds':'["yes-token","no-token"]'}]}
@@ -83,11 +86,11 @@ class PolymarketCases(unittest.TestCase):
         self.assertEqual(calls,{0:2,14*86400:1})
 
     def test_empty_response_cannot_replace_successful_history(self):
-        p._history['token']=(0,[{'t':1,'p':.5}],'2026-10-01T00:00:00Z')
+        p._history[(p.SLUG, 'token')]=(0,[{'t':1,'p':.5}],'2026-10-01T00:00:00Z')
         with patch.object(p,'get',return_value={'history':[]}):
             with self.assertRaises(ValueError):
                 p.history('token',0,86400)
-        self.assertEqual(p._history['token'][1],[{'t':1,'p':.5}])
+        self.assertEqual(p._history[(p.SLUG, 'token')][1],[{'t':1,'p':.5}])
 
     def test_saved_snapshot_published_before_refresh_starts(self):
         from unittest.mock import Mock
@@ -106,4 +109,20 @@ class PolymarketCases(unittest.TestCase):
         self.assertTrue(final['stale'])
         self.assertEqual(final['series'],cached['series'])
 
-if __name__=='__main__':unittest.main()
+
+    def test_rollover_failure_keeps_old_event_and_retry_can_switch(self):
+        old={'slug':'october','series':[{'history':[{'t':1,'p':.5}]}],'retrieved_at':'old'}
+        p._value=old
+        with patch.object(p,'load',return_value={'slug':'december','series':[{'history':[]}]}):
+            self.assertEqual(p.snapshot()['slug'],'october')
+            self.assertEqual(p._value['retrieved_at'],'old')
+        p._expires=0
+        with patch.object(p,'load',return_value={'slug':'december','series':[{'history':[{'t':2,'p':.6}]}]}):
+            self.assertEqual(p.snapshot()['slug'],'december')
+
+    def test_history_same_token_isolated_by_meeting(self):
+        with patch.object(p,'get',return_value={'history':[{'t':1,'p':.5}]}):
+            p.history('same',0,86400,slug='october')
+        with patch.object(p,'get',return_value={'history':[{'t':1,'p':.8}]}):
+            self.assertEqual(p.history('same',0,86400,slug='december')[0]['p'],.8)
+        self.assertEqual(p._history[('october','same')][1][0]['p'],.5)

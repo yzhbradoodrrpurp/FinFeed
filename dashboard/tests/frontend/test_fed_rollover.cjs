@@ -1,0 +1,14 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync(__dirname+'/../../frontend/js/views/macro.js','utf8');
+const code=source.slice(source.indexOf('  function renderFed('),source.indexOf('  async function refreshFed('));
+const card={innerHTML:''};
+const context={document:{getElementById:()=>card},Date,Number,Math,escape:s=>String(s??'').replaceAll('<','&lt;'),number:String,time:String,fedColors:['blue'],fedPoints:()=>[],bindFedChart:()=>{}};
+vm.createContext(context);vm.runInContext(code+'\nthis.render=renderFed;',context);
+context.render({meeting:{start:'2026-12-08',end:'2026-12-09'},retrieved_at:'2026-10-28T00:00:00Z',series:[],source:'https://polymarket.com/zh/event/december'});
+assert(card.innerHTML.includes('美联储 12 月利率决议'));
+assert(card.innerHTML.includes('2026-12-08 至 2026-12-09'));
+assert(!card.innerHTML.includes('10 月'));
+context.render({title:'Fed Decision in October?',retrieved_at:'2026-10-28T00:00:00Z',series:[]});
+assert(card.innerHTML.includes('Fed Decision in October?'));
+assert(card.innerHTML.includes('会议日期见原始市场'));
+console.log('PASS: Fed title and dates follow event metadata; legacy snapshots keep their own title');

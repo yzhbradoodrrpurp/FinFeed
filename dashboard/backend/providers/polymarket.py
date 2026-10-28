@@ -22,14 +22,14 @@ _history_retry = {}
 _requests = threading.BoundedSemaphore(4)
 
 
-def get(url, **params):
+def get(url, _text=False, **params):
     started = time.monotonic()
     try:
         options = {'proxy': os.environ['POLYMARKET_PROXY_URL']} if os.environ.get('POLYMARKET_PROXY_URL') else {}
         with _requests:
             response = requests.get(url, params=params, impersonate='chrome', timeout=15, **options)
         response.raise_for_status()
-        return response.json()
+        return response.text if _text else response.json()
     except Exception as exc:
         from urllib.parse import urlsplit
         target = urlsplit(url)
@@ -59,22 +59,23 @@ def cache_write(store, key, value):
         failure('database', 'polymarket_cache_write', error=exc)
 
 
-def history_key(token):
-    return 'polymarket:history:v1:' + SLUG + ':' + token
+def history_key(token, slug=SLUG):
+    return 'polymarket:history:v1:' + slug + ':' + token
 
 
-def history(token, start, end, store=None):
-    cached = _history.get(token)
+def history(token, start, end, store=None, slug=SLUG):
+    key = (slug, token)
+    cached = _history.get(key)
     if cached is None:
-        saved = cache_read(store, history_key(token))
+        saved = cache_read(store, history_key(token, slug))
         if saved and saved[0].get('history'):
             value, updated = saved
             cached = (time.monotonic() + max(0, 3600-(time.time()-updated)),
                       value['history'], value['retrieved_at'])
-            _history[token] = cached
+            _history[key] = cached
     if cached and time.monotonic() < cached[0]:
         return cached[1]
-    if time.monotonic() < _history_retry.get(token, 0):
+    if time.monotonic() < _history_retry.get(key, 0):
         raise RuntimeError('History refresh cooling down')
     # The API limits explicit time ranges. Fetch non-overlapping fortnight windows.
     windows = [(left, min(left + 14*86400, end)) for left in range(start, end, 14*86400)]
@@ -97,41 +98,45 @@ def history(token, start, end, store=None):
         if not rows:
             raise ValueError('Empty history response')
     except Exception:
-        _history_retry[token] = time.monotonic()+60
+        _history_retry[key] = time.monotonic()+60
         raise
     retrieved = datetime.now(timezone.utc).isoformat()
-    _history[token] = (time.monotonic()+3600, rows, retrieved)
-    _history_retry.pop(token, None)
-    cache_write(store, history_key(token), {'history': rows, 'retrieved_at': retrieved})
+    _history[key] = (time.monotonic()+3600, rows, retrieved)
+    _history_retry.pop(key, None)
+    cache_write(store, history_key(token, slug), {'history': rows, 'retrieved_at': retrieved})
     return rows
 
 
 def load(store=None):
-    event = get('https://gamma-api.polymarket.com/events/slug/' + SLUG)
+    from backend.providers.fed_market import select_event
+    event, meeting = select_event(get, store)
+    slug = event['slug']
     now = datetime.now(timezone.utc)
     start = int(datetime.fromisoformat(event['startDate'].replace('Z', '+00:00')).timestamp())
     def market(m):
         outcomes = json.loads(m['outcomes'])
         yes = outcomes.index('Yes')
         token = json.loads(m['clobTokenIds'])[yes]
+        key = (slug, token)
         result = {'label': LABELS.get(m.get('groupItemTitle'), m['question']),
                   'price': valid_price(json.loads(m['outcomePrices'])[yes]),
                   'token': token, 'history': [], 'history_error': False}
         try:
-            result['history'] = history(token, start, int(now.timestamp()), store)
+            result['history'] = history(token, start, int(now.timestamp()), store, slug)
         except Exception as exc:
             failure('polymarket', 'history', reason=result['label'], error=exc)
             result['history_error'] = True
-            cached = _history.get(token)
+            cached = _history.get(key)
             if cached:
                 result['history'] = cached[1]
-        cached = _history.get(token)
+        cached = _history.get(key)
         result['history_retrieved_at'] = cached[2] if cached else None
         return result
     markets = sorted(event['markets'], key=lambda m: list(LABELS).index(m['groupItemTitle']) if m.get('groupItemTitle') in LABELS else 99)
     with ThreadPoolExecutor(max_workers=5) as pool:
         series = list(pool.map(market, markets))
-    return {'title': event['title'], 'source': SOURCE, 'retrieved_at': now.isoformat(),
+    return {'title': event['title'], 'slug': slug, 'meeting': meeting,
+            'source': 'https://polymarket.com/zh/event/' + slug, 'retrieved_at': now.isoformat(),
             'closed': event.get('closed', False), 'volume': event.get('volume'),
             'liquidity': event.get('liquidity'), 'rules': markets[0].get('description', ''),
             'series': series, 'errors': []}
@@ -143,18 +148,25 @@ def snapshot(store=None, on_update=None):
         if _value is not None and time.monotonic() < _expires:
             return _value
         if _value is None:
-            saved = cache_read(store, 'polymarket:event:v1:' + SLUG)
+            saved = (cache_read(store, 'polymarket:current:v2')
+                     or cache_read(store, 'polymarket:event:v1:' + SLUG))
             if saved:
                 _value = saved[0]
         if on_update and _value and _value.get('series'):
             on_update({**_value, 'cached': True, 'refreshing': True})
         try:
-            _value = load(store) if store else load()
-            cache_write(store, 'polymarket:event:v1:' + SLUG, _value)
+            fresh = load(store) if store else load()
+            old_slug = (_value or {}).get('slug', SLUG)
+            if _value and fresh.get('slug', SLUG) != old_slug and any(
+                    not item.get('history') for item in fresh.get('series', [])):
+                raise ValueError('Next meeting history not ready')
+            _value = fresh
+            cache_write(store, 'polymarket:event:v1:' + _value.get('slug', SLUG), _value)
+            cache_write(store, 'polymarket:current:v2', _value)
         except Exception as exc:
             failure('polymarket', 'event_snapshot', error=exc)
             _value = {**(_value or {'series': [], 'source': SOURCE}),
                       'stale': True,
-                      'errors': ['Polymarket 更新失败，保留上次数据，时间见下方']}
+                      'errors': ['Polymarket 市场或日程更新失败，保留上次会议数据，时间见下方']}
         _expires = time.monotonic()+60
         return _value

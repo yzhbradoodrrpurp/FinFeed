@@ -98,7 +98,7 @@ window.FinFeedMacro=(()=>{
     const card=document.getElementById(`macro-${id}`);card.setAttribute('aria-busy','false');
     const metrics=data.metrics||[];
     card.innerHTML=`<div class="macro-card-heading"><div><span class="eyebrow">${names[id][0]}</span><h2>${names[id][1]}</h2></div><span class="macro-badge">${id==='jobs'||id==='pce'?'月度发布':'日度数据'}</span></div>
-      <div class="macro-metrics">${metrics.map(m=>`<div><span>${escape(m.label)}</span>${metricValue(id,m)}${id==='treasury'?`<span class="macro-warning ${m.latest&&m.latest.value>=5.1?'is-triggered':''}">${m.latest&&m.latest.value>=5.1?'已达到 5.1% 预警线':'预警线 5.1%'}</span>`:''}<p>前值 ${m.previous?number(m.previous.value):'—'}${escape(m.unit)} · ${id==='pce'?`上次发布 ${data.previous_release?time(data.previous_release,'Asia/Shanghai').split(' ')[0]:'未提供'}`:escape(m.latest?.date||'暂无数据')}</p></div>`).join('')||'<p class="macro-empty">— 暂无数据</p>'}</div>
+      <div class="macro-metrics">${metrics.map(m=>`<div><span>${escape(m.label)}</span>${metricValue(id,m)}${id==='treasury'?`<span class="macro-warning ${m.latest&&m.latest.value>=5.1?'is-triggered':''}">${m.latest&&m.latest.value>=5.1?'已达到 5.1% 预警线':'预警线 5.1%'}</span>`:''}<p>前值 ${m.previous?number(m.previous.value):'—'}${escape(m.unit)}${id==='jobs'||id==='pce'?'':` · ${escape(m.latest?.date||'暂无数据')}`}</p></div>`).join('')||'<p class="macro-empty">— 暂无数据</p>'}</div>
       ${metrics[0]&&(id==='dxy'||id==='treasury')?chart(metrics[0],id==='treasury'?5.1:null):''}
       ${id==='jobs'||id==='pce'?`<div class="macro-release"><div><span>本次发布时间</span><p>${times(data.last_release)}</p></div><div><span>下次发布时间</span><p>${times(data.next_release)}</p></div></div>`:''}
       <p class="macro-note">${escape((data.note||'').replace('5.05%','5.1%'))}</p>

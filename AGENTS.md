@@ -41,7 +41,7 @@ The root [README](README.md) is a public feature overview. Keep it focused on us
 
 ## Architecture and production reference
 
-Reviewed against repository source and a read-only service check on October 26, 2026 (Asia/Shanghai). This is a configuration reference, not a continuous health guarantee.
+Configuration reviewed against repository source and October 29, 2026 deployment checks (Asia/Shanghai). This is a configuration reference, not a continuous health guarantee.
 
 | Component | Current implementation |
 | --- | --- |

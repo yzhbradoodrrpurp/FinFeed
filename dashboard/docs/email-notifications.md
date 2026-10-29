@@ -101,7 +101,7 @@ Before activating the official SEC provider, coordinate a restart of only the ve
 
 ### Recovery after automatic scheduler disablement
 
-Check local backend health, public Funnel health and the scheduler execution history separately. Proxy upstream failure can interrupt tunnel connectivity even while Flask is healthy. The project proxy now routes Tailscale control and DERP domains directly; supplier and Gmail traffic retain the configured proxy. After connectivity recovers, test the existing authenticated POST for HTTP 202, re-enable the same cron-job.org job, and verify subsequent scheduled executions succeed. HTTP 202 proves trigger acceptance, not email delivery. Preserve notification baselines, cursors, seen accessions and outbox history; never reset them to recover connectivity. Validate Gmail token refresh without sending a test alert.
+Check local backend health, public Funnel health and the scheduler execution history separately. Proxy upstream failure can interrupt tunnel connectivity even while Flask is healthy. The project proxy routes matching Tailscale domains directly, but the tunnel process still depends on the local proxy entry point and unmatched routes may use upstream egress. This does not establish complete proxy isolation; supplier and Gmail traffic retain their configured routes. After connectivity recovers, test the existing authenticated POST for HTTP 202, re-enable the same cron-job.org job, and verify subsequent scheduled executions succeed. HTTP 202 proves trigger acceptance, not email delivery. Preserve notification baselines, cursors, seen accessions and outbox history; never reset them to recover connectivity. Validate Gmail token refresh without sending a test alert.
 
 ### Active authorization recovery
 

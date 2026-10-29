@@ -12,7 +12,7 @@
 | PostgreSQL listener | `127.0.0.1:18766`, database `finfeed`, TLS required |
 | Proxy listener | `127.0.0.1:17890` |
 
-Reviewed on October 26, 2026 against the repository and a read-only project-service check. The server release marker identifies the October 23 category update (`de79594`); it lists that update's files, not an exhaustive hash of every deployed file. Use [server operations](server-deployment.md) for synchronization and restart, and [database operations](database-migration.md) for recovery.
+Market-cache changes were deployed on October 29, 2026 (`42850f3`); manual refresh controls were removed in frontend release `a3f5089`. Backend application restarts and frontend/static-file synchronization are separate operations, so a backend release marker is not an exhaustive frontend deployment hash. Use [server operations](server-deployment.md) for synchronization and restart, and [database operations](database-migration.md) for recovery. Dated deployment checks do not guarantee continuous tunnel, provider or email availability.
 
 ## Frontend publishing
 

@@ -49,6 +49,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         DATABASE_URL=os.environ.get("DATABASE_URL", ""),
         MAX_CONTENT_LENGTH=65536,
     )
+    app.config['SERVER_MARKET_REFRESH'] = os.environ.get('FINFEED_MARKET_REFRESH') == '1'
     app.config.update(config or {})
     origin = app.config["PUBLIC_ORIGIN"].rstrip("/")
     parsed = urlsplit(origin)
@@ -680,7 +681,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
                 if symbol not in {'^GSPC', '^IXIC', '^DJI'}:
                     raise ValueError('未知指数')
                 return refresh_jobs.response('home:' + symbol, lambda publish: index_snapshot(symbol),
-                    60, lambda value: value.get('index', {}).get('price') is not None,
+                    3600, lambda value: value.get('index', {}).get('price') is not None,
                     stream=request.args.get('stream') == '1')
             except ValueError as error:
                 return jsonify(error=str(error)), 400
@@ -693,7 +694,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if symbol not in {item[0] for item in SECTORS}:
             return jsonify(error='未知板块 ETF'), 400
         return refresh_jobs.response('sector:3y:' + symbol, lambda publish: sector_snapshot(symbol, database, publish),
-            60, lambda value: value.get('sector', {}).get('price') is not None
+            3600, lambda value: value.get('sector', {}).get('price') is not None
                 and not value.get('sector', {}).get('error'),
             stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
 
@@ -702,7 +703,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if kind == "fed":
             from backend.providers.polymarket import snapshot as fed_snapshot
             return refresh_jobs.response('macro:fed', lambda publish: fed_snapshot(database, on_update=publish),
-                60, lambda value: bool(value.get('series')) and not value.get('stale'),
+                3600, lambda value: bool(value.get('series')) and not value.get('stale'),
                 stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1')
         from backend.services.macro import snapshot
         refresh = request.args.get('refresh') == '1'
@@ -785,4 +786,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     if os.environ.get("FINFEED_TUNNEL_WATCHDOG") == "1":
         from deployment.h20.tunnel_watchdog import start
         start()
+    if app.config['SERVER_MARKET_REFRESH'] and not app.testing:
+        from backend.services.market_schedule import start as start_markets
+        start_markets(database, refresh_jobs, os.environ['FINFEED_H20_ROOT'])
     return app

@@ -78,8 +78,8 @@ class LongbridgeCases(unittest.TestCase):
             with patch.object(lb,'contexts',return_value=(None,None)),patch.object(lb,'_cached',side_effect=cached):
                 lb.market_snapshot('QA',None,'EQUITY',True,financial_refresh=manual)
             self.assertEqual(seen['quote'],(60,True))
-            self.assertEqual(seen['consensus'],(300,manual))
-            self.assertEqual(seen['financial'],(300,manual))
+            self.assertEqual(seen['consensus'],(60,manual))
+            self.assertEqual(seen['financial'],(3600,manual))
 
     def test_yahoo_failure_does_not_restore_intentionally_unavailable_forward_pe(self):
         from unittest.mock import MagicMock

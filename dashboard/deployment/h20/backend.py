@@ -12,6 +12,7 @@ os.environ.update(json.loads((root / '.private/backend.json').read_text()))
 os.environ['YAHOO_PROXY_URL'] = 'http://127.0.0.1:17890'
 os.environ['FINFEED_H20_ROOT'] = str(root)
 os.environ['FINFEED_TUNNEL_WATCHDOG'] = '1'
+os.environ['FINFEED_MARKET_REFRESH'] = '1'
 os.environ['PYTHONPATH'] = str(root / 'app/dashboard')
 os.chdir(root / 'app/dashboard')
 os.execv(sys.executable, [sys.executable, str(root / 'app/dashboard/deployment/worker.py'),

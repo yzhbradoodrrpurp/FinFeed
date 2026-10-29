@@ -173,13 +173,13 @@ window.FinFeedMacro=(()=>{
       const meeting=data.meeting;
       const title=meeting?`美联储 ${Number(meeting.end.slice(5,7))} 月利率决议`:(data.title||'美联储利率决议');
       const period=meeting?`${meeting.start} 至 ${meeting.end} FOMC 会议`:'会议日期见原始市场';
-      card.innerHTML=`<div class="macro-card-heading"><div><span class="eyebrow">POLYMARKET · 市场隐含预期</span><h2>${escape(title)}</h2></div><span class="macro-badge">${data.closed?'已结束':'每分钟更新'}</span></div>
+      card.innerHTML=`<div class="macro-card-heading"><div><span class="eyebrow">POLYMARKET · 市场隐含预期</span><h2>${escape(title)}</h2></div><span class="macro-badge">${data.closed?'已结束':'每小时更新'}</span></div>
         <p class="macro-note">${escape(period)} · 联邦基金利率目标区间上限的变化</p>
         <div class="fed-legend">${series.map((s,i)=>`<span><i style="background:${fedColors[i%5]}"></i>${escape(s.label)} <strong>${number(s.price*100)}%</strong></span>`).join('')}</div>
         ${rows.length?`<figure class="fed-chart"><svg viewBox="0 0 970 270" role="img" tabindex="0" aria-label="${escape(title)}各结果的Polymarket历史市场定价，可用左右方向键查看采样数值">${ticks}${lines}<g class="fed-crosshair" visibility="hidden" pointer-events="none"><line y1="22" y2="242"/>${series.map((s,i)=>`<circle r="4" fill="${fedColors[i%5]}"/>`).join('')}</g></svg><div class="fed-chart-tooltip" hidden></div><figcaption><span>${time(new Date(first*1000).toISOString(),'Asia/Shanghai')}</span><span>${time(data.retrieved_at,'Asia/Shanghai')} 北京</span></figcaption></figure>`:''}
         ${series.filter(s=>s.history_error).map(s=>`<p class="macro-error">${escape(s.label)}：${s.history?.length?'历史更新失败，保留上次曲线':'历史曲线暂不可用'}${s.history_retrieved_at?' · 历史检索于 '+time(s.history_retrieved_at,'Asia/Shanghai')+' 北京':''}</p>`).join('')}
         ${(data.errors||[]).map(e=>`<p class="macro-error">${escape(e)}</p>`).join('')}
-        <p class="macro-note">市场价格近似反映隐含概率，受价差、费用和流动性影响；不是美联储承诺。报价每分钟检查，历史曲线按约 6 小时采样、每小时补全；最新端点随报价更新。</p>
+        <p class="macro-note">市场价格近似反映隐含概率，受价差、费用和流动性影响；不是美联储承诺。报价每小时检查，历史曲线按约 6 小时采样、每小时补全；最新端点随报价更新。</p>
         <p class="macro-note">累计成交额 $${data.volume==null?'—':number(data.volume)} · 流动性 $${data.liquidity==null?'—':number(data.liquidity)}</p>
         <div class="macro-sources"><a href="${escape(data.source)}" target="_blank" rel="noreferrer">Polymarket 原始市场 ↗</a><a href="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" target="_blank" rel="noreferrer">FOMC 官方日历 ↗</a></div>
         ${data.rules?`<details class="fed-rules"><summary>结算规则（原文）</summary><p>${escape(data.rules)}</p></details>`:''}
@@ -224,7 +224,7 @@ window.FinFeedMacro=(()=>{
   }
   document.getElementById('macro-refresh').addEventListener('click',()=>{refresh(true);refreshFed(true);});
   setInterval(()=>{if(started)refresh(true);},3600000);
-  setInterval(()=>{if(started&&!document.hidden)refreshFed(true);},60000);
+  setInterval(()=>{if(started&&!document.hidden)refreshFed(true);},3600000);
   document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=60000)refreshFed(true);}});
   return {chart,bindChart,open(){if(!started){started=true;refresh();}else if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=60000)refreshFed(true);}};
 })();

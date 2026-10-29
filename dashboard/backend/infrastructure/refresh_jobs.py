@@ -39,7 +39,7 @@ class RefreshJobs:
                         name=f'refresh-{lane}-{index}').start()
             self.queues[lane].put(work)
 
-    def events(self, key, loader, ttl, valid, persist=True, force=False):
+    def events(self, key, loader, ttl, valid, persist=True, force=False, enqueue_only=False):
         started = time.monotonic()
         with self.guard:
             if key not in self.entries and len(self.entries) >= 1024:
@@ -94,6 +94,11 @@ class RefreshJobs:
                                 elif entry['value'] is not None:
                                     value = {**entry['value'], 'stale': True,
                                         'errors': value.get('errors') or ['本次刷新失败，保留成功缓存']}
+                        try:
+                            cache_key = 'market:v1:' + key if persist else 'quote:' + key.split(':', 1)[1]
+                            self.store.set_cache('refresh-status:' + cache_key, {'failed': not successful})
+                        except Exception:
+                            pass
                         publish(value)
                         if successful and persist:
                             try:
@@ -105,6 +110,11 @@ class RefreshJobs:
                         with condition:
                             entry['failures'] += 1
                             entry['retry'] = time.monotonic() + min(900, 60 * 2 ** min(entry['failures'] - 1, 4))
+                        try:
+                            cache_key = 'market:v1:' + key if persist else 'quote:' + key.split(':', 1)[1]
+                            self.store.set_cache('refresh-status:' + cache_key, {'failed': True})
+                        except Exception:
+                            pass
                         publish({**(entry['value'] or {}), 'stale': True, 'errors': ['数据刷新失败，保留成功缓存']})
                     finally:
                         with condition:
@@ -117,6 +127,8 @@ class RefreshJobs:
             if initial is None and entry.get('latest') is not None:
                 initial = deepcopy(entry['latest'])
             running = entry['running']
+        if enqueue_only:
+            return
         if initial is not None:
             initial = {**initial, 'cached': True, 'stale': not fresh, 'refreshing': running}
             yield initial
@@ -139,7 +151,20 @@ class RefreshJobs:
         if initial is None:
             yield {'errors': ['数据暂不可用，稍后重试'], 'stale': True}
 
+    def kick(self, key, loader, ttl, valid, persist=True):
+        # Starting the iterator schedules shared work; never wait in the timer.
+        events = self.events(key, loader, ttl, valid, persist, force=False, enqueue_only=True)
+        try:
+            next(events, None)
+        finally:
+            events.close()
+
     def response(self, key, loader, ttl, valid, persist=True, stream=False, force=False, present=None):
+        from flask import request, current_app
+        if current_app.config.get('SERVER_MARKET_REFRESH') or request.args.get('cache') == 'only':
+            from backend.infrastructure.snapshot_read import response
+            cache_key = 'market:v1:' + key if persist else 'quote:' + key.split(':', 1)[1]
+            return response(self.store, cache_key, ttl, present)
         events = self.events(key, loader, ttl, valid, persist, force)
         if present is not None:
             events = map(present, events)

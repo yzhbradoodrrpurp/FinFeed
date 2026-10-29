@@ -74,7 +74,7 @@ window.FinFeedAuth = (() => {
     };
     // Stream readers have their own full-body deadline in FinFeedCache.market.
     if(!readJSON||response.headers?.get('content-type')?.includes('ndjson'))finish();
-    if(!response.ok)reportFailure(url, options, 'http_error', response.status, started, requestId);
+    if(!response.ok&&response.status!==304)reportFailure(url, options, 'http_error', response.status, started, requestId);
     if(response.status===401 && !url.startsWith("/api/auth/")) {
       finish();throw redirectToLogin();
     }

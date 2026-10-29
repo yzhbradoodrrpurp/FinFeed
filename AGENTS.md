@@ -52,6 +52,7 @@ Reviewed against repository source and a read-only service check on October 26, 
 | Database | Project-owned PostgreSQL 17.11, loopback TLS, `finfeed_private` schema |
 | Outbound connectivity | Project-only Mihomo proxy with explicit provider routing |
 | Email | Gmail HTTPS API with send-only OAuth authorization |
+| Market scheduling | One lock-protected backend thread: minute quotes/valuation; hourly financials and other views |
 | Alert scheduling | External cron-job.org POST every minute; optional local scheduler remains disabled |
 | Process management | Project Python supervisor, independent of interactive SSH sessions |
 

@@ -24,7 +24,7 @@ _fundamental_last = 0.0
 _block_guard = threading.Lock()
 _block_locks: dict[str, threading.Lock] = {}
 _block_retry: dict[str, float] = {}
-FUNDAMENTAL_TTL = 300
+FUNDAMENTAL_TTL = 3600
 
 
 def _fundamental_call(action: Any) -> Any:
@@ -270,7 +270,7 @@ def normalize(symbol: str, blocks: dict, fetched_at: str, quote_type: str) -> di
 
 
 def market_snapshot(symbol: str, store: Any, quote_type: str, force: bool = False,
-                    on_quote: Any = None, financial_refresh: bool | None = None) -> dict:
+                    on_quote: Any = None, financial_refresh: bool | None = None, quarterly_cache_only: bool = False) -> dict:
     """Fetch only market/EPS blocks; never requests orders or trading endpoints."""
     if not re.fullmatch(r'[A-Z0-9][A-Z0-9.\-]{0,19}', symbol):
         raise ValueError('Unsupported Longbridge US symbol')
@@ -294,7 +294,7 @@ def market_snapshot(symbol: str, store: Any, quote_type: str, force: bool = Fals
     ]
     if quote_type != 'ETF':
         requests += [('financial', lambda: _plain(_fundamental_call(lambda: fctx.financial_report(code, FinancialReportKind.All, FinancialReportPeriod.QuarterlyFull))), FUNDAMENTAL_TTL),
-                     ('consensus', lambda: _plain(_fundamental_call(lambda: fctx.consensus(code))), FUNDAMENTAL_TTL)]
+                     ('consensus', lambda: _plain(_fundamental_call(lambda: fctx.consensus(code))), 60)]
     blocks = {}
     errors = []
     for name, action, ttl in requests:
@@ -302,7 +302,13 @@ def market_snapshot(symbol: str, store: Any, quote_type: str, force: bool = Fals
             block_force = force
             if name in ('financial', 'consensus') and financial_refresh is not None:
                 block_force = financial_refresh
-            blocks[name] = _cached(symbol, name, action, store, ttl, block_force)
+            if name == 'financial' and quarterly_cache_only:
+                saved = store.get_cache(f'longbridge:v{VERSION}:{name}:{symbol}') if store else None
+                if not saved:
+                    raise ValueError('Quarterly cache warming')
+                blocks[name] = {**saved[0], 'stale': time.time()-saved[1] > 7200}
+            else:
+                blocks[name] = _cached(symbol, name, action, store, ttl, block_force)
         except Exception as exc:
             if name in ('static', 'quote'):
                 raise

@@ -1,19 +1,19 @@
 # FinFeed Application Guide
 
-Reviewed against application source on October 26, 2026 (Asia/Shanghai). This document describes current behavior; operational details are in [the technical documentation](docs/architecture.md). Documentation is English; the application interface and alert bodies currently remain primarily Chinese.
+Reviewed against application source on October 29, 2026 (Asia/Shanghai). This document describes current behavior; operational details are in [the technical documentation](docs/architecture.md). Documentation is English; the application interface and alert bodies currently remain primarily Chinese.
 
 ## Views and refresh behavior
 
 | View | Content | Normal browser polling |
 | --- | --- | --- |
-| Home | S&P 500, Nasdaq Composite, Dow Jones, eleven sector ETFs | Every minute |
-| Watchlist / Portfolio | Quotes, financial statements, quarterly forecasts, valuation | Minute quotes; five-minute statements and EPS/forecasts |
+| Home | S&P 500, Nasdaq Composite, Dow Jones, eleven sector ETFs | Every hour |
+| Watchlist / Portfolio | Quotes, financial statements, quarterly forecasts, valuation | Minute quotes/valuation; hourly statements on the backend |
 | Macro | NFP, PCE, DXY, ten-year Treasury yields | Every hour |
-| Polymarket | Meeting-specific outcome prices and history | Hourly while the view is initialized; also on entry/focus when its snapshot is at least one minute old |
+| Polymarket | Meeting-specific outcome prices and history | Hourly backend refresh; entry/focus reads cached snapshots |
 | Whale Holdings | Supported institutions' SEC 13F reports | Every hour |
 | News | Company earnings calls and SEC filing indexes | Every hour |
 
-Background tabs can be throttled; due requests resume when the browser returns. Email monitoring is independent of open pages. Polling frequency is not upstream publication frequency.
+The backend updates independently of open pages. Browser polling only reads snapshots, with content-version checks returning no body for unchanged data. Complete public market snapshots persist in IndexedDB and appear before network updates after authorization. Background tabs can be throttled; due reads resume when the browser returns. Email monitoring is independent of open pages. Polling frequency is not upstream publication frequency.
 
 ## Accounts and access
 
@@ -71,7 +71,7 @@ Home sector symbols are XLC, XLY, XLP, XLE, XLF, XLV, XLI, XLK, XLB, XLRE, and X
 
 NFP employment changes are derived from monthly PAYEMS levels. PCE monthly and annual growth are derived from price indexes. The previous observation reflects current revisions; pre-release consensus and original unrevised vintages are not supplied. DXY is Yahoo `DX-Y.NYB`, not a broad trade-weighted dollar index. DGS10 is H.15 daily constant-maturity yield, not an intraday bond quote. The application default observation line is 5.1%; each email subscriber can set their own threshold.
 
-Polymarket has a one-minute server quote-cache TTL; the visible Macro view checks every minute and selects the next verified FOMC meeting automatically. History is supplemented hourly, and failed updates preserve successful outcome curves with their original timestamps. Polymarket prices describe a specific contract and meeting, not an official commitment or QE forecast. Institution comparisons use quarterly 13F holdings, not trade times or a complete fund portfolio. The current registry contains nineteen institutions in Long-term Value, Technology and Growth, Quantitative Funds, and Sovereign Wealth categories; Trian appears under Long-term Value, Bridgewater under Quantitative Funds and Mubadala under Sovereign Wealth. News contains indexes and original links, not stored article bodies.
+Polymarket refreshes hourly on the backend; the Macro view reads the cached snapshot and selects the next verified FOMC meeting automatically. History is supplemented hourly, and failed updates preserve successful outcome curves with their original timestamps. Polymarket prices describe a specific contract and meeting, not an official commitment or QE forecast. Institution comparisons use quarterly 13F holdings, not trade times or a complete fund portfolio. The current registry contains nineteen institutions in Long-term Value, Technology and Growth, Quantitative Funds, and Sovereign Wealth categories; Trian appears under Long-term Value, Bridgewater under Quantitative Funds and Mubadala under Sovereign Wealth. News contains indexes and original links, not stored article bodies.
 
 ## Email and interface behavior
 

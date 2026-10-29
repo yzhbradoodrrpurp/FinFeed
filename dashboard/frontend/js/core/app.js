@@ -552,7 +552,7 @@ async function initializeState(){
   const main=document.querySelector("main");main.inert=true;
   readOnly=true;document.body.classList.toggle("read-only",true);
   try{
-    const auth=await FinFeedAuth.initialize();
+    const [auth]=await Promise.all([FinFeedAuth.initialize(),window.FinFeedCache?.ready]);
     el("startup-status").hidden=true;feedback("");
     currentUser=auth.user;main.inert=false;FinFeedAuth.setGate?.(false);
     window.FinFeedPreferences?.initialize();

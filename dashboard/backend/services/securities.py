@@ -189,7 +189,7 @@ def financial_due(saved, timestamp):
     return (not saved or saved.get("yahoo_session", {}).get("mode", "anonymous") != yahoo_session.mode()
             or saved.get("yahoo_session", {}).get("proxy_enabled", False) != yahoo_session.proxy_enabled()
             or (saved.get("quote_type") == "EQUITY" and "capex" not in saved.get("series", {}))
-            or _financial_age(saved, timestamp) >= (300 if saved.get('market_provider') == 'longbridge' else TTL))
+            or _financial_age(saved, timestamp) >= (3600 if saved.get('market_provider') == 'longbridge' else TTL))
 
 
 def _statement_blocks(symbol: str) -> dict:
@@ -582,7 +582,7 @@ def _fetch_yahoo_security(symbol, saved=None, estimate_store=None, on_update=Non
     return revalue(result, estimate_store)
 
 
-def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, force=False, financial_refresh=None):
+def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, force=False, financial_refresh=None, quarterly_cache_only=False):
     # Preserve the existing non-US and crypto routes outside Longbridge's US adapter.
     if symbol.endswith('-USD') or ('.' in symbol and symbol.rsplit('.', 1)[1] not in ('A', 'B')) or (saved or {}).get('quote_type') in ('CRYPTOCURRENCY', 'INDEX', 'MUTUALFUND', 'CURRENCY'):
         result = _fetch_yahoo_security(symbol, saved, estimate_store, on_update, force, quarterly=False)
@@ -601,7 +601,20 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
     good = saved if (saved or {}).get('financial_provider') == 'longbridge' else None
     manual = (force if financial_refresh is None else financial_refresh) and _financial_age(good or {}, now()) >= 60
     due = quote_type == 'EQUITY' and (manual or financial_due(good, now()))
-    task = STATEMENT_POOL.submit(longbridge_financial.snapshot, symbol, estimate_store, manual) if due else None
+    task = None
+    if quarterly_cache_only:
+        from concurrent.futures import Future
+        cached = estimate_store.get_cache('market:v1:financial:' + symbol)
+        if cached:
+            task = Future()
+            financial = deepcopy(cached[0])
+            status = estimate_store.get_cache('refresh-status:market:v1:financial:' + symbol)
+            failed = status and status[0].get('failed') and status[1] >= cached[1]
+            if time.time()-cached[1] > 7200 or failed:
+                financial['errors'] = [*financial.get('errors', []), '季度财务缓存待更新']
+            task.set_result(financial)
+    elif due:
+        task = STATEMENT_POOL.submit(longbridge_financial.snapshot, symbol, estimate_store, manual)
     def scaffold():
         return {'ticker':symbol, 'metrics':{}, 'series':{}, 'sources':{},
                 'schema_version':SCHEMA_VERSION, 'financial_provider':'longbridge',
@@ -615,7 +628,8 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
     try:
         market = longbridge.market_snapshot(symbol, estimate_store, quote_type, force,
             on_quote=publish_quote if on_update else None,
-            financial_refresh=force if financial_refresh is None else financial_refresh)
+            financial_refresh=force if financial_refresh is None else financial_refresh,
+            **({"quarterly_cache_only": True} if quarterly_cache_only else {}))
     except Exception:
         if task:
             task.cancel()
@@ -659,7 +673,7 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
                     result['metrics'][label+'_'+suffix] = growth(values,period)
             result['financial_currency'] = financial.get('currency')
             result['financial_fetched_at'] = financial['fetched_at']
-            result['financial_checked_at'] = now()
+            result['financial_checked_at'] = financial['fetched_at'] if quarterly_cache_only else now()
             result['financial_errors'] = financial['errors']
             result['financial_stale'] = bool(financial['errors'])
             for source in ('financials','balance','cashflow'):
@@ -680,7 +694,7 @@ def fetch_security(symbol, saved=None, estimate_store=None, on_update=None, forc
     return revalue(result, estimate_store)
 
 
-def security(symbol, refresh=False, store=None, on_update=None, financial_refresh=None):
+def security(symbol, refresh=False, store=None, on_update=None, financial_refresh=None, quarterly_cache_only=False):
     with LOCK_GUARD:
         lock = LOCKS.setdefault(symbol, threading.Lock())
     with lock:
@@ -733,6 +747,8 @@ def security(symbol, refresh=False, store=None, on_update=None, financial_refres
         try:
             with LIMIT:
                 options = {'estimate_store': store, 'force': refresh}
+                if quarterly_cache_only:
+                    options['quarterly_cache_only'] = True
                 if on_update:
                     options['on_update'] = on_update
                 if financial_refresh is not None:

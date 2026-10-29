@@ -124,12 +124,12 @@ class RefreshCases(unittest.TestCase):
             result=future.result(timeout=3)
         self.assertEqual(result['metrics']['revenue_q0']['value'],200)
 
-    def test_financial_cache_has_separate_five_minute_ttl(self):
+    def test_financial_cache_has_separate_hourly_ttl(self):
         saved={'market_provider':'longbridge','quote_type':'EQUITY','series':{'capex':{}},
                'financial_checked_at':'2026-10-12T00:00:00+00:00',
                'yahoo_session':{'mode':data.yahoo_session.mode(),'proxy_enabled':data.yahoo_session.proxy_enabled()}}
-        self.assertFalse(data.financial_due(saved,'2026-10-12T00:04:59+00:00'))
-        self.assertTrue(data.financial_due(saved,'2026-10-12T00:05:00+00:00'))
+        self.assertFalse(data.financial_due(saved,'2026-10-12T00:59:59+00:00'))
+        self.assertTrue(data.financial_due(saved,'2026-10-12T01:00:00+00:00'))
 
     def test_yahoo_task_failure_does_not_erase_fresh_longbridge_quote(self):
         from test_longbridge import blocks

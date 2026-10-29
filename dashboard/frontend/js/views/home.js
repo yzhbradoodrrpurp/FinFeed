@@ -50,7 +50,7 @@ window.FinFeedHome=(()=>{
     grid.insertBefore(card,target>from?cards[target].nextSibling:cards[target]);
     window.FinFeedMotion.settle(before,grid.children);saveSectorOrder(cards.map(card=>card.id.replace('home-sector-','')));
   }
-  function finishSectorDrag(){const dragged=sectorDragging;sectorDragging=null;if(dragged&&sectorGood.has(dragged))renderSector(sectorGood.get(dragged).sector,'每小时检查更新');sectorScroll?.stop();document.querySelectorAll('.sector-dragging,.sector-drop').forEach(card=>card.classList.remove('sector-dragging','sector-drop'));}
+  function finishSectorDrag(){const dragged=sectorDragging;sectorDragging=null;if(dragged&&sectorGood.has(dragged))renderSector(sectorGood.get(dragged).sector,'');sectorScroll?.stop();document.querySelectorAll('.sector-dragging,.sector-drop').forEach(card=>card.classList.remove('sector-dragging','sector-drop'));}
   function bindSectorOrder(){
     const grid=document.getElementById('home-sectors');
     grid.addEventListener('dragstart',event=>{
@@ -117,7 +117,7 @@ window.FinFeedHome=(()=>{
         if(old&&Date.parse(data.retrieved_at)<Date.parse(old.retrieved_at))return;
         if(!item.history?.length&&old?.sector?.history?.length){item.history=old.sector.history;item.history_warning ||= '历史日线暂未更新，保留上次成功历史';}
         sectorGood.set(symbol,data);
-        renderSector(item,data.refreshing?'缓存 · 正在更新':data.stale?'旧数据 · 更新失败':'每小时检查更新');
+        renderSector(item,data.refreshing?'缓存 · 正在更新':data.stale?'旧数据 · 更新失败':'');
 
       },{refresh:force,staleTtl:7*86400000,validate:data=>data.sector?.price!=null&&!data.sector.error});
     }catch{
@@ -154,7 +154,6 @@ window.FinFeedHome=(()=>{
         if(data.index.price==null&&lastGood.has(slot))throw new Error();
         renderIndex(data.index,slot,data.refreshing?'缓存 · 正在更新':data.stale?'旧数据 · 更新失败':'');
         if(data.index.price!=null){lastGood.set(slot,data.index);FinFeedCache.write('home-'+index[0],data);}
-        document.getElementById('home-update-status').textContent=`检索于 ${date(data.retrieved_at,'Asia/Shanghai')} 北京 · 每小时检查更新，行情可能延迟；涨跌相对前收盘价。`;
         });
       }catch{
         if(lastGood.has(slot)){renderIndex(lastGood.get(slot),slot,'旧数据 · 更新失败');return;}
@@ -175,7 +174,6 @@ window.FinFeedHome=(()=>{
     });
     const calendar=FinFeedCache.read('home-calendar',86400000);
     if(calendar){market=calendar.data;serverNow=Date.parse(market.server_time)+Date.now()-calendar.savedAt;syncedAt=performance.now();clock();}
-    document.getElementById('home-update-status').textContent='先显示上次成功缓存，正在逐项更新；报价时间见各指数。';
     refresh();}else if(Date.now()-updated>=60000)refresh();}
   return {prefetch:start,open(user){if(user)document.getElementById('page-title').textContent='Hi '+user.name;start();}};
 })();

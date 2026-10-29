@@ -70,7 +70,7 @@ window.FinFeedNews=(()=>{
     el('news-status').textContent=!symbols.length?(busy?'正在读取自己的观察列表…':listError?'观察列表暂时无法读取，可稍后重试。':'自己的观察列表暂无标的，可先在 Watchlist 添加。'):`${selectedTicker==='all'?'全部 Ticker':selectedTicker} · ${kind==='all'?'全部类型':label(kind)} · ${items.length} 条${busy?` · 正在并发更新 ${done}/${total}`:' · 最近两次财季披露 · 每小时自动检查'}${listError?' · 暂用缓存列表':''}`;
     el('news-feed').innerHTML=items.map(item=>`<article class="news-card"><div class="news-meta"><span class="news-badge">${label(item.kind)}</span><strong>${[...item.tickers].map(escape).join(' · ')}</strong><time>${escape(date(item.published_at))}</time></div><a href="${escape(item.url)}" target="_blank" rel="noopener noreferrer">${escape(item.title)} ↗</a><p>${escape(item.source)}${item.kind==='sec'?' · 最近两次季报／年报申报以来 · SEC 官方 API':''}</p></article>`).join('')||(!busy&&symbols.length?`<p class="news-empty">${[...states.values()].some(v=>matches(v)&&v.errors?.length)?'部分来源获取失败，暂时没有可展示的动态。':'该来源暂无可展示的动态。'}</p>`:'');
     el('news-errors').innerHTML=(listError?`<p class="macro-note">${escape(listError)}</p>`:'')+[...states.values()].filter(value=>matches(value)&&(value.errors?.length||value.stale)).map(value=>`<p class="macro-note">${escape(value.ticker)} · ${label(value.kind)}：${escape(value.errors?.join('；')||'暂显示缓存，等待更新')} · <a href="${escape(sourceLink(value.ticker,value.kind))}" target="_blank" rel="noopener noreferrer">查看来源 ↗</a></p>`).join('');
-    el('news-refresh').disabled=busy;
+
   }
   async function open(force=false,retryOnly=false){
     if(busy||(!force&&lastCheck!==null&&Date.now()-lastCheck<refreshInterval)){render();return;}
@@ -114,7 +114,6 @@ window.FinFeedNews=(()=>{
     window.FinFeedMotion?.enter(el('news-types'),{kind:'account'});
     window.FinFeedMotion?.enter(el('news-feed'),{kind:'filter'});
   });
-  el('news-refresh').addEventListener('click',()=>open(true));
   function checkDue(){
     if(lastCheck!==null&&Date.now()-lastCheck>=refreshInterval)open(true);
     else if(retryAt!==null&&Date.now()>=retryAt)open(true,true);

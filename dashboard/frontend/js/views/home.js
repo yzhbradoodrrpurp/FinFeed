@@ -143,7 +143,7 @@ window.FinFeedHome=(()=>{
     const response=await FinFeedAuth.request(url);if(!response.ok)throw new Error();return response.json();
   }
   async function refresh(){
-    if(busy)return;busy=true;document.getElementById('home-refresh').disabled=true;
+    if(busy)return;busy=true;
     if(!document.getElementById('home-index-0'))document.getElementById('home-indices').innerHTML=indices.map((index,slot)=>`<article class="home-index" id="home-index-${slot}"><span class="eyebrow">${esc(index[1])}</span><h2>${esc(index[2])}</h2><strong class="home-index-price">—</strong><p class="home-quote-time">正在加载…</p></article>`).join('');
     const calendar=fetchData('/api/home').then(data=>{market=data;serverNow=Date.parse(data.server_time);syncedAt=performance.now();clock();FinFeedCache.write('home-calendar',data);}).catch(()=>{
       if(market)return;document.getElementById('home-market-status').textContent='状态暂不可用';document.getElementById('home-countdown').textContent='—';document.getElementById('home-session-time').textContent='';
@@ -158,13 +158,12 @@ window.FinFeedHome=(()=>{
         });
       }catch{
         if(lastGood.has(slot)){renderIndex(lastGood.get(slot),slot,'旧数据 · 更新失败');return;}
-        renderIndex({name:index[1],label:index[2],source:'https://finance.yahoo.com/quote/'+encodeURIComponent(index[0])+'/',error:'行情请求失败，请稍后刷新'},slot);
+        renderIndex({name:index[1],label:index[2],source:'https://finance.yahoo.com/quote/'+encodeURIComponent(index[0])+'/',error:'行情请求失败，等待自动重试'},slot);
       }
     });
     await Promise.allSettled([calendar,...quotes]);
-    updated=Date.now();busy=false;document.getElementById('home-refresh').disabled=false;
+    updated=Date.now();busy=false;
   }
-  document.getElementById('home-refresh').addEventListener('click',()=>{refresh();refreshSectors(true);});
   setInterval(clock,1000);
   setInterval(()=>{if(started){refresh();refreshSectors();}},3600000);
   document.addEventListener('visibilitychange',()=>{if(started&&Date.now()-updated>=60000){refresh();refreshSectors();}});

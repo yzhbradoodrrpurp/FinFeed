@@ -78,13 +78,13 @@ window.FinFeedWhales=(()=>{
     states.set(kind,data);el('whale-summary-'+kind).textContent=summary(data);if(kind===selected)renderDetail();
     scheduleAnalysis();
   }
-  async function refresh(force=false){if(busy)return;busy=true;el('whales-refresh').disabled=true;
+  async function refresh(force=false){if(busy)return;busy=true;
     const tasks=Object.keys(funds);let next=0;
     async function worker(){while(next<tasks.length){const kind=tasks[next++];try{
       await FinFeedCache.market('/api/whales/'+kind+'?version=10&stream=1'+(force?'&refresh=1':''),data=>accept(kind,data),{ttl:3600000,staleTtl:90*86400000,refresh:force,validate:data=>data.schema_version===3&&data.totals_verified===true&&!!data.holdings?.length});
     }catch{accept(kind,good.has(kind)?{...good.get(kind),stale:true}:{errors:['SEC 请求失败，请稍后检查更新']});}}}
     await Promise.allSettled([worker(),worker()]);
-    checked=Date.now();busy=false;el('whales-refresh').disabled=false;
+    checked=Date.now();busy=false;
   }
   function open(){if(!started){started=true;Object.keys(funds).forEach(kind=>{const saved=FinFeedCache.read('whales-v3-'+kind,90*86400000);if(saved?.data.schema_version===3&&saved.data.totals_verified===true){good.set(kind,saved.data);accept(kind,{...saved.data,refreshing:true});}});refresh();}
     show(new URL(location.href).searchParams.get('fund'),false);
@@ -119,7 +119,6 @@ window.FinFeedWhales=(()=>{
     if(before)window.FinFeedMotion.settle(before,document.querySelectorAll('.whale-group-heading,.whale-card'));
   });
   el('whale-back').addEventListener('click',()=>{const old=selected;show(null);document.querySelector('[data-whale="'+old+'"]').focus();});
-  el('whales-refresh').addEventListener('click',()=>refresh(true));
   function checkDue(){if(started&&Date.now()-checked>=3600000)refresh(true);}
   setInterval(checkDue,60000);
   document.addEventListener('visibilitychange',checkDue);

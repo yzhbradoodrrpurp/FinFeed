@@ -200,11 +200,11 @@ window.FinFeedMacro=(()=>{
         if(data.refreshing)notice(card,'缓存 · 正在更新，数据时间见下方');
       },{ttl:60000,staleTtl:7*86400000,refresh:force,validate:data=>!!data.series?.length&&!data.stale});
       fedUpdated=Date.now();
-    }catch{if(fedData)notice(card,'旧数据 · 本次更新失败，数据时间见下方');else card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储利率决议</h2><p class="macro-error">数据暂不可用，请稍后刷新</p>';}
+    }catch{if(fedData)notice(card,'旧数据 · 本次更新失败，数据时间见下方');else card.innerHTML='<span class="eyebrow">POLYMARKET</span><h2>美联储利率决议</h2><p class="macro-error">数据暂不可用，等待自动重试</p>';}
     finally{fedBusy=false;}
   }
   async function refresh(force=false){
-    if(busy)return;busy=true;document.getElementById('macro-refresh').disabled=true;
+    if(busy)return;busy=true;
     const grid=document.getElementById('macro-grid');
     if(!document.getElementById('macro-jobs'))grid.innerHTML=Object.keys(names).map(id=>`<article id="macro-${id}" class="macro-card" aria-busy="true"><span class="eyebrow">${names[id][0]}</span><h2>${names[id][1]}</h2><div class="macro-skeleton"><span></span><span></span><span></span></div><p class="macro-note">正在获取数据…</p></article>`).join('');
     await Promise.allSettled(Object.keys(names).map(async id=>{
@@ -219,10 +219,9 @@ window.FinFeedMacro=(()=>{
         if(data.refreshing)notice(card,'缓存 · 正在更新，数据时间见下方');
         else if(data.stale)notice(card,'旧数据 · 本次更新失败，数据时间见下方');
         },{ttl:3600000,staleTtl:7*86400000,refresh:force});
-      }catch{if(lastGood.has(id))notice(card,'旧数据 · 本次更新失败，数据时间见下方');else render(id,{metrics:[],errors:['数据暂不可用，请稍后刷新'],retrieved_at:new Date().toISOString()});}
-    }));updated=Date.now();busy=false;document.getElementById('macro-refresh').disabled=false;
+      }catch{if(lastGood.has(id))notice(card,'旧数据 · 本次更新失败，数据时间见下方');else render(id,{metrics:[],errors:['数据暂不可用，等待自动重试'],retrieved_at:new Date().toISOString()});}
+    }));updated=Date.now();busy=false;
   }
-  document.getElementById('macro-refresh').addEventListener('click',()=>{refresh(true);refreshFed(true);});
   setInterval(()=>{if(started)refresh(true);},3600000);
   setInterval(()=>{if(started&&!document.hidden)refreshFed(true);},3600000);
   document.addEventListener('visibilitychange',()=>{if(started){if(Date.now()-updated>=3600000)refresh(true);if(Date.now()-fedUpdated>=60000)refreshFed(true);}});

@@ -339,7 +339,7 @@ function render(){
   const withPrice=tickers.filter(t=>records.get(t)?.metrics?.price?.value!=null).length;
   el("count").textContent=`${tickers.length} 个标的`;
   el("load-status").textContent=running||queue.length?`正在读取 ${fetched} / ${tickers.length} 个标的…`:`${withPrice} / ${tickers.length} 个标的取得行情 · 点击详情查看检索时间`;
-  el("refresh").disabled=Boolean(running||queue.length);
+
   renderHoldings();
   if(surface==="watchlist")flashChangedCells();
 }
@@ -415,7 +415,7 @@ function pump(){
     });
   }
 }
-function load(tickersToLoad,refresh=false,financialRefresh=false){tickersToLoad.forEach(t=>fetchingTickers.add(t));scheduleRender();queue.push(...tickersToLoad.map(ticker=>({ticker,refresh,financialRefresh,generation:recordGeneration})));el("refresh").disabled=true;pump();}
+function load(tickersToLoad,refresh=false,financialRefresh=false){tickersToLoad.forEach(t=>fetchingTickers.add(t));scheduleRender();queue.push(...tickersToLoad.map(ticker=>({ticker,refresh,financialRefresh,generation:recordGeneration})));pump();}
 
 function refreshWatchlist(financialRefresh=false){
   const tracked=trackedTickers();
@@ -455,7 +455,6 @@ function detail(ticker,keyboard=false){
   el("detail-dialog").showModal();el("detail-title").focus({preventScroll:true});
 }
 el("add-form").addEventListener("submit",event=>{event.preventDefault();try{const fresh=addTickers(el("ticker-input").value);el("ticker-input").value="";feedback(fresh.length?"":"这些标的已在关注列表中。");}catch(error){feedback(error.message);}});
-el("refresh").addEventListener("click",()=>{feedback("");refreshWatchlist(true);});
 el("method-button").addEventListener("click",()=>el("method-dialog").showModal());
 document.querySelectorAll("[data-surface]").forEach(b=>b.addEventListener("click",()=>switchSurface(b.dataset.surface)));
 el("add-position").addEventListener("click",event=>openPosition(null,event.detail===0));

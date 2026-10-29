@@ -13,7 +13,7 @@ Reviewed against application source on October 29, 2026 (Asia/Shanghai). This do
 | Whale Holdings | Supported institutions' SEC 13F reports | Every hour |
 | News | Company earnings calls and SEC filing indexes | Every hour |
 
-The backend updates independently of open pages. Browser polling only reads snapshots, with content-version checks returning no body for unchanged data. Complete public market snapshots persist in IndexedDB and appear before network updates after authorization. Background tabs can be throttled; due reads resume when the browser returns. Email monitoring is independent of open pages. Polling frequency is not upstream publication frequency.
+The backend updates independently of open pages. Browser polling only reads snapshots, with content-version checks returning no body for unchanged data. Complete public market snapshots persist in IndexedDB and appear before network updates after authorization. Background tabs can be throttled; due reads resume when the browser returns. Manual data-refresh buttons are removed; views update automatically. Email monitoring is independent of open pages. Polling frequency is not upstream publication frequency.
 
 ## Accounts and access
 

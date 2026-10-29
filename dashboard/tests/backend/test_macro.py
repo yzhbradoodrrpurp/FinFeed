@@ -80,6 +80,16 @@ class MacroCases(unittest.TestCase):
             result=macro.schedule('pce',datetime(2026,10,5,tzinfo=timezone.utc))
         self.assertEqual(result['next_release'],'2026-10-29T12:30:00+00:00')
 
+    def test_previous_release_is_actual_calendar_entry_not_observation_date(self):
+        payload='{"Personal Income and Outlays":{"release_dates":["2026-10-29T12:30:00+00:00","2026-09-30T12:30:00+00:00","2026-09-30T12:30:00+00:00"]}}'
+        with patch('backend.providers.bea.fetch',return_value=payload):
+            result=macro.schedule('pce',datetime(2026,10,29,14,tzinfo=timezone.utc))
+        self.assertEqual(result['previous_release'],'2026-09-30T12:30:00+00:00')
+        self.assertEqual(result['last_release'],'2026-10-29T12:30:00+00:00')
+        with patch('backend.providers.bea.fetch',return_value=payload):
+            early=macro.schedule('pce',datetime(2026,10,5,tzinfo=timezone.utc))
+        self.assertIsNone(early['previous_release'])
+
     def test_errors_do_not_leak_credentials(self):
         with patch('backend.services.macro.observations',side_effect=RuntimeError('secret-key-in-url')):
             result=macro.load('treasury')

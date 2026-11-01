@@ -110,3 +110,19 @@ A configured sender only means the required credential fields exist; it does not
 After a server migration or configuration restore, validate the active server authorization instead of assuming the local production authorization was synchronized. A previously authorized valid credential for the unchanged sender/client can be restored from its private source after validation. Back up the active private configuration, preserve other fields, and restart only the verified backend. If no valid credential remains, complete the existing send-only OAuth authorization again; do not broaden Gmail scopes.
 
 After authorization recovers, an existing unexpired `pending` message without a provider acceptance ID or active lease can be made due for the normal scheduler. Preserve its original event ID, creation time, recipient, body and attempt history. Back up affected retry dates privately. Do not reset observation baselines, replay expired failures, or automatically resend `sending`/`uncertain` messages. Confirm actual provider acceptance in the outbox; inbox reception remains a separate check.
+
+## Separate Watchlist subscriptions
+
+Watchlist earnings-call and SEC-filing reminders have independent `news_calls` and
+`news_sec` preferences. The former combined `news` preference is normalized to both
+on reads; an unchanged save preserves both existing source cursors. The API accepts
+legacy combined writes during frontend rollout and returns a legacy aggregate field
+for older clients. New clients send the two explicit flags. No SQL schema change is
+needed because preferences are stored as JSON.
+
+Workers poll only subscribed topics. Re-enabling a topic resets only its matching
+`news:calls:` or `news:sec:` cursor prefix. Existing accession/URL identities and
+outbox deduplication keys retain the old `news` namespace so rollout cannot replay
+old events. Pending legacy messages are matched to their topic by their original
+subject for cancellation and final subscription checks. The existing send/uncertain
+handling remains unchanged; API acceptance is not proof of email delivery.

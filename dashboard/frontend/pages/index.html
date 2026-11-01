@@ -125,9 +125,9 @@
         <div id="whale-detail-content" aria-live="polite"></div>
         <p class="macro-footnote">持仓变化按证券数量计算，拆股、证券转换和申报范围调整也可能造成数量变化，不能直接等同实际买卖。13F 不披露平均买入成本。</p>
       </section>
-      <p class="macro-footnote">机构季度持仓来自 SEC EDGAR 13F。ARK 此处展示管理机构的 13F 合计，并非单只 ETF 的每日持仓。13F 为季度末持仓快照，通常在季末后 45 天内披露，不代表实时完整组合或真实买入成本；ARK 主动管理 ETF 持仓按交易日披露。</p>
+      <p class="macro-footnote">机构季度持仓来自 SEC EDGAR 13F。13F 为季度末持仓快照，通常在季末后 45 天内披露，不代表实时完整组合或真实买入成本。</p>
     </section>
-    <div class="source-footer"><a href="https://open.longbridge.com/docs/fundamental/fundamental/financial-report" target="_blank" rel="noreferrer">长桥季度财务</a> · <a href="https://open.longbridge.com/docs/quote/overview" target="_blank" rel="noreferrer">长桥行情与估值</a> · <a href="/privacy.html" target="_blank" rel="noreferrer">邮件隐私说明</a></div>
+
     </div>
   </main>
   <dialog id="position-dialog" aria-labelledby="position-title"><div class="dialog-top"><div><div class="eyebrow">POSITION RECORD</div><h2 id="position-title">添加持仓</h2></div><button class="icon-button" data-close aria-label="关闭持仓编辑">×</button></div><form id="position-form" class="position-form"><label>Ticker<input id="position-ticker" autocomplete="off" spellcheck="false" placeholder="如 NVDA" maxlength="20" required></label><label>持仓数量<input id="position-quantity" type="number" min="0" step="any" placeholder="可填写小数" required></label><label>每股 / 每单位平均成本<input id="position-cost" type="number" min="0" step="any" placeholder="按券商成本口径填写" required></label><label>成本币种<input id="position-currency" list="currency-codes" maxlength="3" value="USD" autocomplete="off" required></label><datalist id="currency-codes"><option value="USD"><option value="HKD"><option value="EUR"><option value="GBP"><option value="JPY"><option value="KRW"><option value="CAD"><option value="AUD"><option value="CHF"><option value="CNY"></datalist><p class="position-help">数量和成本保存在私人数据库。成本币种须与报价一致才能计算盈亏；不会自动换汇。买卖后可在此更新剩余数量和平均成本。</p><p id="position-error" role="alert" hidden></p><div class="position-form-actions"><button type="button" class="secondary" data-close>取消</button><button type="submit" class="primary">保存持仓</button></div></form></dialog>
@@ -165,7 +165,8 @@
         <label class="notification-check"><input id="notification-treasury" type="checkbox">十年美债：达到或回落预警线</label>
         <label>收益率预警线（%）<input id="notification-threshold" type="number" min="0.1" max="20" step="0.01" value="5.1"></label>
         <label class="notification-check"><input id="notification-whales" type="checkbox">巨鲸：最新持仓申报及修订</label>
-        <label class="notification-check"><input id="notification-news" type="checkbox">我的 Watchlist：新财报电话会和 SEC 披露</label>
+        <label class="notification-check"><input id="notification-news_calls" type="checkbox">我的 Watchlist：新财报电话会</label>
+        <label class="notification-check"><input id="notification-news_sec" type="checkbox">我的 Watchlist：新 SEC 披露</label>
       </div>
       <button id="notification-save" class="primary" type="button">保存提醒设置</button><button id="notification-unbind" class="secondary" type="button" hidden>解绑邮箱</button>
       </div>

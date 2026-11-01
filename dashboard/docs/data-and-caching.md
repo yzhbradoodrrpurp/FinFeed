@@ -161,3 +161,21 @@ opening a chart. The selected time range fills the plot from its earliest to lat
 bar with no extra future offset. Explicit resize handling retains the visible
 logical range rather than introducing blank margins. The chart uses a compact
 update-time label; provider provenance and exchange timezone remain in snapshots. Account records and credentials are never included in chart caches.
+
+## Watchlist ticker admission
+
+`PUT /api/state` verifies newly added Watchlist symbols before committing the account
+record, including imports and older clients. Syntax-valid text alone is insufficient.
+US identities use Longbridge static security information; existing non-US/crypto/index
+routes retain Yahoo identity lookups. The bundled autocomplete directory is not an
+admission whitelist. Successful static identity blocks can be reused for 24 hours;
+explicit empty Longbridge lookups have a five-minute negative cache. Provider errors,
+timeouts, rate limits or incomplete responses produce a retryable validation failure
+rather than a false "ticker does not exist" result. In-flight verification is bounded
+and shared; supplier work happens outside the account transaction.
+
+The account transaction rechecks which tickers are new against the verified set.
+The browser inserts rows only after validation and the server save both succeed;
+failed validation keeps the input and prior Watchlist. Existing record removals and
+non-Watchlist writes do not require provider checks. Public validation caches contain
+no account identifiers. They reuse the normal PostgreSQL cache table.

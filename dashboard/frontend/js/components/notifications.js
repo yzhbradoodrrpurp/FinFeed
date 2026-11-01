@@ -1,7 +1,7 @@
 "use strict";
 window.FinFeedNotifications=(()=>{
   const el=id=>document.getElementById(id);
-  const categories=['jobs','pce','treasury','whales','news'];
+  const categories=['jobs','pce','treasury','whales','news_calls','news_sec'];
   let resendUntil=0,resendTimer=null,sendingCode=false,verifying=false;
   let loadVersion=0,bindingAnimation=null;
   let saving=false,savedPreferences=null,saveAnimation=null;

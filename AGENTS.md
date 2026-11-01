@@ -105,3 +105,9 @@ Watchlist ticker buttons open daily OHLCV charts; other cells retain metric deta
 Chart history uses the existing hourly scheduler and PostgreSQL snapshot cache;
 `/api/candles/<symbol>` is authenticated and database-only. Keep the self-hosted
 Lightweight Charts license, notice, and attribution when updating the vendor bundle.
+
+New Watchlist symbols are verified by their provider before an authenticated state
+write commits; autocomplete is not an exclusive whitelist. Do not classify supplier
+failures as nonexistent symbols. Earnings-call (`news_calls`) and SEC-filing
+(`news_sec`) reminders are independently selectable. Preserve legacy `news` settings,
+source cursors and outbox event IDs when changing subscriptions.

@@ -35,6 +35,23 @@ class CloudCases(unittest.TestCase):
             self.assertEqual(stale['bars'], data['bars'])
         self.assertEqual(self.client.get('/api/candles/BAD!').status_code, 400)
 
+    def test_watchlist_admission_is_verified_before_commit_and_import(self):
+        from backend.services.symbol_validation import UnknownTicker, ValidationUnavailable
+        self.frontend_setup()
+        self.store.update_state({'watchlist':['AAPL','MCX'], 'positions':[]})
+        with patch('backend.services.symbol_validation.validate_symbols', return_value=set()) as verify:
+            result = self.client.put('/api/state', json={'watchlist':['AAPL']}, headers=HEADERS)
+            self.assertEqual(result.status_code,200)
+            self.assertEqual(verify.call_args.args[0],[])
+        for error,status in ((UnknownTicker('没有该 Ticker：MCX，无法添加'),400),(ValidationUnavailable('校验暂不可用'),503)):
+            with patch('backend.services.symbol_validation.validate_symbols',side_effect=error):
+                result=self.client.put('/api/state',json={'watchlist':['AAPL','MCX'],'positions':[]},headers=HEADERS)
+                self.assertEqual(result.status_code,status)
+                self.assertEqual(self.store.read_state()['watchlist'],['AAPL'])
+        with patch('backend.services.symbol_validation.validate_symbols',return_value={'MSFT'}) as verify:
+            self.assertEqual(self.client.put('/api/state',json={'watchlist':['AAPL','MSFT']},headers=HEADERS).status_code,200)
+            self.assertEqual(verify.call_args.args[0],['MSFT'])
+
     def test_status_reports_remaining_fixed_session_lifetime(self):
         self.assertEqual(self.client.get('/api/auth/status').json['sessionExpiresIn'], 0)
         self.frontend_setup()
@@ -423,6 +440,9 @@ class CloudCases(unittest.TestCase):
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 
     def setUp(self):
+        # External identity lookup is tested separately; cloud cases stay offline.
+        lookup = patch('backend.services.symbol_validation.validate_symbols', side_effect=lambda symbols, store: set(symbols))
+        lookup.start(); self.addCleanup(lookup.stop)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.path = str(Path(self.directory.name) / "backend.app.db")

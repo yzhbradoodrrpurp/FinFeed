@@ -273,7 +273,6 @@ async function switchSurface(next){
   document.querySelector(".account-browser").hidden=!["watchlist","portfolio"].includes(surface);
   if(el("whale-category-control"))el("whale-category-control").hidden=surface!=="whales";
   document.querySelector(".title-actions").hidden=!["watchlist","portfolio"].includes(surface);
-  document.querySelector(".source-footer").hidden=!["watchlist","portfolio"].includes(surface);
   document.querySelectorAll("[data-surface]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.surface===surface)));
   if(next==="home"&&currentUser)FinFeedHome.open(currentUser);
   render();
@@ -422,15 +421,31 @@ function refreshWatchlist(financialRefresh=false){
   if(running||queue.length||!tracked.length)return;
   load(tracked,true,financialRefresh);
 }
-function addTickers(text){
+let addingTickers=false;
+async function addTickers(text){
+  if(addingTickers)throw new Error("正在验证 Ticker，请稍候。");
   if(readOnly)throw new Error("其他账户仅供查看");
   const added=[...new Set(text.toUpperCase().split(/[\s,，;；]+/).filter(Boolean))];
   if(!added.length)throw new Error("请输入 Ticker，例如 AAPL。");
   if(added.some(t=>! /^[A-Z0-9][A-Z0-9.^=-]{0,19}$/.test(t)))throw new Error("Ticker 格式不正确，可输入 AAPL、BRK-B 或 000660.KS。");
   const fresh=added.filter(t=>!tickers.includes(t));
   if(new Set([...trackedTickers(),...fresh]).size>128)throw new Error("关注列表和持仓合计最多 128 个不同标的，以控制免费源请求量。");
+  if(!fresh.length)return [];
+  const generation=accountStateVersion,button=el("add-form").querySelector('button[type="submit"]');
+  addingTickers=true;button.disabled=true;button.textContent="验证中…";el("ticker-input").disabled=true;el("watchlist").inert=true;el("order-button").disabled=true;
+  let state;
+  try{
+    // Nothing is inserted locally until identity validation and the cloud save succeed.
+    state=await persistState({watchlist:[...tickers,...fresh],watchlistFavorites:[...watchlistFavorites]});
+  }catch(error){
+    if(generation!==accountStateVersion||readOnly)return null;
+    throw error;
+  }finally{
+    addingTickers=false;button.disabled=false;button.textContent="添加";el("ticker-input").disabled=false;el("watchlist").inert=false;el("order-button").disabled=false;
+  }
+  if(generation!==accountStateVersion||readOnly)return null;
   let before=window.FinFeedMotion?.capture(el("watchlist").querySelectorAll("tbody tr[data-ticker]"));
-  tickers.push(...fresh);save();render();load(fresh);
+  tickers=state.watchlist;watchlistFavorites=state.watchlistFavorites||[];render();load(fresh);
   const rows=el("watchlist").querySelectorAll("tbody tr[data-ticker]");
   const addedRow=[...rows].find(row=>fresh.includes(row.dataset.ticker));
   const shell=el("watchlist").closest(".table-shell"),scrollTop=shell.scrollTop;
@@ -454,7 +469,7 @@ function detail(ticker,keyboard=false){
   el("detail-dialog").dataset.pointerOpened=String(!keyboard);
   el("detail-dialog").showModal();el("detail-title").focus({preventScroll:true});
 }
-el("add-form").addEventListener("submit",event=>{event.preventDefault();try{const fresh=addTickers(el("ticker-input").value);el("ticker-input").value="";feedback(fresh.length?"":"这些标的已在关注列表中。");}catch(error){feedback(error.message);}});
+el("add-form").addEventListener("submit",async event=>{event.preventDefault();try{const fresh=await addTickers(el("ticker-input").value);if(fresh===null)return;el("ticker-input").value="";feedback(fresh.length?"":"这些标的已在关注列表中。");}catch(error){feedback(error.message);}});
 el("method-button").addEventListener("click",()=>el("method-dialog").showModal());
 document.querySelectorAll("[data-surface]").forEach(b=>b.addEventListener("click",()=>switchSurface(b.dataset.surface)));
 el("add-position").addEventListener("click",event=>openPosition(null,event.detail===0));
@@ -542,7 +557,7 @@ el("watchlist").addEventListener("keydown",event=>{if(event.target.matches("tr[d
 if(document.modelContext?.registerTool){
   for(const tool of [
     {name:"read_watchlist",description:"读取当前私人关注列表及已有指标快照",inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute:()=>tickers.map(t=>records.get(t)||{ticker:t,loading:true})},
-    {name:"add_watchlist_tickers",description:"将 ticker 加入私人关注列表并读取指标；与页面添加操作相同",inputSchema:{type:"object",properties:{tickers:{type:"array",items:{type:"string"},minItems:1,maxItems:128}},required:["tickers"],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>{if(!input||!Array.isArray(input.tickers)||!input.tickers.length||input.tickers.some(t=>typeof t!=="string"))throw new Error("tickers 必须为非空字符串数组");return {added:addTickers(input.tickers.join(","))};}}
+    {name:"add_watchlist_tickers",description:"将 ticker 加入私人关注列表并读取指标；与页面添加操作相同",inputSchema:{type:"object",properties:{tickers:{type:"array",items:{type:"string"},minItems:1,maxItems:128}},required:["tickers"],additionalProperties:false},annotations:{readOnlyHint:false},execute:async input=>{if(!input||!Array.isArray(input.tickers)||!input.tickers.length||input.tickers.some(t=>typeof t!=="string"))throw new Error("tickers 必须为非空字符串数组");return {added:await addTickers(input.tickers.join(","))};}}
   ]){try{Promise.resolve(document.modelContext.registerTool(tool)).catch(()=>{});}catch{}}
 }
 async function initializeState(){
@@ -690,6 +705,7 @@ el("import-state").addEventListener("change",async()=>{
   finally{el("import-state").value="";}
 });
 el("confirm-import").addEventListener("click",async()=>{
+  if(addingTickers){accountFeedback("请等待 Ticker 验证完成后再导入。");return;}
   if(!pendingImport)return;el("confirm-import").disabled=true;
   try{
     const state=await persistState(pendingImport);

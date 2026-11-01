@@ -6,7 +6,30 @@ import secrets
 import time
 
 DEFAULTS = {'enabled': False, 'jobs': True, 'pce': True, 'treasury': True,
-            'whales': True, 'news': True, 'treasury_threshold': 5.1}
+            'whales': True, 'news_calls': True, 'news_sec': True, 'treasury_threshold': 5.1}
+CATEGORIES = ('jobs', 'pce', 'treasury', 'whales', 'news_calls', 'news_sec')
+CURSOR_PREFIX = {'news_calls': 'news:calls:', 'news_sec': 'news:sec:'}
+
+
+def preferences(value):
+    """Read old combined subscriptions without resetting durable source cursors."""
+    return {key: value.get(key, value.get('news', True) if key in ('news_calls', 'news_sec') else default)
+            for key, default in DEFAULTS.items()}
+
+
+def enabled(value, category, subject=''):
+    prefs = preferences(value)
+    if category == 'news':
+        # Queued legacy mail keeps its stable outbox ID; identify its topic.
+        if 'SEC 披露' in subject:
+            category = 'news_sec'
+        elif '财报电话会' in subject:
+            category = 'news_calls'
+        else:
+            return bool(prefs['news_calls'] and prefs['news_sec'])
+    return bool(prefs.get(category))
+
+
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS notification_settings (
  user_id TEXT PRIMARY KEY, email TEXT, pending_email TEXT, code_hash TEXT,
@@ -48,7 +71,7 @@ class NotificationStore:
         with self.store.transaction() as c:
             row = self._row(c, uid)
             return {'email': row['email'], 'pending_email': row['pending_email'],
-                    'preferences': json.loads(row['preferences']), 'verified': bool(row['email']),
+                    'preferences': {**preferences(json.loads(row['preferences'])), 'news': enabled(json.loads(row['preferences']), 'news')}, 'verified': bool(row['email']),
                     'verification_retry_after': max(0, math.ceil(row['code_sent']+60-time.time()))}
 
     def begin_verification(self, uid, email, now=None):
@@ -82,16 +105,19 @@ class NotificationStore:
     def save(self, uid, prefs):
         now = time.time()
         with self.store.transaction() as c:
-            row = self._row(c, uid); old = json.loads(row['preferences'])
+            row = self._row(c, uid); old = preferences(json.loads(row['preferences'])); prefs = preferences(prefs)
             if prefs['enabled'] and not row['email']:
                 raise ValueError('请先验证收件邮箱')
-            for category in ('jobs','pce','treasury','whales','news'):
+            for category in CATEGORIES:
                 if not prefs[category]:
                     self.store.execute(c, "UPDATE notification_outbox SET status='cancelled' WHERE user_id=? AND category=? AND status='pending'", (uid, category))
+                    if category in ('news_calls', 'news_sec'):
+                        topic = '%财报电话会%' if category == 'news_calls' else '%SEC 披露%'
+                        self.store.execute(c, "UPDATE notification_outbox SET status='cancelled' WHERE user_id=? AND category='news' AND subject LIKE ? AND status='pending'", (uid, topic))
             # Re-enabling a category establishes a new baseline, no historical flood.
-            for category in ('jobs','pce','treasury','whales','news'):
+            for category in CATEGORIES:
                 if (prefs['enabled'] and not old['enabled']) or (prefs[category] and not old[category]) or (category=='treasury' and prefs['treasury_threshold']!=old['treasury_threshold']):
-                    self.store.execute(c, 'DELETE FROM notification_cursors WHERE user_id=? AND source LIKE ?', (uid, category+'%'))
+                    self.store.execute(c, 'DELETE FROM notification_cursors WHERE user_id=? AND source LIKE ?', (uid, CURSOR_PREFIX.get(category, category)+'%'))
             since = now if prefs['enabled'] and not old['enabled'] else row['enabled_since']
             self.store.execute(c, 'UPDATE notification_settings SET preferences=?,enabled_since=? WHERE user_id=?', (json.dumps(prefs), since, uid))
             if not prefs['enabled']:
@@ -107,14 +133,14 @@ class NotificationStore:
     def subscribers(self):
         with self.store.transaction() as c:
             rows = self.store.execute(c, 'SELECT n.*,a.state FROM notification_settings n JOIN accounts a ON a.id=n.user_id WHERE n.email IS NOT NULL AND NOT EXISTS(SELECT 1 FROM disabled_accounts d WHERE d.id=a.id)').fetchall()
-            return [{**dict(r), 'preferences': json.loads(r['preferences']), 'state': json.loads(r['state']) if r['state'] else {'watchlist': []}}
+            return [{**dict(r), 'preferences': preferences(json.loads(r['preferences'])), 'state': json.loads(r['state']) if r['state'] else {'watchlist': []}}
                     for r in rows if json.loads(r['preferences']).get('enabled')]
 
     def observe(self, uid, source, update, expected=None):
         """Atomically advance a cursor and enqueue its derived events."""
         with self.store.transaction() as c:
-            settings = self._row(c, uid); prefs = json.loads(settings['preferences'])
-            if expected and (settings['email'] != expected['email'] or prefs != expected['preferences']):
+            settings = self._row(c, uid); prefs = preferences(json.loads(settings['preferences']))
+            if expected and (settings['email'] != expected['email'] or prefs != preferences(expected['preferences'])):
                 return
             if source.startswith('news:'):
                 account = self.store.account(c, uid, lock=False)
@@ -126,7 +152,7 @@ class NotificationStore:
             value, events = update(json.loads(row['payload']))
             self.store.execute(c, 'UPDATE notification_cursors SET payload=? WHERE user_id=? AND source=?', (json.dumps(value), uid, source))
             for event in events:
-                if not settings['email'] or not prefs.get('enabled') or not prefs.get(event['category']):
+                if not settings['email'] or not prefs.get('enabled') or not enabled(prefs, event['category'], event['subject']):
                     continue
                 key = fingerprint(uid+':'+event['key'])
                 self.store.execute(c, 'INSERT INTO notification_outbox(id,user_id,email,category,subject,body,created,due) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
@@ -158,7 +184,7 @@ class NotificationStore:
     def allowed(self, mail):
         with self.store.transaction() as c:
             row = self.store.execute(c, 'SELECT n.* FROM notification_settings n WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM disabled_accounts d WHERE d.id=n.user_id)', (mail['user_id'],)).fetchone()
-            return bool(row and row['email']==mail['email'] and json.loads(row['preferences']).get('enabled') and json.loads(row['preferences']).get(mail['category']))
+            return bool(row and row['email']==mail['email'] and json.loads(row['preferences']).get('enabled') and enabled(json.loads(row['preferences']), mail['category'], mail['subject']))
 
     def mark_sending(self, mail):
         # Gmail has no idempotency key. A crashed sender must not be reclaimed.

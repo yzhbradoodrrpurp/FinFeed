@@ -87,3 +87,12 @@ Longbridge and refreshes hourly on the backend; clients show retained local hist
 before checking versioned server snapshots. Unsupported instruments and failed
 updates retain explicit missing/stale states. Newly listed securities display only
 available history. EMA and historical P/E are not part of this view.
+
+### Verified Watchlist additions and independent news alerts
+
+New Watchlist tickers are verified with the corresponding supplier before they are
+saved or inserted into the page. A missing ticker is rejected explicitly; supplier
+outages prompt a retry and leave the list unchanged. Autocomplete suggestions remain
+a convenience rather than an exclusive whitelist. Earnings-call and SEC-filing email
+subscriptions can be enabled independently, with legacy settings and event deduplication
+preserved.

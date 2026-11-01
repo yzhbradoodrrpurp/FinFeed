@@ -54,13 +54,13 @@ const ui=context.window.FinFeedNotifications;
   assert.equal(saveButton.textContent,'提醒已设置');assert.equal(saveButton.disabled,true);
   await saveButton.listeners.click();assert.equal(queue.length,0);
   element('notification-threshold').value='5.1';element('notification-threshold').listeners.input();
-  element('notification-news').checked=true;element('notification-news').listeners.change();
+  element('notification-news_calls').checked=true;element('notification-news_calls').listeners.change();
   assert.equal(saveButton.textContent,'保存提醒设置');assert.equal(saveButton.disabled,false);
   const failed=saveButton.listeners.click();queue.shift()({error:'保存失败'},false);await failed;
   assert.equal(saveButton.disabled,false);assert.equal(saveButton.textContent,'保存提醒设置');
   const pending=saveButton.listeners.click();
   element('notification-threshold').value='5.2';element('notification-threshold').listeners.input();
-  const accepted=data(false);accepted.preferences.news=true;
+  const accepted=data(false);accepted.preferences.news_calls=true;
   queue.shift()(accepted);await pending;
   assert.equal(element('notification-threshold').value,'5.2');
   assert.equal(saveButton.disabled,false); // Newer edits still need saving.

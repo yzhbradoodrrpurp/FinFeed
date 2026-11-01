@@ -281,6 +281,12 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     @app.put('/api/notifications')
     def notification_save():
         session=require_owner();prefs=json_body()
+        legacy_fields = (set(NOTIFICATION_DEFAULTS) - {'news_calls', 'news_sec'}) | {'news'}
+        if set(prefs) == legacy_fields:
+            if type(prefs['news']) is not bool:
+                abort(400, description='无效提醒设置')
+            combined = prefs.pop('news')
+            prefs.update(news_calls=combined, news_sec=combined)
         if set(prefs)!=set(NOTIFICATION_DEFAULTS) or any(type(prefs[k]) is not bool for k in NOTIFICATION_DEFAULTS if k!='treasury_threshold'):
             abort(400,description='无效提醒设置')
         threshold=prefs['treasury_threshold']
@@ -667,8 +673,21 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
     def state_write():
         if request.args.get("user") and request.args["user"] != logged_in()["user_id"]:
             abort(403, description="不能修改其他账户的记录")
+        from backend.services.symbol_validation import validate_symbols, ValidationUnavailable
+        user_id = logged_in()["user_id"]
+        patch = json_body()
         try:
-            return jsonify(state=database.update_state(json_body(), user_id=logged_in()["user_id"]))
+            verified = None
+            if 'watchlist' in patch:
+                incoming = patch['watchlist']
+                if not isinstance(incoming, list) or len(incoming)>128 or any(not isinstance(s,str) or not SYMBOL.fullmatch(s) for s in incoming):
+                    raise ValueError('无效自选股列表')
+                current = database.read_state(user_id) or {}
+                additions = [s for s in incoming if s not in current.get('watchlist', [])]
+                verified = validate_symbols(additions, database)
+            return jsonify(state=database.update_state(patch, user_id=user_id, validated_watchlist=verified))
+        except ValidationUnavailable as error:
+            return jsonify(error=str(error)), 503
         except ValueError as error:
             return jsonify(error=str(error)), 400
 

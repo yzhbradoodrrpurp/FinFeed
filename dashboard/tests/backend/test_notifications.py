@@ -26,6 +26,52 @@ class NotificationCases(unittest.TestCase):
     def enqueue(self):
         self.n.observe(self.uid,'jobs',lambda old:({},[event('jobs','release:one','NFP','body')]))
 
+    def test_legacy_combined_preferences_preserve_cursors_and_stable_mail_ids(self):
+        self.enabled();self.store.update_state({'watchlist':['AAPL'],'positions':[]})
+        old={k:v for k,v in DEFAULTS.items() if k not in ('news_calls','news_sec')}
+        old['news']=True
+        import json
+        with self.store.transaction() as c:
+            self.store.execute(c,'UPDATE notification_settings SET preferences=? WHERE user_id=?',(json.dumps({**old,'enabled':True}),self.uid))
+        for source in ('news:calls:AAPL','news:sec:AAPL'):
+            self.n.observe(self.uid,source,lambda previous:({'ids':['known'],'baseline_at':1},[]))
+        prefs=self.n.settings(self.uid)['preferences']
+        self.assertTrue(prefs['news_calls']);self.assertTrue(prefs['news_sec'])
+        self.n.save(self.uid,prefs)
+        with self.store.transaction() as c:
+            self.assertEqual(self.store.execute(c,'SELECT COUNT(*) AS n FROM notification_cursors WHERE user_id=?',(self.uid,)).fetchone()['n'],2)
+        item={'id':'https://example.com/new','url':'https://example.com/new','title':'new','date':'2026-11-01'}
+        previous={'ids':[],'baseline_at':1}
+        now=instant('2026-11-01T12:00:00Z')
+        _,a=item_events('news','news:sec:AAPL',[item],previous,'AAPL',now=now)
+        _,b=item_events('news_sec','news:sec:AAPL',[item],previous,'AAPL',now=now)
+        self.assertEqual(a[0]['key'],b[0]['key'])
+
+    def test_topics_independently_gate_queued_mail_and_source_cursors(self):
+        self.enabled();self.store.update_state({'watchlist':['AAPL'],'positions':[]})
+        for source,category,title in [('news:calls:AAPL','news_calls','AAPL 新财报电话会'),('news:sec:AAPL','news_sec','AAPL 新SEC 披露')]:
+            self.n.observe(self.uid,source,lambda previous,c=category,t=title:({'ids':['old']},[event(c,c,t,'body')]))
+        self.n.save(self.uid,{**DEFAULTS,'enabled':True,'news_calls':False,'news_sec':True})
+        with self.store.transaction() as c:
+            rows=self.store.execute(c,'SELECT category,status FROM notification_outbox').fetchall()
+            states={row['category']:row['status'] for row in rows}
+        self.assertEqual(states,{'news_calls':'cancelled','news_sec':'pending'})
+        self.assertTrue(self.n.allowed({'user_id':self.uid,'email':'user@example.com','category':'news','subject':'FinFeed · AAPL 新SEC 披露'}))
+        self.assertFalse(self.n.allowed({'user_id':self.uid,'email':'user@example.com','category':'news','subject':'FinFeed · AAPL 新财报电话会'}))
+        self.n.save(self.uid,{**DEFAULTS,'enabled':True})
+        with self.store.transaction() as c:
+            rows=self.store.execute(c,'SELECT source FROM notification_cursors').fetchall()
+        self.assertEqual([r['source'] for r in rows],['news:sec:AAPL'])
+
+    def test_worker_polls_only_the_subscribed_news_topic(self):
+        self.enabled();self.store.update_state({'watchlist':['AAPL'],'positions':[]})
+        worker=NotificationWorker(self.n,self.mailer,self.store)
+        for calls,sec,expected in [(False,True,'news:sec:AAPL'),(True,False,'news:calls:AAPL')]:
+            self.n.save(self.uid,{**DEFAULTS,'enabled':True,'jobs':False,'pce':False,'treasury':False,'whales':False,'news_calls':calls,'news_sec':sec})
+            with patch.object(worker,'poll') as poll,patch.object(worker,'deliver'):
+                worker.cycle()
+            self.assertEqual([call.args[0] for call in poll.call_args_list],[expected])
+
     def test_personalized_alert_envelope(self):
         self.enabled();self.enqueue()
         with self.store.transaction() as c:

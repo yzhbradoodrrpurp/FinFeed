@@ -383,11 +383,13 @@ class Store:
                 'cache_age_seconds': round(max(0, time.time() - updated))}
                 for key, (payload, updated) in values.items() if time.time() - updated <= 7 * 86400}
 
-    def update_state(self, patch: dict, *, require_empty: bool = False, user_id=None) -> dict:
+    def update_state(self, patch: dict, *, require_empty: bool = False, user_id=None, validated_watchlist=None, expected_revision=None) -> dict:
         if not isinstance(patch, dict) or set(patch) - {"watchlist", "positions", "watchlistFavorites", "uiPreferences", "initialize"}:
             raise ValueError("无效保存字段")
         with self.transaction() as connection:
             owner = self.account(connection, user_id)
+            if expected_revision is not None and owner['revision'] != expected_revision:
+                raise ValueError('账户记录已更新，请重新读取后再修改')
             current = json.loads(owner["state"]) if owner["state"] else None
             if require_empty and current is not None:
                 raise ValueError("云端已有记录，拒绝覆盖；请通过登录后的导入功能操作")
@@ -403,6 +405,10 @@ class Store:
             if isinstance(patch.get('watchlist'), list) and 'watchlistFavorites' not in patch and 'watchlistFavorites' in merged:
                 merged['watchlistFavorites'] = [t for t in merged['watchlistFavorites'] if t in merged['watchlist']]
             state = validate(merged)
+            if validated_watchlist is not None:
+                added = set(state['watchlist']) - set((current or {}).get('watchlist', []))
+                if not added <= validated_watchlist:
+                    raise ValueError('关注列表已变化，请重新添加并验证 Ticker')
             if current == state:
                 return state
             revision = owner["revision"] + 1

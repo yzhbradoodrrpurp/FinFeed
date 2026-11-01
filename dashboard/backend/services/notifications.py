@@ -113,7 +113,7 @@ def item_events(category, source, items, previous, heading, now=None, since=0):
         return value, []
     body = '\n\n'.join(f"{item['title']}\n发布/申报时间：{item.get('date', '未提供')}\n{item['url']}" for item in new)
     key = fingerprint(source + ':' + ':'.join(sorted(item_identity(source, item['id']) for item in new)))
-    return value, [event(category, category + ':' + key, heading + f'（{len(new)} 条）', body)]
+    return value, [event(category, ('news' if category in ('news_calls','news_sec') else category) + ':' + key, heading + f'（{len(new)} 条）', body)]
 
 
 class NotificationWorker:
@@ -177,9 +177,10 @@ class NotificationWorker:
                 if prefs[kind]:tasks.setdefault('macro:'+kind,[]).append(user)
             if prefs['whales']:
                 for kind in FUNDS:tasks.setdefault('whales:'+kind,[]).append(user)
-            if prefs['news']:
-                for symbol in user['state'].get('watchlist',[]):
-                    for kind in ('calls','sec'):tasks.setdefault('news:'+kind+':'+symbol,[]).append(user)
+            for kind in ('calls','sec'):
+                if prefs['news_'+kind]:
+                    for symbol in user['state'].get('watchlist',[]):
+                        tasks.setdefault('news:'+kind+':'+symbol,[]).append(user)
         # Heavy provider retrieval never runs inside a login/page response.
         # Claims happen in the worker, so queued work cannot lease-expire early.
         tasks={key:value for key,value in tasks.items() if lane is None or (key.startswith('macro:') == (lane=='macro'))}
@@ -224,7 +225,7 @@ class NotificationWorker:
                 kind,symbol=parts[1:];data=self.cached(('market:v1:news:sec-edgar:v1:' if kind=='sec' else 'market:v1:news:v1:calls:')+symbol,3600,lambda:snapshot(symbol,kind))
                 if data.get('errors') or not isinstance(data.get('items'),list):raise ValueError('Incomplete news data')
                 items=[{'id':r['url'],'title':r['title'],'date':r.get('accepted_at') or r['published_at'],'url':r['url']} for r in data.get('notification_items',data['items'])]
-                for user in users:self.storage.observe(user['user_id'],source,lambda old,u=user:item_events('news',source,items,old,symbol+' 新'+('财报电话会' if kind=='calls' else 'SEC 披露'),now=now,since=u['enabled_since']),expected=user)
+                for user in users:self.storage.observe(user['user_id'],source,lambda old,u=user:item_events('news_'+kind,source,items,old,symbol+' 新'+('财报电话会' if kind=='calls' else 'SEC 披露'),now=now,since=u['enabled_since']),expected=user)
             self.storage.finish_source(source,token,time.time()+interval)
             self.deliver()
         except Exception as exc:

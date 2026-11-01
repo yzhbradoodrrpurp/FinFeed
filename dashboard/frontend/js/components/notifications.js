@@ -58,7 +58,6 @@ window.FinFeedNotifications=(()=>{
     el('notification-unbind').hidden=!data.verified&&!data.pending_email;
     savedPreferences=preferenceKey(data.preferences);updateSave(false);
     if(data.configured===false)status('邮件服务尚未配置。配置后即可验证邮箱并启用提醒。');
-    else if((data.deliveries?.uncertain||0)+(data.deliveries?.sending||0)>0)status('部分邮件发送状态待核实，已暂停这些邮件的自动重发。');
     else if(data.scheduler_configured===false)status('后台定时调度尚未配置，网页关闭后的提醒需要完成服务器配置。');
   }
   function cancelBindingMotion(){

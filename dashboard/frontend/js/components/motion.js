@@ -35,7 +35,7 @@ window.FinFeedMotion=(()=>{
   function close(dialog){
     if(!dialog?.open||closing.has(dialog))return;
     // Match the daily chart: shared entrance animation and immediate native close.
-    if(dialog.matches('#detail-dialog,#order-dialog,#method-dialog,#account-dialog')||reduced()||!dialog.animate){finishClose(dialog);return;}
+    if(dialog.matches('#detail-dialog,#order-dialog,#method-dialog,#account-dialog,#position-dialog')||reduced()||!dialog.animate){finishClose(dialog);return;}
     closing.add(dialog);
     // Preserve the current entrance frame even if Close is clicked mid-animation.
     const style=getComputedStyle(dialog),opacity=style.opacity,transform=style.transform;

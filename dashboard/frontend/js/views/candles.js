@@ -1,12 +1,13 @@
 "use strict";
 // Authenticated, database-only reads. Full OHLCV snapshots use shared IndexedDB caching.
 (() => {
+  const vegasGroups=[{periods:[144,169],color:'#f23645'},{periods:[288,338],color:'#f59e0b'},{periods:[576,676],color:'#4caf50'}];
   const dialog=document.createElement('dialog');
   dialog.id='candles-dialog';dialog.className='candles-dialog';dialog.setAttribute('aria-labelledby','candles-title');
-  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
+  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span><span class="candles-vegas" title="EMA 使用前复权收盘价，按交易日计算；以缓存历史首日收盘价初始化，早期数值可能受历史长度影响。">${vegasGroups.map(group=>`<span style="color:${group.color}">EMA ${group.periods.join('/')}</span>`).join('')}</span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
   document.body.append(dialog);
   const node=id=>document.getElementById('candles-'+id);
-  let library,chart,price,volume,snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener,resizer,logicalRange=null,keyboardInteraction=false;
+  let library,chart,price,volume,vegas=[],snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener,resizer,logicalRange=null,keyboardInteraction=false;
   function loadLibrary(){
     if(window.LightweightCharts)return Promise.resolve();
     if(!library)library=new Promise((resolve,reject)=>{
@@ -18,11 +19,16 @@
   }
   const fmt=value=>Number(value).toLocaleString('zh-CN',{maximumFractionDigits:2});
   function legend(bar){node('legend').textContent=bar?`${bar.time}　开 ${fmt(bar.open)}　高 ${fmt(bar.high)}　低 ${fmt(bar.low)}　收 ${fmt(bar.close)}　成交量 ${fmt(bar.volume)}`:'';}
+  function ema(bars,period){
+    const alpha=2/(period+1);let value=bars[0].close;
+    return bars.map(bar=>{value+=alpha*(bar.close-value);return {time:bar.time,value};});
+  }
   function setRange(value){logicalRange=value;chart.timeScale().setVisibleLogicalRange(value);}
   function makeChart(){
     const L=window.LightweightCharts;
     chart=L.createChart(node('chart'),{width:node('chart').clientWidth,height:node('chart').clientHeight,localization:{locale:'zh-CN'},layout:{background:{type:'solid',color:'#ffffff'},textColor:'#78736d',attributionLogo:true},grid:{vertLines:{color:'#f2f0ec'},horzLines:{color:'#f2f0ec'}},rightPriceScale:{borderColor:'#e8e3dc',minimumWidth:72},timeScale:{borderColor:'#e8e3dc',rightOffset:0,fixLeftEdge:true,fixRightEdge:true,minBarSpacing:0.01,lockVisibleTimeRangeOnResize:true},crosshair:{mode:L.CrosshairMode.Normal}});
     price=chart.addSeries(L.CandlestickSeries,{upColor:'#089981',downColor:'#f23645',borderVisible:false,wickUpColor:'#089981',wickDownColor:'#f23645'});
+    vegas=vegasGroups.flatMap(group=>group.periods.map(period=>({period,series:chart.addSeries(L.LineSeries,{color:group.color,lineWidth:2,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false})})));
     volume=chart.addSeries(L.HistogramSeries,{priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false},1);
     chart.panes()[1].setHeight(140);
     // Own resizing explicitly: asynchronous auto-size after fit could introduce
@@ -57,6 +63,7 @@
     byTime=new Map(bars.map(b=>[b.time,b]));
     price.setData(bars.map(({volume,...b})=>b));
     volume.setData(bars.map(b=>({time:b.time,value:b.volume,color:b.close>=b.open?'#08998170':'#f2364570'})));
+    vegas.forEach(({period,series})=>series.setData(ema(bars,period)));
     legend(bars.at(-1));node('title').textContent=`${activeSymbol} · ${data.name||'日 K 线'}`;node('currency').textContent=data.currency||'';
     const time=new Date(data.retrieved_at);
     node('status').textContent=`${data.stale?'更新失败，保留历史数据 · ':data.refreshing?'缓存 · 正在检查更新 · ':''}${bars[0].time} — ${bars.at(-1).time} · 更新于 ${Number.isNaN(time.getTime())?'未知':time.toLocaleString('zh-CN')}`;

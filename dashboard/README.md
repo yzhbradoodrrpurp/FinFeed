@@ -86,7 +86,8 @@ pane, synchronized crosshair, zoom/pan, range shortcuts and forward-adjusted pri
 Longbridge and refreshes hourly on the backend; clients show retained local history
 before checking versioned server snapshots. Unsupported instruments and failed
 updates retain explicit missing/stale states. Newly listed securities display only
-available history. EMA and historical P/E are not part of this view.
+available history. Vegas EMA pairs (144/169 in red, 288/338 in orange and
+576/676 in green) overlay the price pane. Historical P/E is not included.
 
 ### Verified Watchlist additions and independent news alerts
 

@@ -134,7 +134,13 @@ NFP and PCE cards show previous values without an adjacent date. Current and nex
 Clicking a Watchlist ticker opens a three-calendar-year daily chart. Other cells
 retain the metric-details action. The chart uses self-hosted TradingView Lightweight
 Charts 5.2.1 (Apache-2.0), with price candles and a separate volume pane sharing the
-same time axis. EMA and historical P/E are not included. Users can zoom, pan, inspect
+same time axis. Vegas EMA pairs (144/169, 288/338 and 576/676) are computed
+in the browser from all cached forward-adjusted daily closes, independently of the
+visible range. Each recurrence uses alpha = 2 / (period + 1), seeded with the first
+available close; early values depend on retained history and may differ from a
+provider using a longer warm-up. The three pairs are red, orange and green. No
+additional provider requests or cache records are required. Historical P/E is not
+included. Users can zoom, pan, inspect
 OHLCV with the crosshair, select a shorter visible range, and inspect forward-adjusted prices. The provider determines corporate-action adjustment;
 regular-session daily data can change before the session closes.
 

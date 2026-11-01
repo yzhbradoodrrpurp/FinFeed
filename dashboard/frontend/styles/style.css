@@ -298,3 +298,5 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 #candles-chart table{border-collapse:collapse;border-spacing:0;white-space:normal;font-size:inherit}
 #candles-chart td,#candles-chart th{padding:0;border:0;min-width:0;background:transparent!important}
 #candles-chart tr{cursor:default}
+
+.candles-vegas{display:inline-flex;flex-wrap:wrap;gap:12px;font-size:12px;margin-left:auto}

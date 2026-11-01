@@ -53,6 +53,11 @@ def normalize(rows, start, end, zone):
     return [result[day] for day in sorted(result)]
 
 
+def public_snapshot(value):
+    """Exclude retired adjustment blocks from older persisted snapshots."""
+    return {key: item for key, item in value.items() if key != 'unadjusted'}
+
+
 def snapshot(symbol):
     from longbridge.openapi import Period, AdjustType, TradeSessions
     zone = ZoneInfo('America/New_York')
@@ -70,11 +75,8 @@ def snapshot(symbol):
     if len(static) != 1 or static[0].symbol != symbol+'.US':
         raise ValueError('Candlestick security identity mismatch')
     value.update(name=static[0].name_en, currency=static[0].currency)
-    for key, adjustment in [('bars', AdjustType.ForwardAdjust), ('unadjusted', AdjustType.NoAdjust)]:
-        rows = _call(lambda a=adjustment: qctx.history_candlesticks_by_date(
-            symbol+'.US', Period.Day, a, start, end, TradeSessions.Intraday))
-        value[key] = normalize(rows, start, end, zone)
-    if [b['time'] for b in value['bars']] != [b['time'] for b in value['unadjusted']]:
-        raise ValueError('Adjustment series have different trading dates')
+    rows = _call(lambda: qctx.history_candlesticks_by_date(
+        symbol+'.US', Period.Day, AdjustType.ForwardAdjust, start, end, TradeSessions.Intraday))
+    value['bars'] = normalize(rows, start, end, zone)
     value.update(adjustment='ForwardAdjust', latest_session_may_be_incomplete=True)
     return value

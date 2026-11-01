@@ -82,8 +82,7 @@ Users select categories directly; saving with none selected disables alerts. See
 ### Watchlist daily charts
 
 Click a ticker to open a three-year daily candlestick chart with a separate volume
-pane, synchronized crosshair, zoom/pan, range shortcuts and forward/unadjusted price
-selection. Other cells still open financial metric details. US history comes from
+pane, synchronized crosshair, zoom/pan, range shortcuts and forward-adjusted prices. Other cells still open financial metric details. US history comes from
 Longbridge and refreshes hourly on the backend; clients show retained local history
 before checking versioned server snapshots. Unsupported instruments and failed
 updates retain explicit missing/stale states. Newly listed securities display only

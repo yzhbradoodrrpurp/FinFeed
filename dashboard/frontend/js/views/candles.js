@@ -3,7 +3,7 @@
 (() => {
   const dialog=document.createElement('dialog');
   dialog.id='candles-dialog';dialog.className='candles-dialog';dialog.setAttribute('aria-labelledby','candles-title');
-  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><label>价格口径 <select id="candles-adjust" aria-label="价格复权口径"><option value="bars">前复权</option><option value="unadjusted">不复权</option></select></label><span id="candles-currency"></span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div><a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts ↗</a></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘 · 上方价格、下方成交量</p>`;
+  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span>前复权</span><span id="candles-currency"></span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div><a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts ↗</a></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘 · 上方价格、下方成交量</p>`;
   document.body.append(dialog);
   const node=id=>document.getElementById('candles-'+id);
   let library,chart,price,volume,snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener;
@@ -31,7 +31,7 @@
   }
   function range(months){
     if(!chart||!snapshot?.bars?.length)return;
-    const bars=snapshot[node('adjust').value],last=bars.at(-1).time,end=new Date(last+'T00:00:00Z');end.setUTCMonth(end.getUTCMonth()-months);
+    const bars=snapshot.bars,last=bars.at(-1).time,end=new Date(last+'T00:00:00Z');end.setUTCMonth(end.getUTCMonth()-months);
     const start=end.toISOString().slice(0,10),first=bars.find(b=>b.time>=start)||bars[0];
     chart.timeScale().setVisibleRange({from:first.time,to:last});
     node('ranges').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.months)===months)));
@@ -39,7 +39,7 @@
   function render(data){
     snapshot=data;
     if(data.unsupported){node('status').textContent=data.note;return;}
-    const bars=data[node('adjust').value];
+    const bars=data.bars;
     if(!Array.isArray(bars)||!bars.length)return;
     if(!chart)makeChart();
     byTime=new Map(bars.map(b=>[b.time,b]));
@@ -65,7 +65,7 @@
   window.FinFeedCandles={async open(symbol,source){
     opener=source||document.activeElement;requestId++;const id=requestId;
     aborter?.abort();aborter=null;clearInterval(timer);chart?.remove();chart=null;snapshot=null;fitted=false;activeSymbol=symbol;byTime.clear();
-    node('title').textContent=symbol+' · 日 K 线';node('legend').textContent='';node('currency').textContent='';node('status').textContent='正在读取历史日线…';node('adjust').value='bars';
+    node('title').textContent=symbol+' · 日 K 线';node('legend').textContent='';node('currency').textContent='';node('status').textContent='正在读取历史日线…';
     node('ranges').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.months==='36')));
     if(!dialog.open)dialog.showModal();node('title').focus({preventScroll:true});
     try{
@@ -78,6 +78,5 @@
   }};
   node('close').addEventListener('click',()=>dialog.close());
   dialog.addEventListener('close',()=>{requestId++;aborter?.abort();aborter=null;clearInterval(timer);chart?.remove();chart=null;opener?.focus?.({preventScroll:true});});
-  node('adjust').addEventListener('change',()=>{if(snapshot)render(snapshot);});
   node('ranges').addEventListener('click',event=>{const button=event.target.closest('[data-months]');if(button)range(Number(button.dataset.months));});
 })();

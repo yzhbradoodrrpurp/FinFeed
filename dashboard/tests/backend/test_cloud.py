@@ -22,11 +22,12 @@ class CloudCases(unittest.TestCase):
         self.frontend_setup()
         with patch('backend.providers.candles.snapshot', side_effect=AssertionError('must not call API')):
             self.assertEqual(self.client.get(path).status_code, 202)
-            data = {'ticker': 'AAPL', 'bars': [{'time': '2026-01-02', 'open': 10}], 'errors': []}
+            data = {'ticker': 'AAPL', 'bars': [{'time': '2026-01-02', 'open': 10}], 'unadjusted': [{'time':'2026-01-02'}], 'errors': []}
             self.store.set_cache('market:v1:' + KEY + 'AAPL', data)
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json['bars'], data['bars'])
+            self.assertNotIn('unadjusted', response.json)
             self.assertEqual(self.client.get(path+'?version='+response.json['cache_version']).status_code, 304)
             self.store.set_cache('refresh-status:market:v1:' + KEY + 'AAPL', {'failed': True})
             stale = self.client.get(path).json

@@ -756,10 +756,10 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         symbol = symbol.upper()
         if not SYMBOL.fullmatch(symbol):
             abort(400, description="无效 ticker")
-        from backend.providers.candles import KEY, TTL
+        from backend.providers.candles import KEY, TTL, public_snapshot
         from backend.infrastructure.snapshot_read import response
         # Always database-only, including a cold cache. The scheduler owns API calls.
-        return response(database, 'market:v1:' + KEY + symbol, TTL)
+        return response(database, 'market:v1:' + KEY + symbol, TTL, public_snapshot)
 
     @app.get("/api/security/<symbol>")
     def quote(symbol: str):

@@ -276,3 +276,28 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 .auth-pending .dashboard-page > .workspace { visibility: hidden; pointer-events: none; }
 #auth-gate { position: fixed; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; color: #847e76; text-align: center; }
 #auth-gate[hidden] { display: none; }
+
+/* Daily chart: one shared time scale, price above and volume in its own pane. */
+.candle-trigger{display:block;border:0;background:none;padding:0;color:inherit;font:inherit;font-weight:700;cursor:pointer;text-align:left}
+.candle-trigger:hover{text-decoration:underline;text-underline-offset:3px;color:var(--accent,#ed7024)}
+.candle-trigger:focus-visible{outline:2px solid #ed7024;outline-offset:4px;border-radius:2px}
+.candles-dialog{width:min(1240px,96vw);max-width:96vw;padding:24px;box-sizing:border-box}
+.candles-dialog .dialog-heading h2{margin:6px 0 0;font-size:24px}
+.candles-toolbar{display:flex;align-items:center;gap:20px;border-block:1px solid #eee9e2;padding:12px 0;margin-top:18px;font-size:13px;color:#78736d}
+.candles-toolbar select{border:1px solid #e8e3dc;border-radius:6px;background:white;padding:6px;color:#383531}
+.candles-legend{min-height:22px;font-size:12px;font-variant-numeric:tabular-nums;margin-top:12px;color:#504b45}
+#candles-chart{height:clamp(300px,61vh,650px);position:relative}
+#candles-status{min-height:18px;margin:5px 0 12px;font-size:11px}
+.candles-bottom{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-top:1px solid #eee9e2;padding-top:12px;font-size:11px}
+#candles-ranges{display:flex;gap:4px}#candles-ranges button{border:0;border-radius:5px;background:transparent;padding:6px 10px;font:inherit;cursor:pointer;color:#78736d}
+#candles-ranges button[aria-pressed=true]{background:#fff0e3;color:#d75d0d}
+.candles-footnote{margin:12px 0 0;font-size:11px}
+@media(max-width:640px){.candles-dialog{padding:14px}.candles-dialog .dialog-heading h2{font-size:19px}.candles-legend{font-size:10px;min-height:36px}.candles-toolbar{gap:12px}#candles-ranges button{padding:6px 8px}}
+.candles-dialog[open]{display:flex;flex-direction:column;height:min(940px,94vh);max-height:94vh;overflow:hidden}
+.candles-dialog .dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-shrink:0}
+.candles-dialog .dialog-heading button{flex-shrink:0}
+.candles-dialog #candles-chart{height:auto;min-height:180px;flex:1;min-width:0}
+.candles-dialog .candles-toolbar,.candles-dialog .candles-bottom,.candles-dialog .candles-footnote,.candles-dialog #candles-status,.candles-dialog .candles-legend{flex-shrink:0}
+#candles-chart table{border-collapse:collapse;border-spacing:0;white-space:normal;font-size:inherit}
+#candles-chart td,#candles-chart th{padding:0;border:0;min-width:0;background:transparent!important}
+#candles-chart tr{cursor:default}

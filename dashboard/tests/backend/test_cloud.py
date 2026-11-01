@@ -15,6 +15,25 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_candles_are_authenticated_database_only_and_versioned(self):
+        from backend.providers.candles import KEY
+        path = '/api/candles/AAPL'
+        self.assertEqual(self.client.get(path).status_code, 401)
+        self.frontend_setup()
+        with patch('backend.providers.candles.snapshot', side_effect=AssertionError('must not call API')):
+            self.assertEqual(self.client.get(path).status_code, 202)
+            data = {'ticker': 'AAPL', 'bars': [{'time': '2026-01-02', 'open': 10}], 'errors': []}
+            self.store.set_cache('market:v1:' + KEY + 'AAPL', data)
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json['bars'], data['bars'])
+            self.assertEqual(self.client.get(path+'?version='+response.json['cache_version']).status_code, 304)
+            self.store.set_cache('refresh-status:market:v1:' + KEY + 'AAPL', {'failed': True})
+            stale = self.client.get(path).json
+            self.assertTrue(stale['stale'])
+            self.assertEqual(stale['bars'], data['bars'])
+        self.assertEqual(self.client.get('/api/candles/BAD!').status_code, 400)
+
     def test_status_reports_remaining_fixed_session_lifetime(self):
         self.assertEqual(self.client.get('/api/auth/status').json['sessionExpiresIn'], 0)
         self.frontend_setup()

@@ -128,3 +128,34 @@ Browser security responses omit internal `series` and `longbridge_market` blocks
 Bridgewater Associates, LP (CIK 1350694, application ID `bridgewater`) is included in Whale Holdings under the Quantitative Funds category. Its SEC 13F holdings use the existing verified totals, adjacent-quarter comparison, amendment, cache and stale-data handling. These disclosures cover reportable securities rather than the complete global macro portfolio. Institutional reminders follow the existing observation baseline and deduplication rules.
 
 NFP and PCE cards show previous values without an adjacent date. Current and next publication times remain in their separate calendar section. Previous values retain the current revision basis rather than claiming to reproduce originally published values. Calendar metadata, including the prior BEA release, remains available in backend snapshots.
+
+## Watchlist daily candlestick charts
+
+Clicking a Watchlist ticker opens a three-calendar-year daily chart. Other cells
+retain the metric-details action. The chart uses self-hosted TradingView Lightweight
+Charts 5.2.1 (Apache-2.0), with price candles and a separate volume pane sharing the
+same time axis. EMA and historical P/E are not included. Users can zoom, pan, inspect
+OHLCV with the crosshair, select a shorter visible range, and switch between forward
+adjusted and unadjusted prices. The provider determines corporate-action adjustment;
+regular-session daily data can change before the session closes.
+
+The existing backend scheduler refreshes `candles:3y:v1:<symbol>` hourly for the union
+of active accounts' Watchlist and Portfolio symbols. A bounded chart lane and a
+serialized provider-call guard limit extra quote traffic. Longbridge returns US
+regular-session daily bars via its history-by-date API, with up to 1,000 bars per
+request. New listings retain their shorter available history. Unsupported non-US
+and crypto routes are marked unavailable rather than guessed as US instruments.
+
+Successful forward/unadjusted batches are validated together and published under
+`market:v1:candles:3y:v1:<symbol>` in the existing PostgreSQL cache. Invalid, empty
+or failed refreshes retain the previous complete batch. `/api/candles/<symbol>`
+requires normal authentication and only reads the database, even for cold caches;
+it never starts an upstream request. Cold caches return HTTP 202. Snapshots use the
+existing content-version/ETag and HTTP 304 protocol. No database schema is added.
+
+The browser reuses the existing public-snapshot IndexedDB layer, displays retained
+history on opening, and checks the database snapshot in the background. While open,
+it checks once per minute; this does not change the hourly provider cadence.
+Changing adjustment or chart range does not fetch data. Failed updates preserve the
+visible chart, and closing cancels pending reads. The vendor bundle loads only when
+opening a chart. Account records and credentials are never included in chart caches.

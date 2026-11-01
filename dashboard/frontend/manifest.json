@@ -18,5 +18,9 @@
   "app.js": "js/core/app.js",
   "notifications.js": "js/components/notifications.js",
   "preferences.js": "js/core/preferences.js",
-  "watchlist-order.js": "js/components/watchlist-order.js"
+  "watchlist-order.js": "js/components/watchlist-order.js",
+  "candles.js": "js/views/candles.js",
+  "lightweight-charts.js": "vendor/lightweight-charts.js",
+  "lightweight-charts.LICENSE": "vendor/lightweight-charts.LICENSE",
+  "lightweight-charts.NOTICE": "vendor/lightweight-charts.NOTICE"
 }

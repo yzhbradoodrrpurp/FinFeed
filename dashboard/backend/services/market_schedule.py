@@ -31,7 +31,9 @@ def cycle(store, jobs, market_symbols, news_symbols):
     from backend.paths import DASHBOARD_ROOT
     directory = json.loads((DASHBOARD_ROOT/'frontend/assets/symbol-directory.json').read_text())
     etfs = {row[0] for row in directory['securities'] if row[2]}
+    from backend.providers.candles import snapshot as candles, valid as valid_candles, KEY as CANDLE_KEY
     for symbol in market_symbols:
+        jobs.kick(CANDLE_KEY+symbol, lambda publish, s=symbol: candles(s), 3600, valid_candles)
         us_equity = symbol not in etfs and not symbol.endswith('-USD') and ('.' not in symbol or symbol.rsplit('.',1)[1] in ('A','B'))
         if us_equity:
             jobs.kick('financial:'+symbol, lambda publish, s=symbol: financial(s, store), 3600,

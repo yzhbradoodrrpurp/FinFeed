@@ -78,3 +78,13 @@ Polymarket refreshes hourly on the backend; the Macro view reads the cached snap
 The account dialog loads notification settings before showing binding controls, avoiding a false unbound state. Verified accounts hide the verification form. Sending a code starts a sixty-second countdown displaying only the number and `s`; empty required fields disable their actions. Verification, unbinding, invitation generation, login/logout, and notification saving provide transition feedback. Saving produces a disabled saved-state button; editing categories or the threshold re-enables saving.
 
 Users select categories directly; saving with none selected disables alerts. See [email delivery](docs/email-notifications.md) for trigger definitions and operational limitations.
+
+### Watchlist daily charts
+
+Click a ticker to open a three-year daily candlestick chart with a separate volume
+pane, synchronized crosshair, zoom/pan, range shortcuts and forward/unadjusted price
+selection. Other cells still open financial metric details. US history comes from
+Longbridge and refreshes hourly on the backend; clients show retained local history
+before checking versioned server snapshots. Unsupported instruments and failed
+updates retain explicit missing/stale states. Newly listed securities display only
+available history. EMA and historical P/E are not part of this view.

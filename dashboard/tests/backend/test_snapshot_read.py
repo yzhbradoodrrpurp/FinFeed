@@ -85,6 +85,7 @@ class SnapshotReadCases(unittest.TestCase):
         jobs=Jobs();cycle(self.store,jobs,market,news)
         self.assertEqual(jobs.calls['security:AAPL'][0],60)
         self.assertEqual(jobs.calls['financial:AAPL'][0],3600)
+        self.assertEqual(jobs.calls['candles:3y:v1:AAPL'][0],3600)
         self.assertEqual(jobs.calls['macro:fed'][0],3600)
         self.assertEqual(jobs.calls['home:^GSPC'][0],3600)
         self.assertNotIn('news:sec-edgar:v1:MU',jobs.calls)

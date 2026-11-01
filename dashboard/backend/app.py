@@ -751,6 +751,16 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             lambda value: isinstance(value.get('items'), list) and not value.get('errors'),
             stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1', present=public_snapshot)
 
+    @app.get("/api/candles/<symbol>")
+    def candle_data(symbol):
+        symbol = symbol.upper()
+        if not SYMBOL.fullmatch(symbol):
+            abort(400, description="无效 ticker")
+        from backend.providers.candles import KEY, TTL
+        from backend.infrastructure.snapshot_read import response
+        # Always database-only, including a cold cache. The scheduler owns API calls.
+        return response(database, 'market:v1:' + KEY + symbol, TTL)
+
     @app.get("/api/security/<symbol>")
     def quote(symbol: str):
         symbol = symbol.upper()
@@ -779,7 +789,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.get("/<path:filename>")
     def static_file(filename: str):
-        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js", "ticker-search.js", "symbol-directory.json", "news.js", "notifications.js", "preferences.js", "watchlist-order.js"}:
+        if filename not in {"style.css", "app.js", "positions.js", "auth-client.js", "login.js", "cache.js", "home.js", "macro.js", "whales.js", "dropdowns.js", "motion.js", "whale-analysis.js", "ticker-search.js", "symbol-directory.json", "news.js", "notifications.js", "preferences.js", "watchlist-order.js", "candles.js", "lightweight-charts.js", "lightweight-charts.LICENSE", "lightweight-charts.NOTICE"}:
             abort(404)
         return send_from_directory(ROOT / "frontend", STATIC_ASSETS[filename])
 

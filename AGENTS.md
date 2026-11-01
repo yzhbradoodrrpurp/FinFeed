@@ -100,3 +100,8 @@ git diff --check
 The unified runner includes the static build. Documentation-only updates require local-link, configuration-consistency and illustration/render checks rather than the full application suite. A passing health check is not functional acceptance. Keep dated test results, source acceptance and observed email delivery distinct.
 
 Account display preferences persist Watchlist metric-group order and Home sector-card order through authenticated endpoints and PostgreSQL account state. Watchlist handles support long-press dragging and keyboard reordering. Frontend publishing and backend snapshot synchronization remain separate; documentation-only synchronization does not require a backend restart or an application release-marker change.
+
+Watchlist ticker buttons open daily OHLCV charts; other cells retain metric details.
+Chart history uses the existing hourly scheduler and PostgreSQL snapshot cache;
+`/api/candles/<symbol>` is authenticated and database-only. Keep the self-hosted
+Lightweight Charts license, notice, and attribution when updating the vendor bundle.

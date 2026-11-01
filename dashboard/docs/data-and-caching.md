@@ -157,4 +157,7 @@ history on opening, and checks the database snapshot in the background. While op
 it checks once per minute; this does not change the hourly provider cadence.
 Changing chart range does not fetch data. Failed updates preserve the
 visible chart, and closing cancels pending reads. The vendor bundle loads only when
-opening a chart. Account records and credentials are never included in chart caches.
+opening a chart. The selected time range fills the plot from its earliest to latest
+bar with no extra future offset. Explicit resize handling retains the visible
+logical range rather than introducing blank margins. The chart uses a compact
+update-time label; provider provenance and exchange timezone remain in snapshots. Account records and credentials are never included in chart caches.

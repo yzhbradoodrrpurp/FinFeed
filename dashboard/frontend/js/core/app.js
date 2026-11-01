@@ -549,7 +549,7 @@ el("watchlist").addEventListener("click",async event=>{
   }
   const remove=event.target.closest("[data-remove]");if(remove){if(readOnly)return;const before=window.FinFeedMotion?.capture(el("watchlist").querySelectorAll("tbody tr[data-ticker]"));window.FinFeedMotion?.removeRow(remove.closest("tr"));const t=remove.dataset.remove;tickers=tickers.filter(x=>x!==t);queue=queue.filter(task=>task.ticker!==t||holdings.some(p=>p.ticker===t));save();render();if(before)window.FinFeedMotion.settle(before,el("watchlist").querySelectorAll("tbody tr[data-ticker]"));return;}
   const sort=event.target.closest("[data-sort]");if(sort){sortAsc=sortKey===sort.dataset.sort?!sortAsc:true;sortKey=sort.dataset.sort;render();return;}
-  const candle=event.target.closest("[data-candles]");if(candle){window.FinFeedCandles.open(candle.dataset.candles,candle);return;}
+  const candle=event.target.closest("[data-candles]");if(candle){window.FinFeedCandles.open(candle.dataset.candles,candle,event.detail===0);return;}
   const row=event.target.closest("tr[data-ticker]");if(row)detail(row.dataset.ticker);
 });
 el("watchlist").addEventListener("keydown",event=>{if(event.target.matches("tr[data-ticker]")&&(event.key==="Enter"||event.key===" ")){event.preventDefault();detail(event.target.dataset.ticker,true);}});

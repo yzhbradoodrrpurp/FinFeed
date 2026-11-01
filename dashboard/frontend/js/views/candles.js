@@ -6,7 +6,7 @@
   dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
   document.body.append(dialog);
   const node=id=>document.getElementById('candles-'+id);
-  let library,chart,price,volume,snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener,resizer,logicalRange=null;
+  let library,chart,price,volume,snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener,resizer,logicalRange=null,keyboardInteraction=false;
   function loadLibrary(){
     if(window.LightweightCharts)return Promise.resolve();
     if(!library)library=new Promise((resolve,reject)=>{
@@ -74,7 +74,8 @@
     }catch(error){if(!controller.signal.aborted&&id===requestId)node('status').textContent=snapshot?.bars?.length?'暂时无法检查更新，保留本地历史曲线':'历史数据尚未就绪，服务器正在按计划准备，稍后自动检查。';}
     finally{if(aborter===controller)aborter=null;}
   }
-  window.FinFeedCandles={async open(symbol,source){
+  window.FinFeedCandles={async open(symbol,source,keyboard=false){
+    keyboardInteraction=keyboard;
     opener=source||document.activeElement;requestId++;const id=requestId;
     aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;snapshot=null;fitted=false;logicalRange=null;activeSymbol=symbol;byTime.clear();
     node('title').textContent=symbol+' · 日 K 线';node('legend').textContent='';node('currency').textContent='';node('status').textContent='正在读取历史日线…';
@@ -89,6 +90,15 @@
     }catch(error){if(id===requestId)node('status').textContent=error.message;}
   }};
   node('close').addEventListener('click',()=>dialog.close());
-  dialog.addEventListener('close',()=>{requestId++;aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;opener?.focus?.({preventScroll:true});});
+  dialog.addEventListener('keydown',()=>{keyboardInteraction=true;});
+  dialog.addEventListener('pointerdown',()=>{keyboardInteraction=false;});
+  dialog.addEventListener('close',()=>{
+    requestId++;aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;
+    const target=opener?.isConnected?opener:[...document.querySelectorAll('[data-candles]')].find(button=>button.dataset.candles===activeSymbol);
+    if(keyboardInteraction)target?.focus?.({preventScroll:true});
+    // Native dialogs restore focus automatically; pointer closes must not leave
+    // a focus-visible ring on the ticker (or Safari's focusable parent row).
+    else if(document.activeElement===target||document.activeElement?.matches('.candle-trigger,tr[data-ticker]'))document.activeElement?.blur();
+  });
   node('ranges').addEventListener('click',event=>{const button=event.target.closest('[data-months]');if(button)range(Number(button.dataset.months));});
 })();

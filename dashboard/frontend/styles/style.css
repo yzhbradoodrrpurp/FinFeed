@@ -305,13 +305,16 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 
 .candles-vegas{display:inline-flex;flex-wrap:wrap;gap:12px;font-size:12px;margin-left:auto}
 
-.candles-workspace{display:flex;flex:1;min-height:180px;min-width:0;gap:10px}
-#candles-tools{display:flex;flex-direction:column;gap:6px;width:36px;flex-shrink:0;border-right:1px solid #eee9e2;padding-right:6px}
-#candles-tools button{width:30px;height:34px;min-height:34px;padding:0;border:0;border-radius:5px;background:transparent;color:#78736d;font-size:21px}
+.candles-workspace{display:flex;flex:1;min-height:180px;min-width:0;gap:0;border-bottom:1px solid #e8e3dc}
+#candles-tools{display:flex;flex-direction:column;gap:4px;width:44px;flex-shrink:0;border-right:1px solid #e8e3dc;padding:0}
+#candles-tools button{width:100%;height:44px;min-height:44px;padding:0;border:0;border-radius:6px 0 0 6px;background:transparent;color:#78736d;font-size:21px}
 #candles-tools button[aria-pressed=true]{background:#fff0e3;color:#d75d0d}
 .candles-drawing-overlay{position:absolute;top:0;left:0;z-index:2;overflow:hidden;touch-action:none;cursor:crosshair;pointer-events:none}
-@media(max-width:640px){.candles-workspace{gap:4px}#candles-tools{width:30px;padding-right:2px}#candles-tools button{width:27px}.candles-vegas{gap:5px;font-size:10px}}
+@media(max-width:640px){#candles-tools{width:38px}#candles-tools button{height:40px;min-height:40px}.candles-vegas{gap:5px;font-size:10px}}
 
 .candles-object-delete{position:absolute;z-index:3;min-height:30px;padding:4px 12px;border:1px solid #e2d9cf;border-radius:6px;background:white;color:#c83d3d;font-size:12px;box-shadow:0 3px 12px #35251718}
 
-#candles-tools button{display:inline-flex;align-items:center;justify-content:center}#candles-tools button svg{pointer-events:none;flex-shrink:0}
+#candles-tools button{display:inline-flex;align-items:center;justify-content:center}#candles-tools button svg{pointer-events:none;flex-shrink:0;width:26px;height:26px}
+
+.candles-dialog .candles-bottom{border-top:0}
+@media(max-width:640px){#candles-tools button svg{width:24px;height:24px}}

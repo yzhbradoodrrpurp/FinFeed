@@ -314,7 +314,7 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 
 .candles-object-delete{position:absolute;z-index:3;min-height:30px;padding:4px 12px;border:1px solid #e2d9cf;border-radius:6px;background:white;color:#c83d3d;font-size:12px;box-shadow:0 3px 12px #35251718}
 
-#candles-tools button{display:inline-flex;align-items:center;justify-content:center}#candles-tools button svg{pointer-events:none;flex-shrink:0;width:26px;height:26px}
+#candles-tools button{display:inline-flex;align-items:center;justify-content:center}#candles-tools button svg{pointer-events:none;flex-shrink:0;width:20px;height:20px;stroke-width:1.25}
 
 .candles-dialog .candles-bottom{border-top:0}
-@media(max-width:640px){#candles-tools button svg{width:24px;height:24px}}
+

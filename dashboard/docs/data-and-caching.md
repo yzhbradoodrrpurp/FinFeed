@@ -190,8 +190,10 @@ Add/delete operations lock the account row. Add IDs are stable for safe retries;
 deleting only listed IDs preserves lines newly added by other devices. Opening,
 window focus and minute polling reload the account's drawings. Writes show confirmed
 success or an explicit retry/discard state; closing is blocked while a write remains
-unconfirmed. Undo removes the last displayed segment; clear removes displayed segments
-and the temporary measurement. Provider polling and hourly OHLCV caching are unchanged.
+unconfirmed. Clicking a segment or the ruler selects that object and reveals a nearby delete
+button; Delete/Backspace also deletes the selected object. Blank-chart clicks or
+Escape clear selection. Deleting a segment syncs its ID to the server; deleting a
+measurement is local only. There are no global undo/clear buttons. Provider polling and hourly OHLCV caching are unchanged.
 
 ## Watchlist ticker admission
 

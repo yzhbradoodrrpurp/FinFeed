@@ -89,7 +89,7 @@ updates retain explicit missing/stale states. Newly listed securities display on
 available history. Vegas EMA pairs (144/169 in red, 288/338 in orange and
 576/676 in green) overlay the price pane. A left toolbar adds temporary
 price-range measurements and account-private trend segments saved across devices,
-with undo and clear controls. Historical P/E is not included.
+with object selection and deletion controls. Historical P/E is not included.
 
 ### Verified Watchlist additions and independent news alerts
 

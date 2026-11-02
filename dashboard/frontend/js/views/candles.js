@@ -4,7 +4,7 @@
   const vegasGroups=[{periods:[144,169],color:'#f23645'},{periods:[288,338],color:'#f59e0b'},{periods:[576,676],color:'#4caf50'}];
   const dialog=document.createElement('dialog');
   dialog.id='candles-dialog';dialog.className='candles-dialog';dialog.setAttribute('aria-labelledby','candles-title');
-  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span><span class="candles-vegas" title="EMA 使用前复权收盘价，按交易日计算；以缓存历史首日收盘价初始化，早期数值可能受历史长度影响。">${vegasGroups.map(group=>`<span style="color:${group.color}">EMA ${group.periods.join('/')}</span>`).join('')}</span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div class="candles-workspace"><div id="candles-tools" role="toolbar" aria-label="图表工具"><button data-tool="cursor" aria-label="移动图表" title="移动图表" aria-pressed="true">↖</button><button data-tool="measure" aria-label="测量" title="测量：选择两点或拖动" aria-pressed="false">📏</button><button data-tool="trend" aria-label="趋势线" title="趋势线：选择两点，保存到我的账户" aria-pressed="false" disabled>╱</button><button id="candles-undo" aria-label="删除最后一条线" title="删除最后一条线" disabled>↶</button><button id="candles-clear" aria-label="清除划线和测量" title="清除当前标的已显示的划线和测量" disabled>⌫</button></div><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div></div><div class="candles-tool-feedback"><span id="candles-tool-status" role="status"></span><button id="candles-retry" class="secondary" hidden>重试</button><button id="candles-discard" class="secondary" hidden>放弃本次更改</button></div><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
+  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span><span class="candles-vegas" title="EMA 使用前复权收盘价，按交易日计算；以缓存历史首日收盘价初始化，早期数值可能受历史长度影响。">${vegasGroups.map(group=>`<span style="color:${group.color}">EMA ${group.periods.join('/')}</span>`).join('')}</span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div class="candles-workspace"><div id="candles-tools" role="toolbar" aria-label="图表工具"><button data-tool="cursor" aria-label="光标" title="光标：选择图形、拖动和缩放图表" aria-pressed="true">↖</button><button data-tool="measure" aria-label="测量" title="测量：选择两点或拖动" aria-pressed="false">📏</button><button data-tool="trend" aria-label="趋势线" title="趋势线：选择两点，保存到我的账户" aria-pressed="false" disabled>╱</button></div><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div></div><div class="candles-tool-feedback"><span id="candles-tool-status" role="status"></span><button id="candles-retry" class="secondary" hidden>重试</button><button id="candles-discard" class="secondary" hidden>放弃本次更改</button></div><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
   document.body.append(dialog);
   const node=id=>document.getElementById('candles-'+id);
   let library,chart,price,volume,vegas=[],snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener,resizer,logicalRange=null,keyboardInteraction=false;
@@ -25,12 +25,12 @@
   }
   function setRange(value){logicalRange=value;chart.timeScale().setVisibleLogicalRange(value);}
   // Private annotations never enter the shared market snapshot/IndexedDB cache.
-  let tool='cursor',anchor=null,preview=null,measure=null,drawState=null,dragOrigin=null,overlay,redrawFrame=0;
+  let tool='cursor',anchor=null,preview=null,measure=null,drawState=null,dragOrigin=null,overlay,deleteButton,selection=null,redrawFrame=0;
   const svgNS='http://www.w3.org/2000/svg';
   function toolStatus(message=''){node('tool-status').textContent=message;}
   function setTool(value){
     if(value==='trend'&&(!drawState?.loaded||drawState.pending)){toolStatus('请先完成划线读取或保存');return;}
-    tool=value;anchor=preview=null;
+    tool=value;anchor=preview=null;selection=null;
     node('tools').querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===value)));
     if(overlay)overlay.style.pointerEvents=value==='cursor'?'none':'auto';
     toolStatus(value==='cursor'?'':value==='measure'?'选择两点测量，或按住拖动；Esc 取消':'选择不同日期的两点划线；完成后自动保存');redraw();
@@ -46,22 +46,31 @@
     const width=chart.timeScale().width(),height=chart.panes()[0].getHeight();
     overlay.setAttribute('width',width);overlay.setAttribute('height',height);overlay.replaceChildren();
     const add=(name,attributes,text)=>{const n=document.createElementNS(svgNS,name);Object.entries(attributes).forEach(([k,v])=>n.setAttribute(k,String(v)));if(text)n.textContent=text;overlay.append(n);return n;};
-    const segment=(points,color,dash=false)=>{
+    const hit=(element,kind,id='')=>{if(tool==='cursor'){element.dataset.drawing=kind;element.dataset.drawingId=id;element.style.pointerEvents='all';element.style.cursor='pointer';}};
+    const segment=(points,color,dash=false,item=null)=>{
       const a=project(points[0]),b=project(points[1]);if(!a||!b)return;
+      if(item){const target=add('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:'transparent','stroke-width':16});hit(target,item.kind,item.id);}
       add('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:color,'stroke-width':2,...(dash?{'stroke-dasharray':'5 4'}:{})});
       [a,b].forEach(p=>add('circle',{cx:p.x,cy:p.y,r:3,fill:'white',stroke:color,'stroke-width':2}));return [a,b];
     };
-    (drawState?.lines||[]).forEach(line=>segment(line.points,'#3478d4'));
+    (drawState?.lines||[]).forEach(line=>segment(line.points,selection?.id===line.id?'#ee7523':'#3478d4',false,{kind:'line',id:line.id}));
     if(tool==='trend'&&anchor&&preview)segment([anchor,preview],'#ee7523',true);
     const ruler=tool==='measure'&&anchor&&preview?[anchor,preview]:measure;
-    if(ruler){const pair=segment(ruler,'#ee7523',true);if(pair){
+    if(ruler){const pair=segment(ruler,'#ee7523',true,{kind:'measure'});if(pair){
       const [a,b]=pair,delta=ruler[1].price-ruler[0].price,percent=delta/ruler[0].price*100;
-      add('rect',{x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),width:Math.abs(a.x-b.x),height:Math.abs(a.y-b.y),fill:'#ee752315',stroke:'#ee752350'});
+      hit(add('rect',{x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),width:Math.max(2,Math.abs(a.x-b.x)),height:Math.max(2,Math.abs(a.y-b.y)),fill:'#ee752315',stroke:'#ee752350'}),'measure');
       const label=`${delta>=0?'+':''}${fmt(delta)} (${percent>=0?'+':''}${fmt(percent)}%) · ${Math.abs(a.index-b.index)+1} 根日 K`;
       const boxWidth=Math.min(width,Math.max(200,label.length*8)),x=Math.max(0,Math.min(width-boxWidth,(a.x+b.x)/2-boxWidth/2)),y=Math.max(2,Math.min(height-30,Math.min(a.y,b.y)-34));
-      add('rect',{x,y,width:boxWidth,height:28,rx:5,fill:'#fff5eb',stroke:'#ee7523'});
-      add('text',{x:x+8,y:y+18,fill:'#a8490c','font-size':12},label);
+      hit(add('rect',{x,y,width:boxWidth,height:28,rx:5,fill:'#fff5eb',stroke:'#ee7523'}),'measure');
+      hit(add('text',{x:x+8,y:y+18,fill:'#a8490c','font-size':12},label),'measure');
     }}
+    if(deleteButton){
+      const points=selection?.kind==='measure'?measure:drawState?.lines.find(line=>line.id===selection?.id)?.points;
+      const pair=points?.map(project);
+      deleteButton.hidden=!pair?.every(Boolean)||tool!=='cursor';
+      deleteButton.disabled=!!drawState?.pending;
+      if(!deleteButton.hidden){const [a,b]=pair;deleteButton.style.left=Math.max(2,Math.min(width-72,(a.x+b.x)/2-32))+'px';deleteButton.style.top=Math.max(2,Math.min(height-36,Math.min(a.y,b.y)+12))+'px';deleteButton.setAttribute('aria-label',selection.kind==='measure'?'删除选中测量':'删除选中划线');}
+    }
   }
   function scheduleRedraw(){if(!redrawFrame)redrawFrame=requestAnimationFrame(()=>{redrawFrame=0;redraw();});}
   function pointAt(event){
@@ -88,8 +97,7 @@
     node('retry').hidden=!drawState?.error;
     node('discard').hidden=!drawState?.pending||!drawState?.error;
     node('tools').querySelector('[data-tool="trend"]').disabled=!drawState?.loaded||!!drawState?.pending;
-    node('undo').disabled=!drawState?.lines.length||!!drawState?.pending;
-    node('clear').disabled=(!drawState?.lines.length&&!measure)||!!drawState?.pending;
+    if(deleteButton)deleteButton.disabled=!!drawState?.pending;
   }
   async function saveDrawing(operation=drawState?.pending){
     const state=drawState;if(!state||!operation||state.saving)return;
@@ -112,8 +120,14 @@
   }
   function mountTools(){
     overlay=document.createElementNS(svgNS,'svg');overlay.classList.add('candles-drawing-overlay');overlay.setAttribute('aria-label','在价格图上选择起点和终点');node('chart').append(overlay);
+    deleteButton=document.createElement('button');deleteButton.type='button';deleteButton.textContent='删除';deleteButton.className='candles-object-delete';deleteButton.hidden=true;deleteButton.addEventListener('click',deleteSelection);node('chart').append(deleteButton);
     overlay.addEventListener('pointerdown',event=>{
-      if(event.button!==0)return;event.preventDefault();event.stopPropagation();
+      if(event.button!==0)return;
+      if(tool==='cursor'){
+        const target=event.target.closest('[data-drawing]');if(!target)return;
+        event.preventDefault();event.stopPropagation();selection={kind:target.dataset.drawing,id:target.dataset.drawingId};toolStatus('已选中，可点击删除或按 Delete / Backspace');redraw();return;
+      }
+      event.preventDefault();event.stopPropagation();
       const point=pointAt(event);if(!point)return;
       if(anchor)completePoint(point);else{anchor=preview=point;dragOrigin={x:event.clientX,y:event.clientY};overlay.setPointerCapture(event.pointerId);redraw();}
     });
@@ -129,11 +143,19 @@
   node('tools').addEventListener('click',event=>{
     const button=event.target.closest('[data-tool]');if(button)setTool(button.dataset.tool);
   });
-  node('undo').addEventListener('click',()=>{if(drawState?.lines.length&&!drawState.pending)void saveDrawing({operation:'delete',ids:[drawState.lines.at(-1).id]});});
-  node('clear').addEventListener('click',()=>{measure=null;redraw();if(drawState?.lines.length&&!drawState.pending)void saveDrawing({operation:'delete',ids:drawState.lines.map(line=>line.id)});else updateToolButtons();});
+  function deleteSelection(){
+    if(!selection||drawState?.pending)return;
+    const selected=selection;selection=null;
+    if(selected.kind==='measure'){measure=null;toolStatus('');redraw();}
+    else{redraw();void saveDrawing({operation:'delete',ids:[selected.id]});}
+  }
+  dialog.addEventListener('keydown',event=>{
+    if(selection&&['Delete','Backspace'].includes(event.key)&&!event.target.closest('input,textarea,select,[contenteditable]')){event.preventDefault();deleteSelection();}
+  });
+  node('chart').addEventListener('pointerdown',event=>{if(tool==='cursor'&&!event.target.closest('[data-drawing],.candles-object-delete')){selection=null;toolStatus('');redraw();}},true);
   node('retry').addEventListener('click',()=>drawState?.pending?void saveDrawing():void readDrawings());
   node('discard').addEventListener('click',()=>{if(drawState?.saving)return;drawState.pending=null;drawState.loaded=false;void readDrawings();});
-  dialog.addEventListener('cancel',event=>{if(tool!=='cursor'||anchor){event.preventDefault();setTool('cursor');}else if(drawState?.pending){event.preventDefault();closeChart();}});
+  dialog.addEventListener('cancel',event=>{if(tool!=='cursor'||anchor||selection){event.preventDefault();setTool('cursor');}else if(drawState?.pending){event.preventDefault();closeChart();}});
   node('chart').addEventListener('pointermove',scheduleRedraw);node('chart').addEventListener('wheel',scheduleRedraw,{passive:true});
   window.addEventListener('focus',()=>{if(dialog.open)void readDrawings();});
 
@@ -197,7 +219,7 @@
   }
   async function readDrawingsAfterOpen(){await Promise.resolve();if(dialog.open)await readDrawings();}
   window.FinFeedCandles={async open(symbol,source,keyboard=false){
-    keyboardInteraction=keyboard;drawState={symbol,revision:0,lines:[],loaded:false,pending:null,loading:false};measure=null;anchor=preview=null;tool='cursor';overlay?.remove();overlay=null;toolStatus('正在读取我的划线…');updateToolButtons();void readDrawingsAfterOpen();
+    keyboardInteraction=keyboard;drawState={symbol,revision:0,lines:[],loaded:false,pending:null,loading:false};measure=null;anchor=preview=null;tool='cursor';selection=null;overlay?.remove();deleteButton?.remove();deleteButton=null;overlay=null;toolStatus('正在读取我的划线…');updateToolButtons();void readDrawingsAfterOpen();
     opener=source||document.activeElement;requestId++;const id=requestId;
     aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;snapshot=null;fitted=false;logicalRange=null;activeSymbol=symbol;byTime.clear();
     node('title').textContent=symbol+' · 日 K 线';node('legend').textContent='';node('currency').textContent='';node('status').textContent='正在读取历史日线…';
@@ -215,7 +237,7 @@
   dialog.addEventListener('keydown',()=>{keyboardInteraction=true;});
   dialog.addEventListener('pointerdown',()=>{keyboardInteraction=false;});
   dialog.addEventListener('close',()=>{
-    requestId++;aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;overlay?.remove();overlay=null;cancelAnimationFrame(redrawFrame);redrawFrame=0;drawState=null;
+    requestId++;aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;overlay?.remove();deleteButton?.remove();deleteButton=null;selection=null;overlay=null;cancelAnimationFrame(redrawFrame);redrawFrame=0;drawState=null;
     const target=opener?.isConnected?opener:[...document.querySelectorAll('[data-candles]')].find(button=>button.dataset.candles===activeSymbol);
     if(keyboardInteraction)target?.focus?.({preventScroll:true});
     // Native dialogs restore focus automatically; pointer closes must not leave

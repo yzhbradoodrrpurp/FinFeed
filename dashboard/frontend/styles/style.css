@@ -315,3 +315,5 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 @media(max-width:640px){.candles-workspace{gap:4px}#candles-tools{width:30px;padding-right:2px}#candles-tools button{width:27px}.candles-vegas{gap:5px;font-size:10px}}
 
 .candles-object-delete{position:absolute;z-index:3;min-height:30px;padding:4px 12px;border:1px solid #e2d9cf;border-radius:6px;background:white;color:#c83d3d;font-size:12px;box-shadow:0 3px 12px #35251718}
+
+#candles-tools button{display:inline-flex;align-items:center;justify-content:center}#candles-tools button svg{pointer-events:none;flex-shrink:0}

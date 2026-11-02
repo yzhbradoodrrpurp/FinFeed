@@ -4,7 +4,7 @@
   const vegasGroups=[{periods:[144,169],color:'#f23645'},{periods:[288,338],color:'#f59e0b'},{periods:[576,676],color:'#4caf50'}];
   const dialog=document.createElement('dialog');
   dialog.id='candles-dialog';dialog.className='candles-dialog';dialog.setAttribute('aria-labelledby','candles-title');
-  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span><button id="candles-retry" class="secondary" hidden>重试</button><button id="candles-discard" class="secondary" hidden>放弃本次更改</button><span class="candles-vegas" title="EMA 使用前复权收盘价，按交易日计算；以缓存历史首日收盘价初始化，早期数值可能受历史长度影响。">${vegasGroups.map(group=>`<span style="color:${group.color}">EMA ${group.periods.join('/')}</span>`).join('')}</span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div class="candles-workspace"><div id="candles-tools" role="toolbar" aria-label="图表工具"><button data-tool="cursor" aria-label="光标" title="光标：选择图形、拖动和缩放图表" aria-pressed="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 3l14 10-7 1-3 7z"/><path d="M12 14l5 7"/></svg></button><button data-tool="measure" aria-label="测量" title="测量：选择两点或拖动" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 16L16 3l5 5L8 21z"/><path d="M13 6l2 2M10 9l3 3M7 12l2 2M4 15l3 3"/></svg></button><button data-tool="trend" aria-label="趋势线" title="趋势线：选择两点，保存到我的账户" aria-pressed="false" disabled><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 5l5 5M4 20l5-1L21 7a2.1 2.1 0 0 0-4-4L5 15z"/></svg></button></div><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div></div><span id="candles-tool-status" class="sr-only" role="status"></span><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
+  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span><button id="candles-retry" class="secondary" hidden>重试</button><button id="candles-discard" class="secondary" hidden>放弃本次更改</button><span class="candles-vegas" title="EMA 使用前复权收盘价，按交易日计算；以缓存历史首日收盘价初始化，早期数值可能受历史长度影响。">${vegasGroups.map(group=>`<span style="color:${group.color}">EMA ${group.periods.join('/')}</span>`).join('')}</span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div class="candles-workspace"><div id="candles-tools" role="toolbar" aria-label="图表工具"><button data-tool="cursor" aria-label="光标" title="光标：选择图形、拖动和缩放图表" aria-pressed="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 3l14 10-7 1-3 7z"/><path d="M12 14l5 7"/></svg></button><button data-tool="measure" aria-label="测量" title="测量：选择两点或拖动" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 16L16 3l5 5L8 21z"/><path d="M13 6l2 2M10 9l3 3M7 12l2 2M4 15l3 3"/></svg></button><button data-tool="trend" aria-label="趋势线" title="趋势线：选择两点，保存到我的账户" aria-pressed="false" disabled><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 5l5 5M4 20l5-1L21 7a2.1 2.1 0 0 0-4-4L5 15z"/></svg></button></div><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div><div id="candles-loading" class="candles-loading" role="status"><span class="candles-loading-ring" aria-hidden="true"></span><span>正在加载 K 线…</span></div></div><span id="candles-tool-status" class="sr-only" role="status"></span><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
   document.body.append(dialog);
   const node=id=>document.getElementById('candles-'+id);
   let library,chart,price,volume,vegas=[],snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener,resizer,logicalRange=null,keyboardInteraction=false;
@@ -25,10 +25,11 @@
   }
   function setRange(value){logicalRange=value;chart.timeScale().setVisibleLogicalRange(value);}
   // Private annotations never enter the shared market snapshot/IndexedDB cache.
-  let tool='cursor',anchor=null,preview=null,measure=null,drawState=null,dragOrigin=null,overlay,deleteButton,selection=null,redrawFrame=0;
+  let tool='cursor',anchor=null,preview=null,measure=null,drawState=null,dragOrigin=null,overlay,deleteButton,selection=null,dragEdit=null,deferredSnapshot=null,redrawFrame=0;
   const svgNS='http://www.w3.org/2000/svg';
   function toolStatus(message=''){node('tool-status').textContent=message;}
   function setTool(value){
+    if(dragEdit)cancelEdit();
     if(value==='trend'&&(!drawState?.loaded||drawState.pending)){toolStatus('请先完成划线读取或保存');return;}
     tool=value;anchor=preview=null;selection=null;
     node('tools').querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===value)));
@@ -46,12 +47,15 @@
     const width=chart.timeScale().width(),height=chart.panes()[0].getHeight();
     overlay.setAttribute('width',width);overlay.setAttribute('height',height);overlay.replaceChildren();
     const add=(name,attributes,text)=>{const n=document.createElementNS(svgNS,name);Object.entries(attributes).forEach(([k,v])=>n.setAttribute(k,String(v)));if(text)n.textContent=text;overlay.append(n);return n;};
-    const hit=(element,kind,id='')=>{if(tool==='cursor'){element.dataset.drawing=kind;element.dataset.drawingId=id;element.style.pointerEvents='all';element.style.cursor='pointer';}};
+    const hit=(element,kind,id='')=>{if(tool==='cursor'){element.dataset.drawing=kind;element.dataset.drawingId=id;element.style.pointerEvents='all';element.style.cursor=kind==='line'?'grab':'pointer';}};
     const segment=(points,color,dash=false,item=null)=>{
       const a=project(points[0]),b=project(points[1]);if(!a||!b)return;
       if(item){const target=add('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:'transparent','stroke-width':16});hit(target,item.kind,item.id);}
       add('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:color,'stroke-width':2,...(dash?{'stroke-dasharray':'5 4'}:{})});
-      [a,b].forEach(p=>add('circle',{cx:p.x,cy:p.y,r:3,fill:'white',stroke:color,'stroke-width':2}));return [a,b];
+      [a,b].forEach((p,index)=>{
+        if(item?.kind==='line'){const endpoint=add('circle',{cx:p.x,cy:p.y,r:10,fill:'transparent'});hit(endpoint,item.kind,item.id);endpoint.dataset.endpoint=index;endpoint.style.cursor='crosshair';}
+        add('circle',{cx:p.x,cy:p.y,r:3,fill:'white',stroke:color,'stroke-width':2});
+      });return [a,b];
     };
     (drawState?.lines||[]).forEach(line=>segment(line.points,selection?.id===line.id?'#c6530c':'#ee7523',false,{kind:'line',id:line.id}));
     if(tool==='trend'&&anchor&&preview)segment([anchor,preview],'#ee7523',true);
@@ -67,9 +71,9 @@
     if(deleteButton){
       const points=selection?.kind==='measure'?measure:drawState?.lines.find(line=>line.id===selection?.id)?.points;
       const pair=points?.map(project);
-      deleteButton.hidden=!pair?.every(Boolean)||tool!=='cursor';
+      deleteButton.hidden=!pair?.every(Boolean)||tool!=='cursor'||!!dragEdit;
       deleteButton.disabled=!!drawState?.pending;
-      if(!deleteButton.hidden){const [a,b]=pair;deleteButton.style.left=Math.max(2,Math.min(width-72,(a.x+b.x)/2-32))+'px';deleteButton.style.top=Math.max(2,Math.min(height-36,Math.min(a.y,b.y)+12))+'px';deleteButton.setAttribute('aria-label',selection.kind==='measure'?'删除选中测量':'删除选中划线');}
+      if(!deleteButton.hidden){const [a,b]=pair;deleteButton.style.left=Math.max(2,Math.min(width-72,(a.x+b.x)/2-32))+'px';deleteButton.style.top=Math.max(2,Math.min(height-36,Math.min(a.y,b.y)>=40?Math.min(a.y,b.y)-38:Math.max(a.y,b.y)+12))+'px';deleteButton.setAttribute('aria-label',selection.kind==='measure'?'删除选中测量':'删除选中划线');}
     }
   }
   function scheduleRedraw(){if(!redrawFrame)redrawFrame=requestAnimationFrame(()=>{redrawFrame=0;redraw();});}
@@ -83,12 +87,12 @@
     return {time:snapshot.bars[index].time,price:value};
   }
   async function readDrawings(state=drawState){
-    if(!state||state.pending||state.loading)return;
+    if(!state||state.pending||state.loading||dragEdit)return;
     state.loading=true;
     try{
       const response=await FinFeedAuth.request('/api/chart-drawings/'+encodeURIComponent(state.symbol));
       const data=await response.json();if(!response.ok)throw Error(data.error||'划线读取失败');
-      if(drawState!==state||!dialog.open||state.pending||data.revision<state.revision)return;
+      if(drawState!==state||!dialog.open||state.pending||dragEdit||data.revision<state.revision)return;
       state.revision=data.revision;state.lines=data.lines;state.loaded=true;state.error=null;toolStatus('');redraw();
     }catch(error){if(drawState===state&&dialog.open){state.error='read';toolStatus('划线读取失败，请重试；测量仍可使用');}}
     finally{state.loading=false;if(drawState===state)updateToolButtons();}
@@ -118,6 +122,43 @@
       drawState.lines.push(line);setTool('cursor');void saveDrawing({operation:'add',line});
     }else{measure=[anchor,point];setTool('cursor');updateToolButtons();redraw();}
   }
+  function editCoordinate(event){
+    if(!overlay||!chart)return null;
+    const rect=overlay.getBoundingClientRect(),x=Math.max(0,Math.min(rect.width,event.clientX-rect.left)),y=Math.max(0,Math.min(rect.height,event.clientY-rect.top));
+    const logical=chart.timeScale().coordinateToLogical(x),value=price.coordinateToPrice(y);
+    return logical==null||!Number.isFinite(value)?null:{logical,price:value};
+  }
+  function moveEdit(event){
+    const drag=dragEdit,point=editCoordinate(event);if(!drag||!point||Math.hypot(event.clientX-drag.origin.x,event.clientY-drag.origin.y)<4&&!drag.moved)return;
+    const bars=snapshot.bars,old=drag.previous.points,indices=old.map(p=>bars.findIndex(b=>b.time===p.time));
+    if(indices.some(i=>i<0))return;
+    let points;
+    if(drag.endpoint!==null){
+      points=old.map(p=>({...p}));const index=Math.max(0,Math.min(bars.length-1,Math.round(point.logical)));
+      points[drag.endpoint]={time:bars[index].time,price:point.price};
+    }else{
+      const shift=Math.max(-Math.min(...indices),Math.min(bars.length-1-Math.max(...indices),Math.round(point.logical-drag.start.logical))),delta=point.price-drag.start.price;
+      points=old.map((p,i)=>({time:bars[indices[i]+shift].time,price:p.price+delta}));
+    }
+    if(points[0].time===points[1].time||points.some(p=>!Number.isFinite(p.price)||p.price<=0||p.price>1e12))return;
+    const line=drawState.lines.find(l=>l.id===drag.previous.id);if(!line)return;
+    line.points=points;drag.moved=true;redraw();
+  }
+  function finishEdit(){
+    const drag=dragEdit;if(!drag)return;dragEdit=null;
+    if(overlay?.hasPointerCapture(drag.pointerId))overlay.releasePointerCapture(drag.pointerId);
+    const line=drawState?.lines.find(l=>l.id===drag.previous.id);
+    if(drag.moved&&line&&JSON.stringify(line)!==JSON.stringify(drag.previous))void saveDrawing({operation:'update',previous:drag.previous,line:JSON.parse(JSON.stringify(line))});
+    redraw();flushDeferred();
+  }
+  function cancelEdit(){
+    const drag=dragEdit;if(!drag)return;dragEdit=null;
+    const index=drawState?.lines.findIndex(l=>l.id===drag.previous.id);if(index>=0)drawState.lines[index]=drag.previous;
+    if(overlay?.hasPointerCapture(drag.pointerId))overlay.releasePointerCapture(drag.pointerId);
+    redraw();flushDeferred();
+  }
+  function flushDeferred(){if(deferredSnapshot){const data=deferredSnapshot;deferredSnapshot=null;render(data);}}
+  function loading(value){node('loading').hidden=!value;node('chart').setAttribute('aria-busy',String(value));}
   function mountTools(){
     overlay=document.createElementNS(svgNS,'svg');overlay.classList.add('candles-drawing-overlay');overlay.setAttribute('aria-label','在价格图上选择起点和终点');node('chart').append(overlay);
     deleteButton=document.createElement('button');deleteButton.type='button';deleteButton.textContent='删除';deleteButton.className='candles-object-delete';deleteButton.hidden=true;deleteButton.addEventListener('click',deleteSelection);node('chart').append(deleteButton);
@@ -125,18 +166,25 @@
       if(event.button!==0)return;
       if(tool==='cursor'){
         const target=event.target.closest('[data-drawing]');if(!target)return;
-        event.preventDefault();event.stopPropagation();selection={kind:target.dataset.drawing,id:target.dataset.drawingId};toolStatus('已选中，可点击删除或按 Delete / Backspace');redraw();return;
+        event.preventDefault();event.stopPropagation();selection={kind:target.dataset.drawing,id:target.dataset.drawingId};
+        if(selection.kind==='line'&&!drawState?.pending){
+          const line=drawState.lines.find(item=>item.id===selection.id),start=editCoordinate(event);
+          if(line&&start){dragEdit={previous:JSON.parse(JSON.stringify(line)),endpoint:target.dataset.endpoint==null?null:Number(target.dataset.endpoint),start,origin:{x:event.clientX,y:event.clientY},moved:false,pointerId:event.pointerId};overlay.setPointerCapture(event.pointerId);}
+        }
+        toolStatus('已选中，可拖动端点或线身');redraw();return;
       }
       event.preventDefault();event.stopPropagation();
       const point=pointAt(event);if(!point)return;
       if(anchor)completePoint(point);else{anchor=preview=point;dragOrigin={x:event.clientX,y:event.clientY};overlay.setPointerCapture(event.pointerId);redraw();}
     });
-    overlay.addEventListener('pointermove',event=>{if(anchor){preview=pointAt(event)||preview;redraw();}});
-    overlay.addEventListener('pointerup',event=>{if(anchor&&dragOrigin&&Math.hypot(event.clientX-dragOrigin.x,event.clientY-dragOrigin.y)>6)completePoint(pointAt(event));dragOrigin=null;});
-    overlay.addEventListener('pointercancel',()=>{anchor=preview=dragOrigin=null;redraw();});
+    overlay.addEventListener('pointermove',event=>{if(dragEdit){moveEdit(event);return;}if(anchor){preview=pointAt(event)||preview;redraw();}});
+    overlay.addEventListener('pointerup',event=>{if(dragEdit){finishEdit();return;}if(anchor&&dragOrigin&&Math.hypot(event.clientX-dragOrigin.x,event.clientY-dragOrigin.y)>6)completePoint(pointAt(event));dragOrigin=null;});
+    overlay.addEventListener('pointercancel',()=>{cancelEdit();anchor=preview=dragOrigin=null;redraw();});
+    overlay.addEventListener('lostpointercapture',()=>{if(dragEdit)cancelEdit();});
     setTool('cursor');redraw();
   }
   function closeChart(){
+    if(dragEdit)cancelEdit();
     if(drawState?.pending){toolStatus('划线尚未保存，请重试或放弃本次更改后关闭');return;}
     dialog.close();
   }
@@ -150,7 +198,8 @@
     else{redraw();void saveDrawing({operation:'delete',ids:[selected.id]});}
   }
   dialog.addEventListener('keydown',event=>{
-    if(selection&&['Delete','Backspace'].includes(event.key)&&!event.target.closest('input,textarea,select,[contenteditable]')){event.preventDefault();deleteSelection();}
+    if(dragEdit&&event.key==='Escape'){event.preventDefault();cancelEdit();return;}
+    if(!dragEdit&&selection&&['Delete','Backspace'].includes(event.key)&&!event.target.closest('input,textarea,select,[contenteditable]')){event.preventDefault();deleteSelection();}
   });
   node('chart').addEventListener('pointerdown',event=>{if(tool==='cursor'&&!event.target.closest('[data-drawing],.candles-object-delete')){selection=null;toolStatus('');redraw();}},true);
   node('retry').addEventListener('click',()=>drawState?.pending?void saveDrawing():void readDrawings());
@@ -190,10 +239,12 @@
     node('ranges').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.months)===months)));
   }
   function render(data){
+    if(dragEdit){deferredSnapshot=data;return;}
     snapshot=data;
-    if(data.unsupported){node('status').textContent=data.note;return;}
+    if(data.unsupported){loading(false);node('status').textContent=data.note;return;}
     const bars=data.bars;
     if(!Array.isArray(bars)||!bars.length)return;
+    loading(false);
     if(!chart)makeChart();
     const visible=fitted?(logicalRange||chart.timeScale().getVisibleLogicalRange()):null;
     byTime=new Map(bars.map(b=>[b.time,b]));
@@ -212,13 +263,14 @@
       await window.FinFeedCache.market('/api/candles/'+encodeURIComponent(activeSymbol),data=>{
         if(id!==requestId||!dialog.open)return;
         if(data.bars?.length||data.unsupported)render(data);
-        else if(data.errors?.length)node('status').textContent=data.errors.join('；');
+        else if(data.errors?.length){loading(false);node('status').textContent=data.errors.join('；');}
       },{signal:controller.signal,ttl:60000,staleTtl:30*86400000,validate:d=>Boolean(d.bars?.length||d.unsupported)});
-    }catch(error){if(!controller.signal.aborted&&id===requestId)node('status').textContent=snapshot?.bars?.length?'暂时无法检查更新，保留本地历史曲线':'历史数据尚未就绪，服务器正在按计划准备，稍后自动检查。';}
+    }catch(error){if(!controller.signal.aborted&&id===requestId){loading(false);node('status').textContent=snapshot?.bars?.length?'暂时无法检查更新，保留本地历史曲线':'历史数据尚未就绪，服务器正在按计划准备，稍后自动检查。';}}
     finally{if(aborter===controller)aborter=null;}
   }
   async function readDrawingsAfterOpen(){await Promise.resolve();if(dialog.open)await readDrawings();}
   window.FinFeedCandles={async open(symbol,source,keyboard=false){
+    if(dragEdit)cancelEdit();loading(true);deferredSnapshot=null;
     keyboardInteraction=keyboard;drawState={symbol,revision:0,lines:[],loaded:false,pending:null,loading:false};measure=null;anchor=preview=null;tool='cursor';selection=null;overlay?.remove();deleteButton?.remove();deleteButton=null;overlay=null;toolStatus('正在读取我的划线…');updateToolButtons();void readDrawingsAfterOpen();
     opener=source||document.activeElement;requestId++;const id=requestId;
     aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;snapshot=null;fitted=false;logicalRange=null;activeSymbol=symbol;byTime.clear();
@@ -231,7 +283,7 @@
       const saved=window.FinFeedCache.read('request:/api/candles/'+encodeURIComponent(symbol),30*86400000);
       if(saved?.data)render({...saved.data,cached:true,refreshing:true});
       void check(id);timer=setInterval(()=>{void check(id);void readDrawings();},60000);
-    }catch(error){if(id===requestId)node('status').textContent=error.message;}
+    }catch(error){if(id===requestId){loading(false);node('status').textContent=error.message;}}
   }};
   node('close').addEventListener('click',closeChart);
   dialog.addEventListener('keydown',()=>{keyboardInteraction=true;});

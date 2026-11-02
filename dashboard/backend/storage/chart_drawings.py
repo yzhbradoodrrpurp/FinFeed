@@ -7,6 +7,10 @@ import re
 import time
 
 
+class DrawingConflict(ValueError):
+    """A different device changed or deleted the same segment."""
+
+
 def validate_line(line):
     if not isinstance(line, dict) or set(line) != {'id', 'points'} or not isinstance(line['id'], str) or not re.fullmatch(r'[a-f0-9]{32}', line['id']):
         raise ValueError('无效划线标识')
@@ -56,6 +60,16 @@ def record(store, user_id, symbol, operation=None):
                 if count >= 128:
                     raise ValueError('最多保存 128 个标的的划线')
             lines = [*lines, line]
+        elif operation.get('operation') == 'update' and set(operation) == {'operation', 'line', 'previous'}:
+            line, previous = validate_line(operation['line']), validate_line(operation['previous'])
+            if line['id'] != previous['id']:
+                raise ValueError('划线标识不能改变')
+            existing = next((item for item in lines if item['id'] == line['id']), None)
+            if existing == line:
+                return value  # A committed edit can be retried without duplicate writes.
+            if existing != previous:
+                raise DrawingConflict('这条划线已在其他设备更改或删除，请放弃本次更改后重新读取')
+            lines = [line if item['id'] == line['id'] else item for item in lines]
         elif operation.get('operation') == 'delete' and set(operation) == {'operation', 'ids'}:
             ids = operation['ids']
             if not isinstance(ids, list) or len(ids) > 100 or any(not isinstance(item, str) or not re.fullmatch(r'[a-f0-9]{32}', item) for item in ids):

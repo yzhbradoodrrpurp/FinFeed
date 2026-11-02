@@ -60,6 +60,30 @@ class CloudCases(unittest.TestCase):
             owner = self.store.owner(connection)['user_handle']
         self.assertEqual(record(reopened, owner, 'AAPL')['lines'], [second])
 
+    def test_chart_drawing_updates_are_idempotent_and_detect_device_conflicts(self):
+        self.frontend_setup()
+        path = '/api/chart-drawings/AAPL'
+        line = {'id':'c'*32, 'points':[{'time':'2026-01-02','price':10},{'time':'2026-02-02','price':12}]}
+        other = {**line, 'id':'d'*32}
+        def send(body):
+            return self.client.post(path, json=body, headers=HEADERS)
+        for item in (line, other):
+            self.assertEqual(send({'operation':'add','line':item}).status_code, 200)
+        moved = {**line, 'points':[line['points'][0], {'time':'2026-03-02','price':14}]}
+        edit = {'operation':'update','previous':line,'line':moved}
+        response = send(edit)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['lines'], [moved, other])
+        self.assertEqual(send(edit).json['revision'], response.json['revision'])
+        # Another device edits from its older view: refuse to overwrite the new points.
+        stale = {**line, 'points':[{'time':'2026-01-02','price':9},line['points'][1]]}
+        self.assertEqual(send({'operation':'update','previous':line,'line':stale}).status_code, 409)
+        self.assertEqual(self.client.get(path).json['lines'], [moved,other])
+        send({'operation':'delete','ids':[line['id']]})
+        self.assertEqual(send(edit).status_code, 409)
+        self.assertEqual(self.client.get(path).json['lines'], [other])
+        self.assertEqual(send({'operation':'update','previous':other,'line':{**other,'id':'e'*32}}).status_code, 400)
+
     def test_candles_are_authenticated_database_only_and_versioned(self):
         from backend.providers.candles import KEY
         path = '/api/candles/AAPL'

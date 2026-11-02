@@ -161,7 +161,9 @@ existing content-version/ETag and HTTP 304 protocol. No database schema is added
 The browser reuses the existing public-snapshot IndexedDB layer, displays retained
 history on opening, and checks the database snapshot in the background. While open,
 it checks once per minute; this does not change the hourly provider cadence.
-Changing chart range does not fetch data. Failed updates preserve the
+An orange loading indicator is shown only while no usable OHLCV snapshot is
+available; retained local data renders immediately without a forced delay. Background
+checks keep the chart visible. Changing chart range does not fetch data. Failed updates preserve the
 visible chart, and closing cancels pending reads. The vendor bundle loads only when
 opening a chart. The selected time range fills the plot from its earliest to latest
 bar with no extra future offset. Explicit resize handling retains the visible
@@ -173,7 +175,10 @@ update-time label; provider provenance and exchange timezone remain in snapshots
 The left chart toolbar provides navigation, a temporary two-point ruler and saved
 two-point trend segments. The ruler displays price/percentage changes and the number
 of daily bars including both endpoints. Pointer clicks or drags select endpoints;
-Escape cancels the active tool. Drawing anchors use trading dates and absolute
+Escape cancels the active tool. Trend-segment endpoints can be dragged independently;
+dragging the segment body shifts both dates by the same trading-bar offset and both
+prices by the same amount. Pointer cancellation or Escape restores the pre-drag line.
+Releasing a changed line saves one edit. Drawing anchors use trading dates and absolute
 forward-adjusted prices, and are reprojected when zooming/resizing. Anchors outside
 available history are hidden. Existing anchors do not automatically rebase after
 future corporate-action adjustments.
@@ -186,7 +191,9 @@ public cache/hot-memory layer or expiry. No schema migration is required. These
 records are included in database backups, not public market snapshots or browser
 IndexedDB/localStorage. Limits are 100 segments per symbol and 128 saved symbols.
 
-Add/delete operations lock the account row. Add IDs are stable for safe retries;
+Add/update/delete operations lock the account row. Updates include the original
+segment and reject concurrent edits/deletions with HTTP 409 instead of overwriting
+another device. Retrying an already committed identical edit does not write again. Add IDs are stable for safe retries;
 deleting only listed IDs preserves lines newly added by other devices. Opening,
 window focus and minute polling reload the account's drawings. Writes show confirmed
 success or an explicit retry/discard state; closing is blocked while a write remains

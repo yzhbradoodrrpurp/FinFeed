@@ -772,7 +772,7 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
 
     @app.route("/api/chart-drawings/<symbol>", methods=["GET", "POST"])
     def chart_drawings(symbol):
-        from backend.storage.chart_drawings import record
+        from backend.storage.chart_drawings import record, DrawingConflict
         user_id = require_owner()["user_id"]
         if request.args.get("user") and request.args["user"] != user_id:
             abort(403, description="不能访问其他账户的划线")
@@ -781,6 +781,8 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             abort(400, description="无效 ticker")
         try:
             return jsonify(record(database, user_id, symbol, json_body() if request.method == "POST" else None))
+        except DrawingConflict as error:
+            return jsonify(error=str(error)), 409
         except ValueError as error:
             return jsonify(error=str(error)), 400
 

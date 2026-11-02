@@ -318,3 +318,8 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 
 .candles-dialog .candles-bottom{border-top:0}
 @media(max-width:640px){.candles-workspace{margin-inline:-8px}}
+.candles-workspace{position:relative}
+.candles-loading{position:absolute;inset:0 0 0 44px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:linear-gradient(135deg,#fff,#fdfaf6);color:#91877b;font-size:12px;z-index:4;pointer-events:none}
+.candles-loading-ring{width:30px;height:30px;border:2px solid #f8e6d6;border-top-color:#ee7523;border-radius:50%;animation:auth-loading-spin .9s linear infinite}
+@media(max-width:640px){.candles-loading{left:38px}}
+@media(prefers-reduced-motion:reduce){.candles-loading-ring{animation:none}}

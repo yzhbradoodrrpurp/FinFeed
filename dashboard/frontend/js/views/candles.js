@@ -161,7 +161,7 @@
 
   function makeChart(){
     const L=window.LightweightCharts;
-    chart=L.createChart(node('chart'),{width:node('chart').clientWidth,height:node('chart').clientHeight,localization:{locale:'zh-CN'},layout:{background:{type:'solid',color:'#ffffff'},textColor:'#78736d',attributionLogo:true},grid:{vertLines:{color:'#f2f0ec'},horzLines:{color:'#f2f0ec'}},rightPriceScale:{borderColor:'#e8e3dc',minimumWidth:72},timeScale:{borderColor:'#e8e3dc',rightOffset:0,fixLeftEdge:true,fixRightEdge:true,minBarSpacing:0.01,lockVisibleTimeRangeOnResize:true},crosshair:{mode:L.CrosshairMode.Normal}});
+    chart=L.createChart(node('chart'),{width:node('chart').clientWidth,height:node('chart').clientHeight,localization:{locale:'zh-CN'},layout:{background:{type:'solid',color:'#ffffff'},textColor:'#78736d',attributionLogo:true},grid:{vertLines:{color:'#f2f0ec'},horzLines:{color:'#f2f0ec'}},rightPriceScale:{borderColor:'#e8e3dc',minimumWidth:58},timeScale:{borderColor:'#e8e3dc',rightOffset:0,fixLeftEdge:true,fixRightEdge:true,minBarSpacing:0.01,lockVisibleTimeRangeOnResize:true},crosshair:{mode:L.CrosshairMode.Normal}});
     price=chart.addSeries(L.CandlestickSeries,{upColor:'#089981',downColor:'#f23645',borderVisible:false,wickUpColor:'#089981',wickDownColor:'#f23645'});
     vegas=vegasGroups.flatMap(group=>group.periods.map(period=>({period,series:chart.addSeries(L.LineSeries,{color:group.color,lineWidth:2,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false})})));
     volume=chart.addSeries(L.HistogramSeries,{priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false},1);

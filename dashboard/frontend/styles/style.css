@@ -271,7 +271,11 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 /* Keep private dashboard content out of the first paint until auth succeeds. */
 .auth-pending .dashboard-page > .sidebar,
 .auth-pending .dashboard-page > .workspace { visibility: hidden; pointer-events: none; }
-#auth-gate { position: fixed; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; color: #847e76; text-align: center; }
+#auth-gate { position: fixed; inset: 0; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; color: #847e76; text-align: center; font-size: 14px; line-height: 1.7; }
+#auth-gate::before { content: ""; width: 32px; height: 32px; flex-shrink: 0; border: 3px solid #f9e8da; border-top-color: #ee7523; border-radius: 50%; animation: auth-loading-spin .9s linear infinite; }
+@keyframes auth-loading-spin { to { transform: rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { #auth-gate::before { animation: none; } }
+#portfolio-surface .holdings-summary { margin-bottom: 18px; }
 #auth-gate[hidden] { display: none; }
 
 /* Daily chart: one shared time scale, price above and volume in its own pane. */

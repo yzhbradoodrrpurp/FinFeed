@@ -49,7 +49,7 @@
     <section id="portfolio-surface" hidden aria-label="持仓视图">
       <div class="holdings-toolbar"><span id="holdings-count" class="count">0 项持仓</span><button id="add-position" class="primary">添加持仓</button></div>
       <div id="holdings-summary" class="holdings-summary"></div>
-      <div class="data-strip"><span id="holdings-status" role="status" aria-live="polite"></span><span>每 60 秒更新行情 · 持仓记录存私人数据库</span></div>
+      <span id="holdings-status" hidden></span>
       <div class="table-shell holdings-table" tabindex="0" aria-label="持仓表，可横向滚动"><table><thead><tr><th class="sticky">Ticker / Name</th><th>数量</th><th>平均成本</th><th>成本总额</th><th>最近价</th><th>市值</th><th>未实现盈亏</th><th>收益率</th><th>同币种仓位占比</th><th>报价日期</th><th>操作</th></tr></thead><tbody id="holdings-body"></tbody></table></div>
       <div class="table-footer"><span>收益率 = 未实现盈亏 ÷ 成本；平均成本可直接填券商显示的数值。</span><span>仅计算持仓价格盈亏，不含现金、已实现盈亏、股息和汇率收益。</span></div>
     </section>

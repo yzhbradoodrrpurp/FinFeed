@@ -310,8 +310,6 @@ dialog[open]::backdrop{animation:finfeed-fade-enter 240ms ease-out}
 #candles-tools button{width:30px;height:34px;min-height:34px;padding:0;border:0;border-radius:5px;background:transparent;color:#78736d;font-size:21px}
 #candles-tools button[aria-pressed=true]{background:#fff0e3;color:#d75d0d}
 .candles-drawing-overlay{position:absolute;top:0;left:0;z-index:2;overflow:hidden;touch-action:none;cursor:crosshair;pointer-events:none}
-.candles-tool-feedback{display:flex;align-items:center;gap:8px;flex-shrink:0;min-height:22px;font-size:11px;color:#847e76;flex-wrap:wrap}
-.candles-tool-feedback button{font-size:11px;padding:4px 8px}
 @media(max-width:640px){.candles-workspace{gap:4px}#candles-tools{width:30px;padding-right:2px}#candles-tools button{width:27px}.candles-vegas{gap:5px;font-size:10px}}
 
 .candles-object-delete{position:absolute;z-index:3;min-height:30px;padding:4px 12px;border:1px solid #e2d9cf;border-radius:6px;background:white;color:#c83d3d;font-size:12px;box-shadow:0 3px 12px #35251718}

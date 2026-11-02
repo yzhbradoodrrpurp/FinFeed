@@ -4,7 +4,7 @@
   const vegasGroups=[{periods:[144,169],color:'#f23645'},{periods:[288,338],color:'#f59e0b'},{periods:[576,676],color:'#4caf50'}];
   const dialog=document.createElement('dialog');
   dialog.id='candles-dialog';dialog.className='candles-dialog';dialog.setAttribute('aria-labelledby','candles-title');
-  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span><span class="candles-vegas" title="EMA 使用前复权收盘价，按交易日计算；以缓存历史首日收盘价初始化，早期数值可能受历史长度影响。">${vegasGroups.map(group=>`<span style="color:${group.color}">EMA ${group.periods.join('/')}</span>`).join('')}</span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
+  dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span><span class="candles-vegas" title="EMA 使用前复权收盘价，按交易日计算；以缓存历史首日收盘价初始化，早期数值可能受历史长度影响。">${vegasGroups.map(group=>`<span style="color:${group.color}">EMA ${group.periods.join('/')}</span>`).join('')}</span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div class="candles-workspace"><div id="candles-tools" role="toolbar" aria-label="图表工具"><button data-tool="cursor" aria-label="移动图表" title="移动图表" aria-pressed="true">↖</button><button data-tool="measure" aria-label="测量" title="测量：选择两点或拖动" aria-pressed="false">📏</button><button data-tool="trend" aria-label="趋势线" title="趋势线：选择两点，保存到我的账户" aria-pressed="false" disabled>╱</button><button id="candles-undo" aria-label="删除最后一条线" title="删除最后一条线" disabled>↶</button><button id="candles-clear" aria-label="清除划线和测量" title="清除当前标的已显示的划线和测量" disabled>⌫</button></div><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div></div><div class="candles-tool-feedback"><span id="candles-tool-status" role="status"></span><button id="candles-retry" class="secondary" hidden>重试</button><button id="candles-discard" class="secondary" hidden>放弃本次更改</button></div><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
   document.body.append(dialog);
   const node=id=>document.getElementById('candles-'+id);
   let library,chart,price,volume,vegas=[],snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener,resizer,logicalRange=null,keyboardInteraction=false;
@@ -24,6 +24,119 @@
     return bars.map(bar=>{value+=alpha*(bar.close-value);return {time:bar.time,value};});
   }
   function setRange(value){logicalRange=value;chart.timeScale().setVisibleLogicalRange(value);}
+  // Private annotations never enter the shared market snapshot/IndexedDB cache.
+  let tool='cursor',anchor=null,preview=null,measure=null,drawState=null,dragOrigin=null,overlay,redrawFrame=0;
+  const svgNS='http://www.w3.org/2000/svg';
+  function toolStatus(message=''){node('tool-status').textContent=message;}
+  function setTool(value){
+    if(value==='trend'&&(!drawState?.loaded||drawState.pending)){toolStatus('请先完成划线读取或保存');return;}
+    tool=value;anchor=preview=null;
+    node('tools').querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===value)));
+    if(overlay)overlay.style.pointerEvents=value==='cursor'?'none':'auto';
+    toolStatus(value==='cursor'?'':value==='measure'?'选择两点测量，或按住拖动；Esc 取消':'选择不同日期的两点划线；完成后自动保存');redraw();
+  }
+  function project(point){
+    const index=snapshot?.bars?.findIndex(b=>b.time===point.time);
+    if(index==null||index<0)return null;
+    const x=chart.timeScale().logicalToCoordinate(index),y=price.priceToCoordinate(point.price);
+    return x==null||y==null?null:{x,y,index};
+  }
+  function redraw(){
+    if(!overlay||!chart||!snapshot?.bars?.length)return;
+    const width=chart.timeScale().width(),height=chart.panes()[0].getHeight();
+    overlay.setAttribute('width',width);overlay.setAttribute('height',height);overlay.replaceChildren();
+    const add=(name,attributes,text)=>{const n=document.createElementNS(svgNS,name);Object.entries(attributes).forEach(([k,v])=>n.setAttribute(k,String(v)));if(text)n.textContent=text;overlay.append(n);return n;};
+    const segment=(points,color,dash=false)=>{
+      const a=project(points[0]),b=project(points[1]);if(!a||!b)return;
+      add('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:color,'stroke-width':2,...(dash?{'stroke-dasharray':'5 4'}:{})});
+      [a,b].forEach(p=>add('circle',{cx:p.x,cy:p.y,r:3,fill:'white',stroke:color,'stroke-width':2}));return [a,b];
+    };
+    (drawState?.lines||[]).forEach(line=>segment(line.points,'#3478d4'));
+    if(tool==='trend'&&anchor&&preview)segment([anchor,preview],'#ee7523',true);
+    const ruler=tool==='measure'&&anchor&&preview?[anchor,preview]:measure;
+    if(ruler){const pair=segment(ruler,'#ee7523',true);if(pair){
+      const [a,b]=pair,delta=ruler[1].price-ruler[0].price,percent=delta/ruler[0].price*100;
+      add('rect',{x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),width:Math.abs(a.x-b.x),height:Math.abs(a.y-b.y),fill:'#ee752315',stroke:'#ee752350'});
+      const label=`${delta>=0?'+':''}${fmt(delta)} (${percent>=0?'+':''}${fmt(percent)}%) · ${Math.abs(a.index-b.index)+1} 根日 K`;
+      const boxWidth=Math.min(width,Math.max(200,label.length*8)),x=Math.max(0,Math.min(width-boxWidth,(a.x+b.x)/2-boxWidth/2)),y=Math.max(2,Math.min(height-30,Math.min(a.y,b.y)-34));
+      add('rect',{x,y,width:boxWidth,height:28,rx:5,fill:'#fff5eb',stroke:'#ee7523'});
+      add('text',{x:x+8,y:y+18,fill:'#a8490c','font-size':12},label);
+    }}
+  }
+  function scheduleRedraw(){if(!redrawFrame)redrawFrame=requestAnimationFrame(()=>{redrawFrame=0;redraw();});}
+  function pointAt(event){
+    if(!snapshot?.bars?.length)return null;
+    const rect=overlay.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;
+    if(x<0||x>rect.width||y<0||y>rect.height)return null;
+    const logical=chart.timeScale().coordinateToLogical(x),value=price.coordinateToPrice(y);
+    if(logical==null||!Number.isFinite(value)||value<=0)return null;
+    const index=Math.max(0,Math.min(snapshot.bars.length-1,Math.round(logical)));
+    return {time:snapshot.bars[index].time,price:value};
+  }
+  async function readDrawings(state=drawState){
+    if(!state||state.pending||state.loading)return;
+    state.loading=true;
+    try{
+      const response=await FinFeedAuth.request('/api/chart-drawings/'+encodeURIComponent(state.symbol));
+      const data=await response.json();if(!response.ok)throw Error(data.error||'划线读取失败');
+      if(drawState!==state||!dialog.open||state.pending||data.revision<state.revision)return;
+      state.revision=data.revision;state.lines=data.lines;state.loaded=true;state.error=null;toolStatus('');redraw();
+    }catch(error){if(drawState===state&&dialog.open){state.error='read';toolStatus('划线读取失败，请重试；测量仍可使用');}}
+    finally{state.loading=false;if(drawState===state)updateToolButtons();}
+  }
+  function updateToolButtons(){
+    node('retry').hidden=!drawState?.error;
+    node('discard').hidden=!drawState?.pending||!drawState?.error;
+    node('tools').querySelector('[data-tool="trend"]').disabled=!drawState?.loaded||!!drawState?.pending;
+    node('undo').disabled=!drawState?.lines.length||!!drawState?.pending;
+    node('clear').disabled=(!drawState?.lines.length&&!measure)||!!drawState?.pending;
+  }
+  async function saveDrawing(operation=drawState?.pending){
+    const state=drawState;if(!state||!operation||state.saving)return;
+    state.pending=operation;state.saving=true;state.error=null;updateToolButtons();toolStatus('正在保存划线…');
+    try{
+      const response=await FinFeedAuth.request('/api/chart-drawings/'+encodeURIComponent(state.symbol),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(operation)});
+      const data=await response.json();if(!response.ok)throw Error(data.error||'保存失败');
+      if(drawState!==state)return;
+      state.revision=data.revision;state.lines=data.lines;state.pending=null;toolStatus('划线已保存');redraw();
+    }catch(error){if(drawState===state){state.error='save';toolStatus(`划线保存未确认：${error.message}。请重试，或放弃本次更改。`);}}
+    finally{state.saving=false;if(drawState===state)updateToolButtons();}
+  }
+  function completePoint(point){
+    if(!point||!anchor)return;
+    if(tool==='trend'){
+      if(point.time===anchor.time){toolStatus('请选择不同日期的终点');return;}
+      const line={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),points:[anchor,point]};
+      drawState.lines.push(line);setTool('cursor');void saveDrawing({operation:'add',line});
+    }else{measure=[anchor,point];setTool('cursor');updateToolButtons();redraw();}
+  }
+  function mountTools(){
+    overlay=document.createElementNS(svgNS,'svg');overlay.classList.add('candles-drawing-overlay');overlay.setAttribute('aria-label','在价格图上选择起点和终点');node('chart').append(overlay);
+    overlay.addEventListener('pointerdown',event=>{
+      if(event.button!==0)return;event.preventDefault();event.stopPropagation();
+      const point=pointAt(event);if(!point)return;
+      if(anchor)completePoint(point);else{anchor=preview=point;dragOrigin={x:event.clientX,y:event.clientY};overlay.setPointerCapture(event.pointerId);redraw();}
+    });
+    overlay.addEventListener('pointermove',event=>{if(anchor){preview=pointAt(event)||preview;redraw();}});
+    overlay.addEventListener('pointerup',event=>{if(anchor&&dragOrigin&&Math.hypot(event.clientX-dragOrigin.x,event.clientY-dragOrigin.y)>6)completePoint(pointAt(event));dragOrigin=null;});
+    overlay.addEventListener('pointercancel',()=>{anchor=preview=dragOrigin=null;redraw();});
+    setTool('cursor');redraw();
+  }
+  function closeChart(){
+    if(drawState?.pending){toolStatus('划线尚未保存，请重试或放弃本次更改后关闭');return;}
+    dialog.close();
+  }
+  node('tools').addEventListener('click',event=>{
+    const button=event.target.closest('[data-tool]');if(button)setTool(button.dataset.tool);
+  });
+  node('undo').addEventListener('click',()=>{if(drawState?.lines.length&&!drawState.pending)void saveDrawing({operation:'delete',ids:[drawState.lines.at(-1).id]});});
+  node('clear').addEventListener('click',()=>{measure=null;redraw();if(drawState?.lines.length&&!drawState.pending)void saveDrawing({operation:'delete',ids:drawState.lines.map(line=>line.id)});else updateToolButtons();});
+  node('retry').addEventListener('click',()=>drawState?.pending?void saveDrawing():void readDrawings());
+  node('discard').addEventListener('click',()=>{if(drawState?.saving)return;drawState.pending=null;drawState.loaded=false;void readDrawings();});
+  dialog.addEventListener('cancel',event=>{if(tool!=='cursor'||anchor){event.preventDefault();setTool('cursor');}else if(drawState?.pending){event.preventDefault();closeChart();}});
+  node('chart').addEventListener('pointermove',scheduleRedraw);node('chart').addEventListener('wheel',scheduleRedraw,{passive:true});
+  window.addEventListener('focus',()=>{if(dialog.open)void readDrawings();});
+
   function makeChart(){
     const L=window.LightweightCharts;
     chart=L.createChart(node('chart'),{width:node('chart').clientWidth,height:node('chart').clientHeight,localization:{locale:'zh-CN'},layout:{background:{type:'solid',color:'#ffffff'},textColor:'#78736d',attributionLogo:true},grid:{vertLines:{color:'#f2f0ec'},horzLines:{color:'#f2f0ec'}},rightPriceScale:{borderColor:'#e8e3dc',minimumWidth:72},timeScale:{borderColor:'#e8e3dc',rightOffset:0,fixLeftEdge:true,fixRightEdge:true,minBarSpacing:0.01,lockVisibleTimeRangeOnResize:true},crosshair:{mode:L.CrosshairMode.Normal}});
@@ -33,14 +146,15 @@
     chart.panes()[1].setHeight(140);
     // Own resizing explicitly: asynchronous auto-size after fit could introduce
     // blank space at both edges. Preserve the user's logical range on resize.
-    chart.timeScale().subscribeVisibleLogicalRangeChange(value=>{if(value)logicalRange=value;});
+    chart.timeScale().subscribeVisibleLogicalRangeChange(value=>{if(value)logicalRange=value;scheduleRedraw();});
     resizer=new ResizeObserver(()=>{
       if(!chart||!dialog.open)return;
       const visible=logicalRange||chart.timeScale().getVisibleLogicalRange();
       chart.resize(node('chart').clientWidth,node('chart').clientHeight);
-      if(visible)setRange(visible);
+      if(visible)setRange(visible);scheduleRedraw();
     });
     resizer.observe(node('chart'));
+    mountTools();
     chart.subscribeCrosshairMove(event=>{
       const time=typeof event.time==='string'?event.time:event.time&&`${event.time.year}-${String(event.time.month).padStart(2,'0')}-${String(event.time.day).padStart(2,'0')}`;
       legend(byTime.get(time)||byTime.get([...byTime.keys()].at(-1)));
@@ -67,7 +181,7 @@
     legend(bars.at(-1));node('title').textContent=`${activeSymbol} · ${data.name||'日 K 线'}`;node('currency').textContent=data.currency||'';
     const time=new Date(data.retrieved_at);
     node('status').textContent=`${data.stale?'更新失败，保留历史数据 · ':data.refreshing?'缓存 · 正在检查更新 · ':''}${bars[0].time} — ${bars.at(-1).time} · 更新于 ${Number.isNaN(time.getTime())?'未知':time.toLocaleString('zh-CN')}`;
-    setRange(visible||{from:-0.5,to:bars.length-0.5});fitted=true;
+    setRange(visible||{from:-0.5,to:bars.length-0.5});fitted=true;redraw();
   }
   async function check(id){
     if(aborter||!dialog.open)return;
@@ -81,8 +195,9 @@
     }catch(error){if(!controller.signal.aborted&&id===requestId)node('status').textContent=snapshot?.bars?.length?'暂时无法检查更新，保留本地历史曲线':'历史数据尚未就绪，服务器正在按计划准备，稍后自动检查。';}
     finally{if(aborter===controller)aborter=null;}
   }
+  async function readDrawingsAfterOpen(){await Promise.resolve();if(dialog.open)await readDrawings();}
   window.FinFeedCandles={async open(symbol,source,keyboard=false){
-    keyboardInteraction=keyboard;
+    keyboardInteraction=keyboard;drawState={symbol,revision:0,lines:[],loaded:false,pending:null,loading:false};measure=null;anchor=preview=null;tool='cursor';overlay?.remove();overlay=null;toolStatus('正在读取我的划线…');updateToolButtons();void readDrawingsAfterOpen();
     opener=source||document.activeElement;requestId++;const id=requestId;
     aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;snapshot=null;fitted=false;logicalRange=null;activeSymbol=symbol;byTime.clear();
     node('title').textContent=symbol+' · 日 K 线';node('legend').textContent='';node('currency').textContent='';node('status').textContent='正在读取历史日线…';
@@ -93,14 +208,14 @@
       if(id!==requestId||!dialog.open)return;
       const saved=window.FinFeedCache.read('request:/api/candles/'+encodeURIComponent(symbol),30*86400000);
       if(saved?.data)render({...saved.data,cached:true,refreshing:true});
-      void check(id);timer=setInterval(()=>void check(id),60000);
+      void check(id);timer=setInterval(()=>{void check(id);void readDrawings();},60000);
     }catch(error){if(id===requestId)node('status').textContent=error.message;}
   }};
-  node('close').addEventListener('click',()=>dialog.close());
+  node('close').addEventListener('click',closeChart);
   dialog.addEventListener('keydown',()=>{keyboardInteraction=true;});
   dialog.addEventListener('pointerdown',()=>{keyboardInteraction=false;});
   dialog.addEventListener('close',()=>{
-    requestId++;aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;
+    requestId++;aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;overlay?.remove();overlay=null;cancelAnimationFrame(redrawFrame);redrawFrame=0;drawState=null;
     const target=opener?.isConnected?opener:[...document.querySelectorAll('[data-candles]')].find(button=>button.dataset.candles===activeSymbol);
     if(keyboardInteraction)target?.focus?.({preventScroll:true});
     // Native dialogs restore focus automatically; pointer closes must not leave

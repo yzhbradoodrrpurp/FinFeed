@@ -770,6 +770,20 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
             lambda value: isinstance(value.get('items'), list) and not value.get('errors'),
             stream=request.args.get('stream') == '1', force=request.args.get('refresh') == '1', present=public_snapshot)
 
+    @app.route("/api/chart-drawings/<symbol>", methods=["GET", "POST"])
+    def chart_drawings(symbol):
+        from backend.storage.chart_drawings import record
+        user_id = require_owner()["user_id"]
+        if request.args.get("user") and request.args["user"] != user_id:
+            abort(403, description="不能访问其他账户的划线")
+        symbol = symbol.upper()
+        if not SYMBOL.fullmatch(symbol):
+            abort(400, description="无效 ticker")
+        try:
+            return jsonify(record(database, user_id, symbol, json_body() if request.method == "POST" else None))
+        except ValueError as error:
+            return jsonify(error=str(error)), 400
+
     @app.get("/api/candles/<symbol>")
     def candle_data(symbol):
         symbol = symbol.upper()

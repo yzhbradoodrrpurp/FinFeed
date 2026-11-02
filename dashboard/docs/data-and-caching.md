@@ -168,6 +168,31 @@ bar with no extra future offset. Explicit resize handling retains the visible
 logical range rather than introducing blank margins. The chart uses a compact
 update-time label; provider provenance and exchange timezone remain in snapshots. Account records and credentials are never included in chart caches.
 
+### Private chart tools
+
+The left chart toolbar provides navigation, a temporary two-point ruler and saved
+two-point trend segments. The ruler displays price/percentage changes and the number
+of daily bars including both endpoints. Pointer clicks or drags select endpoints;
+Escape cancels the active tool. Drawing anchors use trading dates and absolute
+forward-adjusted prices, and are reprojected when zooming/resizing. Anchors outside
+available history are hidden. Existing anchors do not automatically rebase after
+future corporate-action adjustments.
+
+`GET/POST /api/chart-drawings/<symbol>` requires the current account's normal session
+and write-origin checks. Other-account query parameters are rejected. Private records
+are durably stored in the existing PostgreSQL `cache` table under an account-hashed
+`private:chart-drawings:v1:` namespace, read through private transactions without the
+public cache/hot-memory layer or expiry. No schema migration is required. These
+records are included in database backups, not public market snapshots or browser
+IndexedDB/localStorage. Limits are 100 segments per symbol and 128 saved symbols.
+
+Add/delete operations lock the account row. Add IDs are stable for safe retries;
+deleting only listed IDs preserves lines newly added by other devices. Opening,
+window focus and minute polling reload the account's drawings. Writes show confirmed
+success or an explicit retry/discard state; closing is blocked while a write remains
+unconfirmed. Undo removes the last displayed segment; clear removes displayed segments
+and the temporary measurement. Provider polling and hourly OHLCV caching are unchanged.
+
 ## Watchlist ticker admission
 
 `PUT /api/state` verifies newly added Watchlist symbols before committing the account

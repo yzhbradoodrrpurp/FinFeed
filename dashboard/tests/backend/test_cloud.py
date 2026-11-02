@@ -15,6 +15,51 @@ HEADERS = {"Origin": ORIGIN, "X-FinFeed-Client": "1"}
 
 
 class CloudCases(unittest.TestCase):
+    def test_chart_drawings_private_durable_and_operation_merge(self):
+        path = '/api/chart-drawings/AAPL'
+        self.assertEqual(self.client.get(path).status_code, 401)
+        self.frontend_setup()
+        self.assertEqual(self.client.get(path).json['lines'], [])
+        line = {'id': 'a' * 32, 'points': [{'time': '2026-01-02', 'price': 10}, {'time': '2026-02-02', 'price': 12}]}
+        def add(value):
+            return self.client.post(path, json={'operation': 'add', 'line': value}, headers=HEADERS)
+        self.assertEqual(self.client.post(path, json={'operation': 'add', 'line': line}).status_code, 403)
+        self.assertEqual(add(line).status_code, 200)
+        self.assertEqual(add(line).json['revision'], 1)
+        second = {**line, 'id': 'b' * 32}
+        with self.store.transaction() as connection:
+            owner_id = self.store.owner(connection)['user_handle']
+            phone_token = self.store.new_session(connection, owner_id)
+        phone = self.app.test_client()
+        phone.set_cookie('finfeed_test_session', phone_token)
+        self.assertEqual(phone.get(path).json['lines'], [line])
+        self.assertEqual(len(phone.post(path, json={'operation':'add','line':second}, headers=HEADERS).json['lines']), 2)
+        self.assertEqual(len(self.client.get(path).json['lines']), 2)
+        self.assertEqual(len(add(second).json['lines']), 2)
+        # Delete only known IDs: another device's new line survives.
+        deleted = self.client.post(path, json={'operation': 'delete', 'ids': [line['id']]}, headers=HEADERS)
+        self.assertEqual(deleted.json['lines'], [second])
+        self.assertEqual(self.client.get('/api/chart-drawings/MSFT').json['lines'], [])
+        self.assertEqual(self.client.get(path+'?user=someone-else').status_code, 403)
+        self.assertEqual(self.client.post(path+'?user=someone-else', json={'operation':'delete','ids':[]}, headers=HEADERS).status_code, 403)
+        self.assertEqual(add({**line, 'points': [{'time':'2026-02-30','price':10}, line['points'][1]]}).status_code, 400)
+        self.assertEqual(add({**line, 'points': [{'time':'2026-01-02','price':True}, line['points'][1]]}).status_code, 400)
+        self.assertEqual(add({**line, 'id':'<script>'}).status_code, 400)
+        self.assertEqual(add({**second, 'points': line['points'][::-1]}).status_code, 400)
+        # A second authenticated account cannot see these records, even with a user query.
+        with self.store.transaction() as connection:
+            self.store.execute(connection, 'INSERT INTO accounts(id,name,state,revision,created) VALUES (?,?,?,0,?)', ('other', 'Other', None, time.time()))
+            token = self.store.new_session(connection, 'other')
+        other = self.app.test_client()
+        other.set_cookie('finfeed_test_session', token)
+        self.assertEqual(other.get(path).json['lines'], [])
+        # A fresh Store instance sees the committed drawing, without process cache.
+        from backend.storage.chart_drawings import record
+        reopened = Store(sqlite_path=self.path)
+        with self.store.transaction() as connection:
+            owner = self.store.owner(connection)['user_handle']
+        self.assertEqual(record(reopened, owner, 'AAPL')['lines'], [second])
+
     def test_candles_are_authenticated_database_only_and_versioned(self):
         from backend.providers.candles import KEY
         path = '/api/candles/AAPL'

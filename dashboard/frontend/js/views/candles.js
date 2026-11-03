@@ -26,6 +26,44 @@
   function setRange(value){logicalRange=value;chart.timeScale().setVisibleLogicalRange(value);}
   // Private annotations never enter the shared market snapshot/IndexedDB cache.
   let tool='cursor',anchor=null,preview=null,measure=null,drawState=null,dragOrigin=null,overlay,deleteButton,selection=null,dragEdit=null,deferredSnapshot=null,redrawFrame=0;
+  // A separate account-scoped database: never mix drawings with public snapshots.
+  const drawingMemory=new Map();
+  const validDrawingCache=data=>data&&Number.isSafeInteger(data.revision)&&data.revision>=0&&/^[a-f0-9]{64}$/.test(data.cache_version)&&data.adjustment==='ForwardAdjust'&&Array.isArray(data.lines)&&data.lines.length<=100&&data.lines.every(line=>line&&/^[a-f0-9]{32}$/.test(line.id)&&Array.isArray(line.points)&&line.points.length===2&&line.points.every(p=>p&&/^\d{4}-\d{2}-\d{2}$/.test(p.time)&&Number.isFinite(p.price)&&p.price>0&&p.price<=1e12));
+  const drawingDB=new Promise(resolve=>{
+    if(typeof indexedDB==='undefined'){resolve(null);return;}
+    try{
+      const request=indexedDB.open('finfeed-private-charts',1);
+      request.onupgradeneeded=()=>request.result.createObjectStore('drawings');
+      request.onsuccess=()=>resolve(request.result);request.onerror=request.onblocked=()=>resolve(null);
+    }catch{resolve(null);}
+  });
+  const cacheKey=(userId,symbol)=>userId?JSON.stringify([userId,symbol]):null;
+  async function readDrawingCache(userId,symbol){
+    const key=cacheKey(userId,symbol);if(!key)return null;
+    let saved=drawingMemory.get(key);
+    try{const fallback=JSON.parse(localStorage.getItem('finfeed-private-drawing:'+key)||'null');if(validDrawingCache(fallback)&&(!saved||fallback.revision>saved.revision))saved=fallback;}catch{}
+    const disk=await Promise.race([drawingDB.then(db=>db?new Promise(resolve=>{
+      try{const request=db.transaction('drawings','readonly').objectStore('drawings').get(key);request.onsuccess=()=>resolve(request.result);request.onerror=()=>resolve(null);}catch{resolve(null);}
+    }):null),new Promise(resolve=>setTimeout(()=>resolve(null),300))]);
+    if(validDrawingCache(disk)&&(!saved||disk.revision>saved.revision))saved=disk;
+    if(!validDrawingCache(saved))return null;
+    drawingMemory.set(key,saved);return JSON.parse(JSON.stringify(saved));
+  }
+  function writeDrawingCache(state,data){
+    const key=cacheKey(state.userId,state.symbol);if(!key||!validDrawingCache(data))return;
+    const saved=JSON.parse(JSON.stringify(data)),old=drawingMemory.get(key);
+    if(old&&old.revision>saved.revision)return;
+    drawingMemory.set(key,saved);
+    void drawingDB.then(db=>{
+      const fallback=()=>{try{const previous=JSON.parse(localStorage.getItem('finfeed-private-drawing:'+key)||'null');if(!validDrawingCache(previous)||previous.revision<=saved.revision)localStorage.setItem('finfeed-private-drawing:'+key,JSON.stringify(saved));}catch{}};
+      if(!db){fallback();return;}
+      try{
+        const tx=db.transaction('drawings','readwrite'),store=tx.objectStore('drawings'),request=store.get(key);
+        request.onsuccess=()=>{if(!validDrawingCache(request.result)||request.result.revision<=saved.revision)store.put(saved,key);};
+        tx.onerror=fallback;
+      }catch{fallback();}
+    });
+  }
   const svgNS='http://www.w3.org/2000/svg';
   function toolStatus(message=''){node('tool-status').textContent=message;}
   function setTool(value){
@@ -90,10 +128,16 @@
     if(!state||state.pending||state.loading||dragEdit)return;
     state.loading=true;
     try{
-      const response=await FinFeedAuth.request('/api/chart-drawings/'+encodeURIComponent(state.symbol));
+      const version=state.loaded?state.cacheVersion:null;
+      const url='/api/chart-drawings/'+encodeURIComponent(state.symbol)+(version?'?version='+encodeURIComponent(version):'');
+      const response=await FinFeedAuth.request(url,{headers:version?{'If-None-Match':'"'+version+'"'}:{}});
+      if(response.status===304){
+        if(!state.loaded)throw Error('本地划线缓存不可用');
+        if(drawState===state&&dialog.open&&!state.pending&&!dragEdit){state.error=null;toolStatus('');redraw();}return;
+      }
       const data=await response.json();if(!response.ok)throw Error(data.error||'划线读取失败');
       if(drawState!==state||!dialog.open||state.pending||dragEdit||data.revision<state.revision)return;
-      state.revision=data.revision;state.lines=data.lines;state.loaded=true;state.error=null;toolStatus('');redraw();
+      state.revision=data.revision;state.cacheVersion=data.cache_version||null;state.lines=data.lines;writeDrawingCache(state,data);state.loaded=true;state.error=null;toolStatus('');redraw();
     }catch(error){if(drawState===state&&dialog.open){state.error='read';toolStatus('划线读取失败，请重试；测量仍可使用');}}
     finally{state.loading=false;if(drawState===state)updateToolButtons();}
   }
@@ -110,7 +154,7 @@
       const response=await FinFeedAuth.request('/api/chart-drawings/'+encodeURIComponent(state.symbol),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(operation)});
       const data=await response.json();if(!response.ok)throw Error(data.error||'保存失败');
       if(drawState!==state)return;
-      state.revision=data.revision;state.lines=data.lines;state.pending=null;toolStatus('划线已保存');redraw();
+      state.revision=data.revision;state.cacheVersion=data.cache_version||null;state.lines=data.lines;writeDrawingCache(state,data);state.pending=null;toolStatus('划线已保存');redraw();
     }catch(error){if(drawState===state){state.error='save';toolStatus(`划线保存未确认：${error.message}。请重试，或放弃本次更改。`);}}
     finally{state.saving=false;if(drawState===state)updateToolButtons();}
   }
@@ -268,10 +312,15 @@
     }catch(error){if(!controller.signal.aborted&&id===requestId){loading(false);node('status').textContent=snapshot?.bars?.length?'暂时无法检查更新，保留本地历史曲线':'历史数据尚未就绪，服务器正在按计划准备，稍后自动检查。';}}
     finally{if(aborter===controller)aborter=null;}
   }
-  async function readDrawingsAfterOpen(){await Promise.resolve();if(dialog.open)await readDrawings();}
-  window.FinFeedCandles={async open(symbol,source,keyboard=false){
+  async function readDrawingsAfterOpen(state){
+    const saved=await readDrawingCache(state.userId,state.symbol);
+    if(drawState!==state||!dialog.open)return;
+    if(saved){state.lines=saved.lines;state.revision=saved.revision;state.cacheVersion=saved.cache_version;state.loaded=true;updateToolButtons();redraw();}
+    await readDrawings(state);
+  }
+  window.FinFeedCandles={async open(symbol,source,keyboard=false,userId=null){
     if(dragEdit)cancelEdit();loading(true);deferredSnapshot=null;
-    keyboardInteraction=keyboard;drawState={symbol,revision:0,lines:[],loaded:false,pending:null,loading:false};measure=null;anchor=preview=null;tool='cursor';selection=null;overlay?.remove();deleteButton?.remove();deleteButton=null;overlay=null;toolStatus('正在读取我的划线…');updateToolButtons();void readDrawingsAfterOpen();
+    keyboardInteraction=keyboard;drawState={symbol,userId,cacheVersion:null,revision:0,lines:[],loaded:false,pending:null,loading:false};measure=null;anchor=preview=null;tool='cursor';selection=null;overlay?.remove();deleteButton?.remove();deleteButton=null;overlay=null;toolStatus('正在读取我的划线…');updateToolButtons();void readDrawingsAfterOpen(drawState);
     opener=source||document.activeElement;requestId++;const id=requestId;
     aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;snapshot=null;fitted=false;logicalRange=null;activeSymbol=symbol;byTime.clear();
     node('title').textContent=symbol+' · 日 K 线';node('legend').textContent='';node('currency').textContent='';node('status').textContent='正在读取历史日线…';
@@ -289,6 +338,8 @@
   dialog.addEventListener('keydown',()=>{keyboardInteraction=true;});
   dialog.addEventListener('pointerdown',()=>{keyboardInteraction=false;});
   dialog.addEventListener('close',()=>{
+    // Ignore a queued close event from a prior opening that has already reopened.
+    if(dialog.open)return;
     requestId++;aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;overlay?.remove();deleteButton?.remove();deleteButton=null;selection=null;overlay=null;cancelAnimationFrame(redrawFrame);redrawFrame=0;drawState=null;
     const target=opener?.isConnected?opener:[...document.querySelectorAll('[data-candles]')].find(button=>button.dataset.candles===activeSymbol);
     if(keyboardInteraction)target?.focus?.({preventScroll:true});

@@ -780,7 +780,12 @@ def create_app(config: dict | None = None, store: Store | None = None) -> Flask:
         if not SYMBOL.fullmatch(symbol):
             abort(400, description="无效 ticker")
         try:
-            return jsonify(record(database, user_id, symbol, json_body() if request.method == "POST" else None))
+            saved = record(database, user_id, symbol, json_body() if request.method == "POST" else None)
+            version = hashlib.sha256(f"{user_id}\0{symbol}\0{saved['revision']}".encode()).hexdigest()
+            unchanged = request.method == "GET" and (request.args.get('version') == version or request.if_none_match.contains(version))
+            response = app.response_class(status=304) if unchanged else jsonify(**saved, cache_version=version)
+            response.set_etag(version)
+            return response
         except DrawingConflict as error:
             return jsonify(error=str(error)), 409
         except ValueError as error:

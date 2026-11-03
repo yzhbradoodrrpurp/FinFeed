@@ -84,6 +84,32 @@ class CloudCases(unittest.TestCase):
         self.assertEqual(self.client.get(path).json['lines'], [other])
         self.assertEqual(send({'operation':'update','previous':other,'line':{**other,'id':'e'*32}}).status_code, 400)
 
+    def test_private_chart_drawing_versions_support_304_and_account_isolation(self):
+        path = '/api/chart-drawings/AAPL'
+        self.frontend_setup()
+        first = self.client.get(path)
+        version = first.json['cache_version']
+        self.assertEqual(len(version), 64)
+        self.assertEqual(first.headers['ETag'], '"'+version+'"')
+        unchanged = self.client.get(path+'?version='+version)
+        self.assertEqual(unchanged.status_code, 304)
+        self.assertEqual(unchanged.data, b'')
+        self.assertEqual(self.client.get(path, headers={'If-None-Match':first.headers['ETag']}).status_code, 304)
+        self.assertEqual(self.client.get('/api/chart-drawings/MSFT?version='+version).status_code, 200)
+        line = {'id':'f'*32,'points':[{'time':'2026-01-02','price':10},{'time':'2026-02-02','price':12}]}
+        saved = self.client.post(path, json={'operation':'add','line':line}, headers=HEADERS)
+        self.assertNotEqual(saved.json['cache_version'], version)
+        self.assertEqual(self.client.get(path+'?version='+version).status_code, 200)
+        self.assertEqual(self.client.get(path+'?version='+saved.json['cache_version']).status_code, 304)
+        with self.store.transaction() as connection:
+            self.store.execute(connection, 'INSERT INTO accounts(id,name,state,revision,created) VALUES (?,?,?,0,?)', ('cache-other','Other',None,time.time()))
+            token = self.store.new_session(connection, 'cache-other')
+        other = self.app.test_client();other.set_cookie('finfeed_test_session',token)
+        response = other.get(path+'?version='+version)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['lines'], [])
+        self.assertNotEqual(response.json['cache_version'], version)
+
     def test_candles_are_authenticated_database_only_and_versioned(self):
         from backend.providers.candles import KEY
         path = '/api/candles/AAPL'

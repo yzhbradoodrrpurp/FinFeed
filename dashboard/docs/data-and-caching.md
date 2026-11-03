@@ -188,8 +188,16 @@ and write-origin checks. Other-account query parameters are rejected. Private re
 are durably stored in the existing PostgreSQL `cache` table under an account-hashed
 `private:chart-drawings:v1:` namespace, read through private transactions without the
 public cache/hot-memory layer or expiry. No schema migration is required. These
-records are included in database backups, not public market snapshots or browser
-IndexedDB/localStorage. Limits are 100 segments per symbol and 128 saved symbols.
+records are included in database backups and never mixed into public market snapshots.
+The browser maintains a separate `finfeed-private-charts` IndexedDB database keyed by
+verified signed-in account ID and ticker. Only confirmed server snapshots are cached;
+localStorage is a fallback if IndexedDB cannot write. Page memory provides immediate
+reuse. Older revisions cannot replace newer cached revisions. Cached drawings appear
+before the immediate authenticated server check (disk restore waits at most 300 ms).
+GET checks carry a content version and ETag scoped to account, symbol and revision;
+unchanged records return HTTP 304 with no JSON body. POST confirmations include the
+new version and update the private local cache. Private-cache storage failure does
+not prevent server reads or saves. Measurements remain memory-only. Limits are 100 segments per symbol and 128 saved symbols.
 
 Add/update/delete operations lock the account row. Updates include the original
 segment and reject concurrent edits/deletions with HTTP 409 instead of overwriting

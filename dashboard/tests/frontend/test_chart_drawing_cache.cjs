@@ -4,8 +4,8 @@ const source=fs.readFileSync(path.join(__dirname,'../../frontend/js/views/candle
 const helpers=source.slice(source.indexOf('  const drawingMemory='),source.indexOf("  const svgNS="));
 const disk=new Map();
 const storage={getItem:key=>disk.get(key)||null,setItem:(key,value)=>disk.set(key,value)};
-function client(localStorage=storage){
- const context={localStorage,indexedDB:undefined,setTimeout,Map,Promise,JSON,Number};
+function client(localStorage=storage,indexedDB=undefined){
+ const context={localStorage,indexedDB,setTimeout,Map,Promise,JSON,Number};
  vm.runInNewContext(helpers+'\nglobalThis.cache={read:readDrawingCache,write:writeDrawingCache};',context);
  return context.cache;
 }
@@ -21,6 +21,9 @@ const snapshot=revision=>({revision,cache_version:String(revision).padStart(64,'
  assert.equal((await cache.read(account.userId,account.symbol)).revision,2);
  await new Promise(resolve=>setImmediate(resolve));
  assert.equal((await client().read(account.userId,account.symbol)).revision,2);
+ const stalled=client(storage,{open:()=>({})});
+ stalled.write({userId:'stalled',symbol:'AAPL'},snapshot(5));
+ assert.equal((await client().read('stalled','AAPL')).revision,5,'confirmed edit survives a stalled IndexedDB open');
  const corrupted={...snapshot(3),lines:[null]};
  disk.set('finfeed-private-drawing:'+JSON.stringify(['corrupt','AAPL']),JSON.stringify(corrupted));
  assert.equal(await cache.read('corrupt','AAPL'),null);

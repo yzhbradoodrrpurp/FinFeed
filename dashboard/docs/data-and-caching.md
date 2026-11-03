@@ -227,3 +227,5 @@ The browser inserts rows only after validation and the server save both succeed;
 failed validation keeps the input and prior Watchlist. Existing record removals and
 non-Watchlist writes do not require provider checks. Public validation caches contain
 no account identifiers. They reuse the normal PostgreSQL cache table.
+
+Chart reads retain successful local data during transport failures. Failed drawing and OHLCV reads retry up to three times after short delays; visibility restoration and network reconnection trigger another database check. Drawing reads have a ten-second deadline, while writes are never automatically replayed. Confirmed private drawing snapshots also receive an immediate account-scoped localStorage backup so an unresponsive IndexedDB open cannot prevent persistence. No unconfirmed server state enables editing.

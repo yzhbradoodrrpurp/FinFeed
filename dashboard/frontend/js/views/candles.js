@@ -7,7 +7,7 @@
   dialog.innerHTML=`<div class="dialog-heading"><div><span class="section-kicker">DAILY CHART</span><h2 id="candles-title" tabindex="-1">日 K 线</h2></div><button class="secondary" id="candles-close" aria-label="关闭 K 线图">关闭</button></div><div class="candles-toolbar"><span>日线</span><span id="candles-currency"></span><button id="candles-retry" class="secondary" hidden>重试</button><button id="candles-discard" class="secondary" hidden>放弃本次更改</button><span class="candles-vegas" title="EMA 使用前复权收盘价，按交易日计算；以缓存历史首日收盘价初始化，早期数值可能受历史长度影响。">${vegasGroups.map(group=>`<span style="color:${group.color}">EMA ${group.periods.join('/')}</span>`).join('')}</span></div><div id="candles-legend" class="candles-legend" aria-live="off"></div><p id="candles-status" role="status" class="macro-note"></p><div class="candles-workspace"><div id="candles-tools" role="toolbar" aria-label="图表工具"><button data-tool="cursor" aria-label="光标" title="光标：选择图形、拖动和缩放图表" aria-pressed="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 3l14 10-7 1-3 7z"/><path d="M12 14l5 7"/></svg></button><button data-tool="measure" aria-label="测量" title="测量：选择两点或拖动" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 16L16 3l5 5L8 21z"/><path d="M13 6l2 2M10 9l3 3M7 12l2 2M4 15l3 3"/></svg></button><button data-tool="trend" aria-label="趋势线" title="趋势线：选择两点，保存到我的账户" aria-pressed="false" disabled><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 5l5 5M4 20l5-1L21 7a2.1 2.1 0 0 0-4-4L5 15z"/></svg></button></div><div id="candles-chart" aria-label="日 K 线和成交量，可拖动和缩放"></div><div id="candles-loading" class="candles-loading" role="status"><span class="candles-loading-ring" aria-hidden="true"></span><span>正在加载 K 线…</span></div></div><span id="candles-tool-status" class="sr-only" role="status"></span><div class="candles-bottom"><div id="candles-ranges" role="group" aria-label="图表时间范围"><button data-months="1">1个月</button><button data-months="3">3个月</button><button data-months="6">6个月</button><button data-months="12">1年</button><button data-months="36" aria-pressed="true">3年</button></div></div><p class="macro-note candles-footnote">常规交易时段 · 当日日线可能尚未收盘</p>`;
   document.body.append(dialog);
   const node=id=>document.getElementById('candles-'+id);
-  let library,chart,price,volume,vegas=[],snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener,resizer,logicalRange=null,keyboardInteraction=false;
+  let library,chart,price,volume,vegas=[],snapshot,activeSymbol,aborter,timer,requestId=0,byTime=new Map(),fitted=false,opener,resizer,logicalRange=null,keyboardInteraction=false,chartRetryTimer=null,chartReadFailures=0;
   function loadLibrary(){
     if(window.LightweightCharts)return Promise.resolve();
     if(!library)library=new Promise((resolve,reject)=>{
@@ -54,9 +54,11 @@
     const saved=JSON.parse(JSON.stringify(data)),old=drawingMemory.get(key);
     if(old&&old.revision>saved.revision)return;
     drawingMemory.set(key,saved);
+    const fallback=()=>{try{const previous=JSON.parse(localStorage.getItem('finfeed-private-drawing:'+key)||'null');if(!validDrawingCache(previous)||previous.revision<=saved.revision)localStorage.setItem('finfeed-private-drawing:'+key,JSON.stringify(saved));}catch{}};
+    // A stalled IndexedDB open must not lose confirmed edits on the next visit.
+    fallback();
     void drawingDB.then(db=>{
-      const fallback=()=>{try{const previous=JSON.parse(localStorage.getItem('finfeed-private-drawing:'+key)||'null');if(!validDrawingCache(previous)||previous.revision<=saved.revision)localStorage.setItem('finfeed-private-drawing:'+key,JSON.stringify(saved));}catch{}};
-      if(!db){fallback();return;}
+      if(!db)return;
       try{
         const tx=db.transaction('drawings','readwrite'),store=tx.objectStore('drawings'),request=store.get(key);
         request.onsuccess=()=>{if(!validDrawingCache(request.result)||request.result.revision<=saved.revision)store.put(saved,key);};
@@ -130,16 +132,25 @@
     try{
       const version=state.loaded?state.cacheVersion:null;
       const url='/api/chart-drawings/'+encodeURIComponent(state.symbol)+(version?'?version='+encodeURIComponent(version):'');
-      const response=await FinFeedAuth.request(url,{headers:version?{'If-None-Match':'"'+version+'"'}:{}});
+      const response=await FinFeedAuth.request(url,{timeoutMs:10000,headers:version?{'If-None-Match':'"'+version+'"'}:{}});
       if(response.status===304){
         if(!state.loaded)throw Error('本地划线缓存不可用');
-        if(drawState===state&&dialog.open&&!state.pending&&!dragEdit){state.error=null;toolStatus('');redraw();}return;
+        if(drawState===state&&dialog.open&&!state.pending&&!dragEdit){state.error=null;state.readFailures=0;toolStatus('');redraw();}return;
       }
       const data=await response.json();if(!response.ok)throw Error(data.error||'划线读取失败');
       if(drawState!==state||!dialog.open||state.pending||dragEdit||data.revision<state.revision)return;
-      state.revision=data.revision;state.cacheVersion=data.cache_version||null;state.lines=data.lines;writeDrawingCache(state,data);state.loaded=true;state.error=null;toolStatus('');redraw();
+      state.revision=data.revision;state.cacheVersion=data.cache_version||null;state.lines=data.lines;writeDrawingCache(state,data);state.loaded=true;state.error=null;state.readFailures=0;toolStatus('');redraw();
     }catch(error){if(drawState===state&&dialog.open){state.error='read';toolStatus('划线读取失败，请重试；测量仍可使用');}}
-    finally{state.loading=false;if(drawState===state)updateToolButtons();}
+    finally{
+      state.loading=false;
+      if(drawState===state){
+        updateToolButtons();
+        clearTimeout(state.retryTimer);
+        if(state.error==='read'&&dialog.open&&(state.readFailures=(state.readFailures||0)+1)<=3){
+          state.retryTimer=setTimeout(()=>{if(drawState===state&&dialog.open)void readDrawings(state);},2000*state.readFailures);
+        }
+      }
+    }
   }
   function updateToolButtons(){
     node('retry').hidden=!drawState?.error;
@@ -302,14 +313,18 @@
   }
   async function check(id){
     if(aborter||!dialog.open)return;
-    const controller=aborter=new AbortController();
+    clearTimeout(chartRetryTimer);const controller=aborter=new AbortController();
     try{
       await window.FinFeedCache.market('/api/candles/'+encodeURIComponent(activeSymbol),data=>{
         if(id!==requestId||!dialog.open)return;
         if(data.bars?.length||data.unsupported)render(data);
         else if(data.errors?.length){loading(false);node('status').textContent=data.errors.join('；');}
       },{signal:controller.signal,ttl:60000,staleTtl:30*86400000,validate:d=>Boolean(d.bars?.length||d.unsupported)});
-    }catch(error){if(!controller.signal.aborted&&id===requestId){loading(false);node('status').textContent=snapshot?.bars?.length?'暂时无法检查更新，保留本地历史曲线':'历史数据尚未就绪，服务器正在按计划准备，稍后自动检查。';}}
+      chartReadFailures=0;
+    }catch(error){if(!controller.signal.aborted&&id===requestId){
+      loading(false);node('status').textContent=snapshot?.bars?.length?'暂时无法检查更新，保留本地历史曲线':'历史数据尚未就绪，服务器正在按计划准备，稍后自动检查。';
+      if(++chartReadFailures<=3)chartRetryTimer=setTimeout(()=>{if(id===requestId&&dialog.open)void check(id);},2000*chartReadFailures);
+    }}
     finally{if(aborter===controller)aborter=null;}
   }
   async function readDrawingsAfterOpen(state){
@@ -319,7 +334,7 @@
     await readDrawings(state);
   }
   window.FinFeedCandles={async open(symbol,source,keyboard=false,userId=null){
-    if(dragEdit)cancelEdit();loading(true);deferredSnapshot=null;
+    if(dragEdit)cancelEdit();clearTimeout(chartRetryTimer);chartReadFailures=0;clearTimeout(drawState?.retryTimer);loading(true);deferredSnapshot=null;
     keyboardInteraction=keyboard;drawState={symbol,userId,cacheVersion:null,revision:0,lines:[],loaded:false,pending:null,loading:false};measure=null;anchor=preview=null;tool='cursor';selection=null;overlay?.remove();deleteButton?.remove();deleteButton=null;overlay=null;toolStatus('正在读取我的划线…');updateToolButtons();void readDrawingsAfterOpen(drawState);
     opener=source||document.activeElement;requestId++;const id=requestId;
     aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;snapshot=null;fitted=false;logicalRange=null;activeSymbol=symbol;byTime.clear();
@@ -340,12 +355,15 @@
   dialog.addEventListener('close',()=>{
     // Ignore a queued close event from a prior opening that has already reopened.
     if(dialog.open)return;
-    requestId++;aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;overlay?.remove();deleteButton?.remove();deleteButton=null;selection=null;overlay=null;cancelAnimationFrame(redrawFrame);redrawFrame=0;drawState=null;
+    clearTimeout(chartRetryTimer);clearTimeout(drawState?.retryTimer);requestId++;aborter?.abort();aborter=null;clearInterval(timer);resizer?.disconnect();chart?.remove();chart=null;overlay?.remove();deleteButton?.remove();deleteButton=null;selection=null;overlay=null;cancelAnimationFrame(redrawFrame);redrawFrame=0;drawState=null;
     const target=opener?.isConnected?opener:[...document.querySelectorAll('[data-candles]')].find(button=>button.dataset.candles===activeSymbol);
     if(keyboardInteraction)target?.focus?.({preventScroll:true});
     // Native dialogs restore focus automatically; pointer closes must not leave
     // a focus-visible ring on the ticker (or Safari's focusable parent row).
     else if(document.activeElement===target||document.activeElement?.matches('.candle-trigger,tr[data-ticker]'))document.activeElement?.blur();
   });
+  const resume=()=>{if(dialog.open&&!document.hidden){void check(requestId);void readDrawings();}};
+  window.addEventListener('online',resume);
+  document.addEventListener('visibilitychange',resume);
   node('ranges').addEventListener('click',event=>{const button=event.target.closest('[data-months]');if(button)range(Number(button.dataset.months));});
 })();

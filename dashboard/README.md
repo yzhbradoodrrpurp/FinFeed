@@ -1,10 +1,10 @@
 # FinFeed Application Guide
 
-Reviewed against application source on October 29, 2026 (Asia/Shanghai). This document describes current behavior; operational details are in [the technical documentation](docs/architecture.md). Documentation is English; the application interface and alert bodies currently remain primarily Chinese.
+This guide describes current application behavior; operational details are in [the technical documentation](docs/architecture.md). Documentation is English; the application interface and alert bodies currently remain primarily Chinese.
 
 ## Views and refresh behavior
 
-| View | Content | Normal browser polling |
+| View | Content | Refresh policy |
 | --- | --- | --- |
 | Home | S&P 500, Nasdaq Composite, Dow Jones, eleven sector ETFs | Every hour |
 | Watchlist / Portfolio | Quotes, financial statements, quarterly forecasts, valuation | Minute quotes/valuation; hourly statements on the backend |
@@ -12,8 +12,9 @@ Reviewed against application source on October 29, 2026 (Asia/Shanghai). This do
 | Polymarket | Meeting-specific outcome prices and history | Hourly backend refresh; entry/focus reads cached snapshots |
 | Whale Holdings | Supported institutions' SEC 13F reports | Every hour |
 | News | Company earnings calls and SEC filing indexes | Every hour |
+| Daily chart | Three-year forward-adjusted daily OHLCV and Vegas EMA channels | Hourly backend history; browser checks every minute while open |
 
-The backend updates independently of open pages. Browser polling only reads snapshots, with content-version checks returning no body for unchanged data. Complete public market snapshots persist in IndexedDB and appear before network updates after authorization. Background tabs can be throttled; due reads resume when the browser returns. Manual data-refresh buttons are removed; views update automatically. Email monitoring is independent of open pages. Polling frequency is not upstream publication frequency.
+The backend updates independently of open pages. Browser polling only reads snapshots, with content-version checks returning no body for unchanged data. Complete public market snapshots persist in IndexedDB and appear before network updates after authorization. Background tabs can be throttled; due reads resume when the browser returns. Views update automatically without manual data-refresh controls. Email monitoring is independent of open pages. Polling frequency is not upstream publication frequency.
 
 ## Accounts and access
 
@@ -82,14 +83,14 @@ Users select categories directly; saving with none selected disables alerts. See
 ### Watchlist daily charts
 
 Click a ticker to open a three-year daily candlestick chart with a separate volume
-pane, synchronized crosshair, zoom/pan, range shortcuts and forward-adjusted prices. Other cells still open financial metric details. US history comes from
+pane, crosshair inspection, zoom/pan, range shortcuts and forward-adjusted prices. Other cells still open financial metric details. US history comes from
 Longbridge and refreshes hourly on the backend; clients show retained local history
 before checking versioned server snapshots. Unsupported instruments and failed
 updates retain explicit missing/stale states. Newly listed securities display only
 available history. Vegas EMA pairs (144/169 in red, 288/338 in orange and
 576/676 in green) overlay the price pane. A left toolbar adds temporary
 price-range measurements and account-private trend segments saved across devices,
-with object selection and deletion controls. Historical P/E is not included.
+with object selection and deletion controls. Drag either endpoint to reshape a segment, or drag its body to move it in parallel. Confirmed edits save immediately; other devices read the saved lines when opening, focusing or polling the chart. Local caches display first, version checks return HTTP 304 when unchanged, and transient read failures retry without erasing saved lines. Historical P/E is not included.
 
 ### Verified Watchlist additions and independent news alerts
 
@@ -97,5 +98,4 @@ New Watchlist tickers are verified with the corresponding supplier before they a
 saved or inserted into the page. A missing ticker is rejected explicitly; supplier
 outages prompt a retry and leave the list unchanged. Autocomplete suggestions remain
 a convenience rather than an exclusive whitelist. Earnings-call and SEC-filing email
-subscriptions can be enabled independently, with legacy settings and event deduplication
-preserved.
+subscriptions can be enabled independently, with event deduplication maintained independently of display filters.

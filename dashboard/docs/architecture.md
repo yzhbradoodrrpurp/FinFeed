@@ -1,6 +1,6 @@
 # Architecture and Authentication
 
-Documentation reviewed against source on October 26, 2026, Asia/Shanghai. The same-day operational check confirmed the configured project services and local API were running; this does not establish every provider or delivery path as healthy. See [deployment](deployment.md), [server operations](server-deployment.md), [database](database-migration.md), [data and caching](data-and-caching.md), and [email](email-notifications.md).
+This document describes the running application structure and authentication model. See [deployment](deployment.md), [server operations](server-deployment.md), [database](database-migration.md), [data and caching](data-and-caching.md), and [email](email-notifications.md).
 
 ## Request topology
 
@@ -18,7 +18,7 @@ flowchart LR
 
 The server is `47.114.43.129`; all persistent deployment files are beneath `/mnt/data/users/shx/FinFeed`. Database and proxy ports are not public listeners. Funnel exposes the web API only; an HTTPS tunnel does not bypass application authentication.
 
-The application is a modular monolith with a separate static browser frontend. Browser modules use native JavaScript and a Node copying build; Vue, TypeScript, Vite, React and Next.js are not installed application frameworks. Framework discussions are proposals, not completed migrations.
+The application is a modular monolith with a separate static browser frontend. Browser modules use native HTML, CSS and JavaScript with a Node copying build.
 
 ## Source boundaries
 
@@ -26,7 +26,7 @@ The application is a modular monolith with a separate static browser frontend. B
 | --- | --- |
 | `backend/app.py` | Flask factory, authentication, authorization, routes, response security |
 | `backend/services/` | Home, sectors, securities, macro, holdings, news, notification workflows |
-| `backend/providers/` | Longbridge market/EPS/quarterly statements, Yahoo sessions/history, FRED, BLS, BEA, Alpha Vantage, Polymarket |
+| `backend/providers/` | Longbridge market/EPS/quarterly statements/daily bars, Yahoo sessions/history, FRED, BLS, BEA and Polymarket |
 | `backend/domain/` | Calculation definitions and account-state validation |
 | `backend/storage/` | PostgreSQL transactions, accounts, history, cache, notification state |
 | `backend/infrastructure/` | Coalesced refresh jobs, Gmail transport, sanitized failure logging |
@@ -36,13 +36,13 @@ The application is a modular monolith with a separate static browser frontend. B
 | `deployment/h20/` | Current project supervisor and database/backup launchers |
 | `tests/` | Backend and browser-logic regression checks |
 
-The `h20` directory and `FINFEED_H20_ROOT` variable are retained executable names, not the current host. Some provider calls remain in business services; route and storage modules are not fully split into smaller modules.
+The `deployment/h20/` launchers resolve their project root through `FINFEED_H20_ROOT`. Business services coordinate provider access and calculations.
 
 ## Process and concurrency model
 
 The supervisor launches one Gunicorn worker with 64 HTTP threads and a 180-second worker timeout. Database pools are created inside the worker, not inherited from a preloaded parent. The supervisor also owns PostgreSQL, the project proxy, Tailscale, and the daily backup loop.
 
-Refresh jobs have independent lanes: security 4 workers; home, sector, macro, whales, Yahoo news, and SEC news 2 each. SEC news retains its existing cache keys but runs in an independent lane. Total queued/running capacity is 256. Same-key work is coalesced inside a worker; notification source leases provide additional database coordination. Increasing Gunicorn worker count would multiply in-memory lanes, provider sessions, and database pools and therefore requires capacity analysis.
+Refresh jobs have independent lanes: security 4 workers; daily candles 1; financial, home, sector, macro, whales, Yahoo news and SEC news 2 each. Total queued/running capacity is 256. Same-key work is coalesced inside a worker; notification source leases provide additional database coordination. Increasing Gunicorn worker count would multiply in-memory lanes, provider sessions, and database pools and therefore requires capacity analysis.
 
 ## Passkey and session security
 
@@ -65,6 +65,8 @@ The frontend login bridge and callback exchange short-lived authentication ticke
 | `/api/invitations`, `/api/admin/*` | Invitations and administrator operations |
 | `/api/home`, `/api/home/sectors/<symbol>` | Index and sector snapshots |
 | `/api/security/<symbol>` | Shared quote and financial results |
+| `/api/candles/<symbol>` | Authenticated database-only daily OHLCV snapshots |
+| `/api/chart-drawings/<symbol>` | Current account private drawing reads and transactional edits |
 | `/api/macro/<kind>` | Macro indicators and prediction-market data |
 | `/api/whales/<kind>` | Institution holdings |
 | `/api/news`, `/api/news/<symbol>/<kind>` | Company disclosure indexes |
@@ -80,4 +82,10 @@ Project processes do not modify global DNS, routing, firewall, package environme
 
 ## Concurrent market and statement pipeline
 
-For supported US equities, a single lock-protected backend timer schedules market/valuation work every minute and quarterly financial work hourly, independently of browser activity. Separate bounded lanes share the Longbridge connection and provider limits. Quotes consume the hourly financial cache; browser requests read existing snapshots and use content versions for empty HTTP 304 responses. Home, Macro, institutional holdings and News refresh hourly. Yahoo remains in Home/sectors, earnings-call indexes, DXY and supported non-US/crypto market routes. Complete public market snapshots are stored in IndexedDB; private account records remain server-authoritative. See [cache and rate control](data-and-caching.md).
+For supported US equities, a single lock-protected backend timer schedules market/valuation work every minute and quarterly financial work hourly, independently of browser activity. Separate bounded lanes share the Longbridge connection and provider limits. Quotes consume the hourly financial cache; browser requests read existing snapshots and use content versions for empty HTTP 304 responses. Home, Macro, institutional holdings and News refresh hourly. Yahoo remains in Home/sectors, earnings-call indexes, DXY and supported non-US/crypto market routes. Complete public market snapshots are stored in IndexedDB; account records remain server-authoritative. Daily chart history refreshes hourly. Private trend segments use a separate account-scoped local database and confirmed PostgreSQL writes; revision-based HTTP 304 reads and HTTP 409 edit conflicts support multiple devices. See [cache and rate control](data-and-caching.md).
+
+## Browser interactions
+
+Dialogs share the chart's entrance animation and native close behavior. Ticker buttons open daily charts; financial cells open metric details. Chart navigation, measurements, Vegas EMA channels and account-private editable trend segments run in the browser. Confirmed drawings synchronize through the authenticated API and PostgreSQL; public OHLCV snapshots and private drawings use separate browser stores. Public read failures preserve usable snapshots and retry; unconfirmed account or drawing writes are not treated as committed.
+
+The tunnel watchdog compares local API liveness with public Funnel and Vercel connectivity every minute. Three consecutive public failures with a healthy local API permit a verified project-tunnel restart, subject to a fifteen-minute cooldown. This recovery leaves the database, backend and proxy processes running.

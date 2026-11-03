@@ -12,7 +12,7 @@
 | PostgreSQL listener | `127.0.0.1:18766`, database `finfeed`, TLS required |
 | Proxy listener | `127.0.0.1:17890` |
 
-Market-cache changes were deployed on October 29, 2026 (`42850f3`); manual refresh controls were removed in frontend release `a3f5089`. Backend application restarts and frontend/static-file synchronization are separate operations, so a backend release marker is not an exhaustive frontend deployment hash. Use [server operations](server-deployment.md) for synchronization and restart, and [database operations](database-migration.md) for recovery. Dated deployment checks do not guarantee continuous tunnel, provider or email availability.
+Frontend publishing and backend snapshot synchronization are separate operations. A backend release marker does not identify every static frontend revision. Use [server operations](server-deployment.md) for synchronization and restart, and [database operations](database-migration.md) for recovery.
 
 ## Frontend publishing
 
@@ -53,7 +53,6 @@ The supervisor reads `.private/backend.json` into the child environment. Keep th
 | `FINFEED_BOOTSTRAP_TOKEN` | Strong first-account initialization token; existing databases must not be reinitialized |
 | `FRED_API_KEY` | Macro observations and published-release-date fallback |
 | `LONGBRIDGE_APP_KEY`, `LONGBRIDGE_APP_SECRET`, `LONGBRIDGE_ACCESS_TOKEN` | Server-only Longbridge market and fundamental API credentials; never sent to browsers |
-| `ALPHAVANTAGE_API_KEY` | Optional legacy forecast configuration; not used by Longbridge market valuation |
 | `YAHOO_SESSION_MODE` | Anonymous by default; explicit `login` only with both cookie variables |
 | `YAHOO_COOKIE_T`, `YAHOO_COOKIE_Y` | Optional private Yahoo login cookies; never sent to browsers |
 | `YAHOO_PROXY_URL` | Forced by the project launcher to loopback port 17890 |
@@ -64,6 +63,8 @@ The supervisor reads `.private/backend.json` into the child environment. Keep th
 | `FINFEED_EMAIL_FROM` | Gmail address authorized for sending |
 | `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` | Send-only OAuth credentials |
 | `FINFEED_NOTIFICATION_CRON_TOKEN` | Independent random bearer secret, at least 32 characters |
+| `FINFEED_MARKET_REFRESH` | Launcher enables the independent minute/hour market scheduler |
+| `FINFEED_TUNNEL_WATCHDOG` | Launcher enables public-entry health checks and scoped tunnel recovery |
 
 Do not rotate origins casually: Passkeys, cookie transfer, and request validation depend on them. Credentials are not frontend build variables.
 
@@ -71,7 +72,7 @@ Do not rotate origins casually: Passkeys, cookie transfer, and request validatio
 
 Tailscale runs in userspace mode with an abstract control socket `@finfeed-h20-control`. Its persistent identity and certificates stay in `.tailscale`. DNS acceptance, route acceptance, and Tailscale SSH are disabled. Funnel forwards only the FinFeed HTTP listener. Keep the public identity unique; do not start the same state on two machines.
 
-Mihomo runs from `.proxy/config.json` and listens only on loopback. Selected provider clients explicitly use the project proxy. The project uses a server-side configured subscription node, independent of the user's laptop. The October 28 replacement-subscription cutover selected a node tested with proxy-node TLS verification enabled; the previous self-signed-node exception is disabled for that node. Destination HTTPS verification remains enabled. Treat private runtime configuration as authoritative for later node changes; see [server operations](server-deployment.md) for dated acceptance and rollback records. Never enable a global VPN/TUN or alter other projects' proxy settings to troubleshoot FinFeed.
+Mihomo runs from `.proxy/config.json` and listens only on loopback. Selected provider clients explicitly use the project proxy. The proxy configuration is server-side and independent of the user's laptop. Proxy-node and destination HTTPS certificate verification are enabled. Keep subscription contents and node identifiers in private runtime files. See [server operations](server-deployment.md) for connectivity diagnosis and scoped recovery. Never enable a global VPN/TUN or alter other projects' proxy settings to troubleshoot FinFeed.
 
 ## Release acceptance
 
@@ -83,4 +84,4 @@ Mihomo runs from `.proxy/config.json` and listens only on loopback. Selected pro
 6. Check upstream requests, stale-data behavior, Gmail token refresh, and external scheduler acceptance.
 7. Observe a real delivery when validating mail changes. Token refresh and HTTP 202 do not prove inbox delivery.
 
-The October 23 Bridgewater release passed 224 backend tests, frontend regression checks and the static build; SEC current/prior-quarter retrieval and cover/detail totals were checked. The earlier database transfer checked all fifteen application tables. These are dated release receipts, not proof of current provider health or every alert category's delivery. Documentation-only changes require link, source-consistency and asset checks rather than a full application regression run.
+Documentation-only changes require local-link, source-consistency and illustration checks rather than a full application regression run. Liveness, provider acceptance and observed email delivery are separate acceptance checks.

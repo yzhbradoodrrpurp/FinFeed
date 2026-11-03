@@ -41,12 +41,12 @@ The root [README](README.md) is a public feature overview. Keep it focused on us
 
 ## Architecture and production reference
 
-Configuration reviewed against repository source and October 29, 2026 deployment checks (Asia/Shanghai). This is a configuration reference, not a continuous health guarantee.
+Current implementation reference, maintained against repository source. Runtime health is checked separately from configuration.
 
 | Component | Current implementation |
 | --- | --- |
 | Website | `https://finfeed-research.vercel.app`, static frontend on Vercel |
-| Browser application | Native HTML/CSS/JavaScript modules; Node copying build; no Vue/React/Vite migration has been implemented |
+| Browser application | Native HTML/CSS/JavaScript modules with a Node copying build |
 | API | Python / Flask / Gunicorn on the dedicated project at `47.114.43.129` |
 | Public API entry | `https://finfeed.tail03a68f.ts.net`, Tailscale Funnel HTTPS |
 | Database | Project-owned PostgreSQL 17.11, loopback TLS, `finfeed_private` schema |
@@ -102,12 +102,12 @@ The unified runner includes the static build. Documentation-only updates require
 Account display preferences persist Watchlist metric-group order and Home sector-card order through authenticated endpoints and PostgreSQL account state. Watchlist handles support long-press dragging and keyboard reordering. Frontend publishing and backend snapshot synchronization remain separate; documentation-only synchronization does not require a backend restart or an application release-marker change.
 
 Watchlist ticker buttons open daily OHLCV charts; other cells retain metric details.
-Chart history uses the existing hourly scheduler and PostgreSQL snapshot cache;
-`/api/candles/<symbol>` is authenticated and database-only. Keep the self-hosted
+Chart history uses the hourly scheduler and PostgreSQL snapshot cache;
+`/api/candles/<symbol>` is authenticated and database-only. The browser displays local history, checks server versions immediately and every minute while open, and retains successful data on failures. Vegas EMA channels and temporary measurements are calculated locally. Private trend lines use account-scoped PostgreSQL records plus separate IndexedDB/localStorage caches, immediate confirmed writes, versioned GET/304 and conflict-aware edits. Chart reads retry transient failures; writes require confirmation. Keep the self-hosted
 Lightweight Charts license, notice, and attribution when updating the vendor bundle.
 
 New Watchlist symbols are verified by their provider before an authenticated state
 write commits; autocomplete is not an exclusive whitelist. Do not classify supplier
 failures as nonexistent symbols. Earnings-call (`news_calls`) and SEC-filing
-(`news_sec`) reminders are independently selectable. Preserve legacy `news` settings,
+(`news_sec`) reminders are independently selectable. Preserve combined `news` compatibility settings,
 source cursors and outbox event IDs when changing subscriptions.

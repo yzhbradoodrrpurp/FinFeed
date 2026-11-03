@@ -1,8 +1,8 @@
 # PostgreSQL Storage, Updates, Backup, and Recovery
 
-Reviewed against storage and deployment source on October 26, 2026. The operational check confirmed the project database process and backup-marker presence; it did not run a fresh backup/restore verification.
+This runbook describes current storage, consistent backups, database updates and restore procedures.
 
-Production storage is a dedicated PostgreSQL 17.11 installation inside `/mnt/data/users/shx/FinFeed` on `47.114.43.129`. This document covers the current database and safe transfer procedures, not previous infrastructure.
+Production storage is a dedicated PostgreSQL 17.11 installation inside `/mnt/data/users/shx/FinFeed` on `47.114.43.129`. Database updates and transfers preserve account records, credentials, caches, private chart drawings and notification state.
 
 ## Cluster and access
 
@@ -32,7 +32,7 @@ The cluster uses data checksums with `fsync`, `full_page_writes`, and `synchrono
 | `invitations` | Hashed invitations, expiry, consumption |
 | `disabled_accounts` | Administrative account disable markers |
 | `revoked_passkeys` | Revoked credential markers |
-| `cache` | Shared market snapshots and provider budgets |
+| `cache` | Shared market snapshots, provider budgets and separately namespaced private chart drawings |
 | `notification_settings` | Verified recipient and subscribed categories/thresholds |
 | `notification_cursors` | Previously seen event state and baselines |
 | `notification_sources` | Source polling state and coordination |
@@ -40,7 +40,7 @@ The cluster uses data checksums with `fsync`, `full_page_writes`, and `synchrono
 
 Account display orders live inside account state JSON, not a separate preferences table. Market summaries from `/api/quotes` project existing cache rows without writing account records.
 
-These fifteen application tables include both user records and reusable market state. Counts change during normal saves, polling, and expiry cleanup; old row counts are not a permanent acceptance criterion.
+These fifteen application tables include user records, reusable market state and private drawing records. Row counts change during normal operation; archive verification compares each snapshot to its own manifest.
 
 ## Connections and transactions
 
@@ -81,7 +81,7 @@ snapshot(config['DATABASE_URL'], root / '.postgres/backups' / name)
 
 With `.private/postgresql-enabled`, the supervisor runs `database_backup.py`. It creates one consistent archive per UTC day, checks again every hour, retries failures on the next check, and atomically updates `.runtime/database-backup.json` after success. Archives, manifests, and logs are under `.postgres/backups`. There is no automatic deletion or off-server replication.
 
-The historical October 10 production backup was checked successfully; that receipt is not verification of the newest daily archive. A separate final transfer archive and manifest were copied off-server and SHA-256 checked during deployment. This does not constitute a continuing off-server backup policy. Configure and test a separate encrypted off-server copy if protection against host/storage loss is required; monitor archive growth meanwhile.
+Monitor the latest successful backup marker and verify restores against the corresponding archive manifest. Scheduled off-server replication is not configured; host/storage-loss protection requires an independently managed encrypted copy. Monitor archive growth because local retention is not automatically pruned.
 
 ## Restore and host/database transfer
 
@@ -96,7 +96,7 @@ Never restore over the sole production database or copy a live cluster directory
 7. Remove any transfer-only write fences from the target only after verification. Preserve source protection and archives.
 8. Resume one backend and one scheduler; verify actual frontend operations and observe subsequent writes.
 
-The last production transfer matched all fifteen application tables, including account records, credentials, histories, caches, and notification state. The seven accounts and eight public credential records were retained at that snapshot; normal transient expiry remains active.
+Verification covers all fifteen application tables, including account records, credentials, histories, caches, private drawing namespaces and notification state. Retain the manifest as the exact snapshot reference; normal transient expiry resumes after service startup.
 
 ## Rollback and maintenance
 

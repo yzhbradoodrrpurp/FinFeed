@@ -1,12 +1,13 @@
 # Data Providers, Request Scheduling, and Caching
 
-Reviewed against provider, refresh-job, storage and browser code on October 29, 2026. A retrieval timestamp records a fetch, not the issuer's disclosure time or proof of provider completeness.
+This document describes current providers, background updates, server persistence and browser caches. A retrieval timestamp records a fetch, not the issuer's disclosure time or proof of provider completeness.
 
 ## Provider map
 
 | Feature | Data chain | Current routing |
 | --- | --- | --- |
 | Watchlist / Portfolio market, EPS and valuation | Longbridge OpenAPI; TTM P/E index and two-actual/two-forecast forward calculation | Longbridge SDK connection |
+| Watchlist daily OHLCV | Longbridge forward-adjusted regular-session history | Longbridge OpenAPI |
 | Quarterly financial categories | Longbridge quarterly financial reports and detailed income/cash-flow statements | Longbridge OpenAPI |
 | Home indices and sector charts | Yahoo Finance through yfinance and Yahoo request adapters | Project proxy |
 | NFP levels, unemployment, hourly earnings | FRED series PAYEMS, UNRATE, CES0500000003; original publisher BLS | Direct |
@@ -29,12 +30,11 @@ Securities use regular-session prices, currency/financial-period checks, consecu
 
 The 52-week range is calculated over the latest 365 calendar days from Longbridge forward-adjusted regular-session daily bars, including corporate-action adjustment. It can differ from Yahoo's range definition and adjustment. Previous-ten-session average volume and relative volume retain the existing complete-day definition rather than using Longbridge's built-in volume ratio. NYSE holidays and early closes determine completion for US securities.
 
-Successful raw provider blocks use versioned `longbridge:v1:<block>:<symbol>` cache keys in PostgreSQL. Static identities have a one-day TTL; quotes, indexes and bars have a 60-second TTL; EPS anchor statements have an hourly TTL and consensus has a one-minute TTL. Forced market refresh still observes a ten-second minimum per block; forced fundamental refresh observes a sixty-second minimum. Failed blocks back off for sixty seconds across users. Failed blocks retain dated successful raw snapshots and mark the affected display fields stale. Final security snapshots and browser validation use schema 10. Schema 8/9 market fallbacks can survive cutover, but old Yahoo quarterly series and TotalDebt values are cleared, so they cannot be relabelled Net Debt or Longbridge financial data. Existing private account records, preferences and holdings are unaffected; no database schema migration or cache purge is needed.
+Successful raw provider blocks use versioned `longbridge:v1:<block>:<symbol>` cache keys in PostgreSQL. Static identities have a one-day TTL; quotes, indexes and bars have a 60-second TTL; EPS anchor statements have an hourly TTL and consensus has a one-minute TTL. Forced market refresh still observes a ten-second minimum per block; forced fundamental refresh observes a sixty-second minimum. Failed blocks back off for sixty seconds across users. Failed blocks retain dated successful raw snapshots and mark the affected display fields stale. Final security snapshots and browser validation use schema 10. Payload validation preserves provider, financial period and Net Debt semantics; incompatible fields are not relabelled as current observations.
 
-Production quote and statement jobs run independently in bounded lanes. Quotes compose their result from the latest successful hourly statement snapshot; a minute quote job never starts statement retrieval. The legacy request-driven mode can stream quote previews while its separate financial task completes. Financial report, statement_IS and statement_CF blocks have hourly TTLs; consensus has a one-minute TTL. Legacy forced fundamental requests retain their sixty-second minimum interval; production has no manual-refresh controls. Each successful raw block is durably cached independently in PostgreSQL through the existing asynchronous writer. Failed blocks retain their successful timestamps and stale labels. Missing current-quarter fields have explicit reasons; the main report-period label indicates the newest available source quarter, not a verified official publication date. Legacy yahoo-financial keys remain unused by the active quarterly route.
+Production quote and statement jobs run independently in bounded lanes. Quotes compose their result from the latest successful hourly statement snapshot; a minute quote job does not start statement retrieval. Financial report, statement_IS and statement_CF blocks have hourly TTLs; consensus has a one-minute TTL. Each successful raw block is cached independently in PostgreSQL through the asynchronous writer. Failed blocks retain successful timestamps and stale labels. Missing current-quarter fields have explicit reasons; the main report-period label indicates the newest available source quarter, not a verified official publication date.
 
-
-Production uses one application worker and one shared Longbridge quote connection. The SDK controls quote calls to at most ten per second with at most five concurrent requests. FinFeed serializes fundamental calls with a 1.1-second minimum interval. The quarterly pool is bounded at four; all its fundamental calls share the same Longbridge limiter and block locks as EPS requests. Same-symbol refresh jobs and provider-block locks merge concurrent callers. Rate control bounds outbound traffic, not supplier availability or a guaranteed one-minute completion time for every distinct symbol. Multiple accounts sharing a ticker reuse its data; many distinct symbols can queue. Do not start extra production workers or probe quote connections with the same credentials without revisiting account-wide quotas.
+Production uses one application worker and one shared Longbridge quote connection. The SDK controls quote calls to at most ten per second with at most five concurrent requests. FinFeed serializes fundamental calls with a 1.1-second minimum interval. Hourly financial refreshes use two job workers; the statement execution pool has four workers. Fundamental calls share the same Longbridge limiter and block locks as EPS requests. Same-symbol refresh jobs and provider-block locks merge concurrent callers. Rate control bounds outbound traffic, not supplier availability or a guaranteed one-minute completion time for every distinct symbol. Multiple accounts sharing a ticker reuse its data; many distinct symbols can queue. Do not start extra production workers or probe quote connections with the same credentials without revisiting account-wide quotas.
 
 Home sector histories cover three years of daily closes without dividend total-return adjustment. Macro series preserve original units and observation periods. Monthly NFP changes and PCE growth are computed from adjacent observations; missing months are not silently bridged. The daily Treasury series does not provide intraday threshold events. Current revisions are visible, but original vintages and market consensus are not synthesized.
 
@@ -44,7 +44,7 @@ SEC 13F retrieval locates filings and compares adjacent reported quarters. Posit
 
 News stores normalized titles, dates, document URLs, and identifiers, not article bodies. Earnings calls are limited to the latest two published fiscal quarters. Filings use a window anchored by the latest two original quarterly/annual filings. Unsafe URLs, future/unpublished entries, duplicates, and unrecognized periods are filtered.
 
-Polymarket history uses six-hour historical sampling with hourly supplementation and a current-price endpoint update. The provider cache can reuse minute snapshots, but the production background scheduler refreshes this view hourly. Browser entry and visibility checks read the server snapshot without calling the provider. The provider matches discovered Polymarket contracts to the official FOMC calendar and the meeting dates/year in each contract's rules. On decision day it advances after a published official statement (not before 14:00 America/New_York); after that local date it selects the next scheduled meeting. Missing or ambiguous contracts retain the previous snapshot. The next event replaces the old one only once its outcome histories are available. Calendar/discovery checks are cached for one minute, with a seven-day last-good fallback during outages; current contract data is always fetched separately. Event snapshots and histories are isolated by slug, with a durable current-event pointer and legacy October-cache recovery. Each outcome retains its successful durable history independently when a refresh fails; it must not be erased by an empty replacement. Quotes are contract-specific market pricing subject to liquidity and spread; they are not official policy or a QE forecast.
+Polymarket history uses six-hour historical sampling with hourly supplementation and a current-price endpoint update. The provider cache can reuse minute snapshots, but the production background scheduler refreshes this view hourly. Browser entry and visibility checks read the server snapshot without calling the provider. The provider matches discovered Polymarket contracts to the official FOMC calendar and the meeting dates/year in each contract's rules. On decision day it advances after a published official statement (not before 14:00 America/New_York); after that local date it selects the next scheduled meeting. Missing or ambiguous contracts retain the previous snapshot. The next event replaces the old one only once its outcome histories are available. Calendar/discovery checks are cached for one minute, with a seven-day last-good fallback during outages; current contract data is always fetched separately. Event snapshots and histories are isolated by slug, with a durable current-event pointer. Each outcome retains its successful durable history independently when a refresh fails; it must not be erased by an empty replacement. Quotes are contract-specific market pricing subject to liquidity and spread; they are not official policy or a QE forecast.
 
 ## Browser request cycle
 
@@ -52,15 +52,16 @@ The browser loads account state and market data independently, limits watchlist 
 
 Production enables `FINFEED_MARKET_REFRESH=1`: authenticated market routes return existing snapshots immediately and never wait for supplier requests. The one lock-protected background timer scans active accounts every minute, deduplicates Watchlist tickers (plus Portfolio tickers for quotes), and schedules quote/valuation work every 60 seconds, quarterly financial work every 3,600 seconds, and Home, Macro (including Polymarket), all registered institutions, and Watchlist News every 3,600 seconds. Different provider lanes run concurrently. Intervals are minimum freshness targets after completion; provider quotas, queueing and failure backoff can delay completion. No open browser is required. The local market scheduler is separate from external email scheduling.
 
-Each response includes a content hash (`cache_version`) and successful snapshot timestamp (`server_checked_at`). The browser sends its version on subsequent reads. Unchanged content returns HTTP 304 with no body and an updated check header; values, reporting periods, sources and failure state participate in the hash, while collection/check timestamps do not. Authentication and authorization run before this comparison. A cold cache returns HTTP 202; the browser preserves existing local content and polls within a bounded 125-second wait. The legacy request-driven NDJSON path remains available only when the production scheduler flag is off (development/tests).
+Each response includes a content hash (`cache_version`) and successful snapshot timestamp (`server_checked_at`). The browser sends its version on subsequent reads. Unchanged content returns HTTP 304 with no body and an updated check header; values, reporting periods, sources and failure state participate in the hash, while collection/check timestamps do not. Authentication and authorization run before this comparison. A cold cache returns HTTP 202; the browser preserves existing local content and polls within a bounded 125-second wait.
 
-The timer owns `.runtime/market-refresh.lock` and writes a count-only heartbeat to `.runtime/market-refresh.json`. It uses the application's existing worker and provider connections, not a second supervisor or SDK connection. New tickers are discovered within the next account scan. Quotes consume the hourly financial snapshot and cannot launch statement retrieval in their minute loop. Failed updates preserve successful database values and publish a separate failure status. There is no database migration or cache purge.
+The timer owns `.runtime/market-refresh.lock` and writes a count-only heartbeat to `.runtime/market-refresh.json`. It uses the application's existing worker and provider connections, not a second supervisor or SDK connection. New tickers are discovered within the next account scan. Quotes consume the hourly financial snapshot and cannot launch statement retrieval in their minute loop. Failed updates preserve successful database values and publish a separate failure status.
 
 ## Cache layers
 
 | Layer | Location | What it stores / lifetime |
 | --- | --- | --- |
-| Browser market snapshots | IndexedDB `finfeed-public-market` / `snapshots`, memory, and compatible localStorage `finfeed-market:v1:*` | Public market data; read age depends on caller, helper default seven days |
+| Browser market snapshots | IndexedDB `finfeed-public-market` / `snapshots`, memory, and compatible localStorage `finfeed-market:v1:*` | Public market data; read age depends on caller: daily charts retain up to thirty days; helper default seven days |
+| Browser private chart drawings | IndexedDB `finfeed-private-charts` / `drawings`, account-scoped localStorage backup, page memory | Confirmed private segments and account/ticker/revision versions; separate from public snapshots |
 | Browser preferences and auth hint | localStorage | Sidebar settings and a non-secret session-expiry hint; no bearer credentials or holdings |
 | Tab-local context | sessionStorage | News owner ticker list and account-selection context; not authoritative records |
 | Account display preferences | PostgreSQL account state JSON | Watchlist metric-group order and Home sector-card order, isolated per account |
@@ -72,7 +73,7 @@ The timer owns `.runtime/market-refresh.lock` and writes a count-only heartbeat 
 
 Public snapshots use a bounded asynchronous database writer: updates coalesce by key, wait a 100 ms batching window, and write up to 32 entries per transaction. The pending map is capped at 1,024 keys; overflow is logged and that evicted pending value remains memory-only. Failed writes retry after fifteen seconds. Account writes remain synchronous transactions. Recent snapshots can therefore be visible in memory before durable persistence; a crash can lose the unflushed market-cache update, not a committed account record.
 
-The API's HTTP `no-store` policy is separate from the application-controlled public market cache. Private account data and credentials are excluded from localStorage. Clearing browser market caches does not delete holdings; clearing database or private paths can.
+The two primary persistent stores are the server PostgreSQL database and browser application storage. Worker and page memory accelerate access but are not additional authoritative databases. The API's HTTP `no-store` policy is separate from the application-controlled public market cache. Watchlist/Portfolio records and bearer credentials are excluded from localStorage. Confirmed private chart drawings use a separate account-scoped local cache; they are not public market data. Clearing browser market caches does not delete holdings; clearing database or private paths can.
 
 IndexedDB restores complete public Watchlist snapshots, including metric explanations, periods and source inputs. Startup reads local snapshots alongside authentication (bounded restore wait 1.5 seconds); private account state is still loaded from the authorized server before selecting its tickers. Storage failure retains in-memory data but cannot guarantee persistence across browser restarts.
 
@@ -82,7 +83,7 @@ Worker cache TTLs follow service frequency: minute quotes/valuation and hourly q
 
 ## Queue and failure policy
 
-Refresh lanes isolate slow company/SEC calls from minute quotes. Limits are security 4, financial 2; Yahoo news, SEC news, whales, macro, home, sector 2 each, with 256 queued/running jobs. Same-key requests share one job in the process. Failed refreshes back off for 60, 120, 240, 480, then 900 seconds; success resets the retry state. Forced requests still share a just-completed result within five seconds.
+Refresh lanes isolate slow company/SEC calls from minute quotes. Limits are security 4, daily candles 1; financial, Yahoo news, SEC news, whales, macro, home and sector 2 each, with 256 queued/running jobs. Same-key requests share one job in the process. Failed refreshes back off for 60, 120, 240, 480, then 900 seconds; success resets the retry state.
 
 Failures preserve usable previous data. An unavailable field stays unavailable rather than becoming zero; a successful quote can coexist with missing financial data. HTTP failures, invalid payloads, empty responses, database faults, and stale fallback events produce sanitized `request_failure` records. Client failures are best-effort reported with request IDs; if the backend is unreachable, reporting can also fail.
 
@@ -97,23 +98,27 @@ Failures preserve usable previous data. An unavailable field stays unavailable r
 
 ## Account display order
 
-Authenticated `GET /api/preferences` loads the account's `watchlistGroupOrder` and `homeSectorOrder`. `PUT /api/preferences` validates complete permutations and merges only the supplied preference fields into account state inside the existing state transaction. No database schema change is required. Older state clients preserve these fields when saving watchlists or positions.
+Authenticated `GET /api/preferences` loads the account's `watchlistGroupOrder` and `homeSectorOrder`. `PUT /api/preferences` validates complete permutations and merges only the supplied preference fields into account state inside the existing state transaction. State saves preserve these preference fields when saving watchlists or positions.
 
 Watchlist group handles activate after a 300 ms hold; pointer dragging uses an anchored preview, animated column swaps, and horizontal edge scrolling. Left/right arrow keys also reorder groups. Home retains its card drag and keyboard controls. Reorders update the view immediately and queue server writes; failures restore the prior order and display an error. Controls remain disabled until account preferences load. When viewing another account's Watchlist, the group order comes from that account's state and drag handles are hidden; only the owner can reorder their groups. Both reorder and save callbacks check ownership and loading state. Preference writes resolve the account from the authenticated session, and requests targeting another account are rejected. Two-account regression tests verify that edits preserve the other account's state, revision, and history. Other devices load the saved order on login/reload and refresh it when the window regains focus; this is not a live broadcast channel.
 
 ## Quarterly profitability and capital expenditure
 
-Gross Margin, Operating Margin and Capital Expenditure each display Q0 single-quarter value, Q0 year-over-year change, Q0 quarter-over-quarter change and Q−1 quarter-over-quarter change, anchored to the latest reported income-statement quarter. Margin levels are percentages. Relative changes for margins, Revenue, Debt, FCF and CapEx use (current − comparison) / abs(comparison), displayed as percentages. A margin increase from 40% to 50% is +25%, not a percentage-point difference. Negative bases retain a numeric rate with a label for narrowing, widening, unchanged, reaching zero or turning positive; positive-to-negative changes are labelled as turning negative. Zero bases have no numeric percentage and show a zero-to-positive, zero-to-negative or unchanged label. Missing observations remain missing. All numeric changes, including Debt and CapEx, use green for positive values and red for negative values; colors indicate direction, not investment merit. Spending uses the absolute cash outflow reported by the provider. Comparisons preserve the consecutive-quarter and matching-year rules and do not indicate investment performance. Backend snapshots are recalculated from cached quarterly series; browser snapshots with stored comparison inputs are upgraded before display, sorting and details without discarding successful data or forcing a provider refresh. Calculation version 3 distinguishes the new derived values.
+Gross Margin, Operating Margin and Capital Expenditure each display Q0 single-quarter value, Q0 year-over-year change, Q0 quarter-over-quarter change and Q−1 quarter-over-quarter change, anchored to the latest reported income-statement quarter. Margin levels are percentages. Relative changes for margins, Revenue, Net Debt, FCF and CapEx use (current − comparison) / abs(comparison), displayed as percentages. A margin increase from 40% to 50% is +25%, not a percentage-point difference. Negative bases retain a numeric rate with a label for narrowing, widening, unchanged, reaching zero or turning positive; positive-to-negative changes are labelled as turning negative. Zero bases have no numeric percentage and show a zero-to-positive, zero-to-negative or unchanged label. Missing observations remain missing. All numeric changes, including Net Debt and CapEx, use green for positive values and red for negative values; colors indicate direction, not investment merit. Spending uses the absolute cash outflow reported by the provider. Comparisons preserve the consecutive-quarter and matching-year rules and do not indicate investment performance. Backend snapshots are recalculated from cached quarterly series; browser snapshots with stored comparison inputs are upgraded before display, sorting and details without discarding successful data or forcing a provider refresh. Derived growth fields use calculation version 3.
 
 ### Official company filings
 
-SEC filings use `company_tickers.json` to resolve CIKs and `data.sec.gov/submissions/CIK##########.json` for official filing metadata. Ticker aliases normalize dots to hyphens. The ticker map refreshes daily; a failed refresh retains known CIK mappings and applies a sixty-second retry cooldown, while unresolved symbols fail rather than being incorrectly cached as unsupported; an unmapped symbol is reported as unsupported, never guessed from another issuer. Submissions preserve accession, form, filing date, acceptance timestamp, report date, and primary document. Additional submissions pages are read when needed to find two original periodic-report anchors (10-Q, 10-K, 20-F, or 40-F). The page retains its report window; reminder detection reads the full retrieved index so display-window changes cannot hide newly indexed disclosures. Calls continue to use Yahoo. Requests share the existing SEC limiter and contact User-Agent with institutional holdings. API/schema failures retain prior successful caches and do not advance notification cursors. Official SEC caches have a separate versioned key from historical Yahoo caches. SEC download attempts have an eight-second per-attempt budget and at most three attempts within the original thirty-second operation deadline; transient network and HTTP 408/429/5xx failures can retry, respecting integer Retry-After when it fits the budget. Permanent HTTP and TLS certificate failures are not retried or bypassed. Each attempt uses the shared SEC limiter.
+SEC filings use `company_tickers.json` to resolve CIKs and `data.sec.gov/submissions/CIK##########.json` for official filing metadata. Ticker aliases normalize dots to hyphens. The ticker map refreshes daily; a failed refresh retains known CIK mappings and applies a sixty-second retry cooldown, while unresolved symbols fail rather than being incorrectly cached as unsupported; an unmapped symbol is reported as unsupported, never guessed from another issuer. Submissions preserve accession, form, filing date, acceptance timestamp, report date, and primary document. Additional submissions pages are read when needed to find two original periodic-report anchors (10-Q, 10-K, 20-F, or 40-F). The page retains its report window; reminder detection reads the full retrieved index so display-window changes cannot hide newly indexed disclosures. Calls use Yahoo. Requests share the existing SEC limiter and contact User-Agent with institutional holdings. API/schema failures retain prior successful caches and do not advance notification cursors. Official SEC snapshots use the `news:sec-edgar:v1:` namespace. SEC download attempts have an eight-second per-attempt budget and at most three attempts within the original thirty-second operation deadline; transient network and HTTP 408/429/5xx failures can retry, respecting integer Retry-After when it fits the budget. Permanent HTTP and TLS certificate failures are not retried or bypassed. Each attempt uses the shared SEC limiter.
 
-News browser responses (JSON, NDJSON and optional cache bootstrap) omit `notification_items`. This projection leaves the complete persisted index intact for reminder detection; displayed filings still cover the same two-report window. Yahoo calls and SEC filings have separate two-worker server lanes and separate two-worker browser queues, so slow calls cannot consume all SEC slots. Browser source failures retain displayed snapshots and retry after 1, 2, 4, 8 and then 15 minutes until recovery; successful recovery resets the delay. Seeding browser caches does not clear a pending failure state. The existing hourly refresh and server backoff remain in effect.
+News browser responses omit `notification_items`. This projection leaves the complete persisted index intact for reminder detection; displayed filings still cover the same two-report window. Yahoo calls and SEC filings have separate two-worker server lanes and separate two-worker browser queues, so slow calls cannot consume all SEC slots. Browser source failures retain displayed snapshots and retry after 1, 2, 4, 8 and then 15 minutes until recovery; successful recovery resets the delay. Seeding browser caches does not clear a pending failure state. Hourly source refreshes and server backoff operate independently of browser retries.
 
 ### Mubadala institutional holdings
 
 Mubadala Investment Co PJSC (CIK 1704268, application ID `mubadala`) is included in the Whale Holdings manager registry and sovereign-investment category. It uses the same SEC filings, amendment handling, prior-quarter comparison, cache and stale-data rules as the other managers. The 13F scope is not its complete global portfolio. Existing institutional-alert subscribers use the normal source-observation baseline and deduplication rules for this manager.
+
+### Bridgewater institutional holdings
+
+Bridgewater Associates, LP (CIK 1350694, application ID `bridgewater`) is included in Whale Holdings under the Quantitative Funds category. Its SEC 13F holdings use the existing verified totals, adjacent-quarter comparison, amendment, cache and stale-data handling. These disclosures cover reportable securities rather than the complete global macro portfolio. Institutional reminders follow the existing observation baseline and deduplication rules.
 
 ### Account startup and market payloads
 
@@ -123,9 +128,7 @@ The browser immediately renders records and existing local market snapshots. For
 
 Browser security responses omit internal `series` and `longbridge_market` blocks; complete metric explanations and inputs remain in normal security responses. Durable server snapshots retain those internal blocks for recalculation and source reuse. Other views' staggered background startup waits for the initial ticker queue, for at most fifteen seconds, giving the active account view priority without removing background updates.
 
-### Bridgewater institutional holdings
-
-Bridgewater Associates, LP (CIK 1350694, application ID `bridgewater`) is included in Whale Holdings under the Quantitative Funds category. Its SEC 13F holdings use the existing verified totals, adjacent-quarter comparison, amendment, cache and stale-data handling. These disclosures cover reportable securities rather than the complete global macro portfolio. Institutional reminders follow the existing observation baseline and deduplication rules.
+### Macro display conventions
 
 NFP and PCE cards show previous values without an adjacent date. Current and next publication times remain in their separate calendar section. Previous values retain the current revision basis rather than claiming to reproduce originally published values. Calendar metadata, including the prior BEA release, remains available in backend snapshots.
 
@@ -147,18 +150,16 @@ regular-session daily data can change before the session closes.
 The existing backend scheduler refreshes `candles:3y:v1:<symbol>` hourly for the union
 of active accounts' Watchlist and Portfolio symbols. A bounded chart lane and a
 serialized provider-call guard limit extra quote traffic. Longbridge returns US
-regular-session daily bars via its history-by-date API, with up to 1,000 bars per
-request. New listings retain their shorter available history. Unsupported non-US
+regular-session daily bars via its history-by-date API, using the requested date range. New listings retain their shorter available history. Unsupported non-US
 and crypto routes are marked unavailable rather than guessed as US instruments.
 
 Successful forward-adjusted batches are validated and published under
 `market:v1:candles:3y:v1:<symbol>` in the existing PostgreSQL cache. Invalid, empty
 or failed refreshes retain the previous complete batch. `/api/candles/<symbol>`
 requires normal authentication and only reads the database, even for cold caches;
-it never starts an upstream request. Cold caches return HTTP 202. Snapshots use the
-existing content-version/ETag and HTTP 304 protocol. No database schema is added.
+it never starts an upstream request. Cold caches return HTTP 202. Snapshots use content versions, ETags and HTTP 304.
 
-The browser reuses the existing public-snapshot IndexedDB layer, displays retained
+The browser uses the public-snapshot IndexedDB layer, displays retained
 history on opening, and checks the database snapshot in the background. While open,
 it checks once per minute; this does not change the hourly provider cadence.
 An orange loading indicator is shown only while no usable OHLCV snapshot is
@@ -169,6 +170,8 @@ opening a chart. The selected time range fills the plot from its earliest to lat
 bar with no extra future offset. Explicit resize handling retains the visible
 logical range rather than introducing blank margins. The chart uses a compact
 update-time label; provider provenance and exchange timezone remain in snapshots. Account records and credentials are never included in chart caches.
+
+Chart reads retain successful local data during transport failures. Failed drawing and OHLCV reads retry up to three times after two, four and six seconds; visibility restoration and network reconnection trigger another database check. Drawing reads have a ten-second deadline, while writes are never automatically replayed. Confirmed private drawing snapshots also receive an immediate account-scoped localStorage backup so an unresponsive IndexedDB open cannot prevent persistence. No unconfirmed server state enables editing.
 
 ### Private chart tools
 
@@ -187,12 +190,11 @@ future corporate-action adjustments.
 and write-origin checks. Other-account query parameters are rejected. Private records
 are durably stored in the existing PostgreSQL `cache` table under an account-hashed
 `private:chart-drawings:v1:` namespace, read through private transactions without the
-public cache/hot-memory layer or expiry. No schema migration is required. These
+public cache/hot-memory layer or expiry. These
 records are included in database backups and never mixed into public market snapshots.
 The browser maintains a separate `finfeed-private-charts` IndexedDB database keyed by
-verified signed-in account ID and ticker. Only confirmed server snapshots are cached;
-localStorage is a fallback if IndexedDB cannot write. Page memory provides immediate
-reuse. Older revisions cannot replace newer cached revisions. Cached drawings appear
+verified signed-in account ID and ticker. Only confirmed server snapshots are cached.
+An account-scoped localStorage backup is written immediately, independently of IndexedDB availability. Page memory provides immediate reuse. Older revisions cannot replace newer cached revisions. Cached drawings appear
 before the immediate authenticated server check (disk restore waits at most 300 ms).
 GET checks carry a content version and ETag scoped to account, symbol and revision;
 unchanged records return HTTP 304 with no JSON body. POST confirmations include the
@@ -203,12 +205,12 @@ Add/update/delete operations lock the account row. Updates include the original
 segment and reject concurrent edits/deletions with HTTP 409 instead of overwriting
 another device. Retrying an already committed identical edit does not write again. Add IDs are stable for safe retries;
 deleting only listed IDs preserves lines newly added by other devices. Opening,
-window focus and minute polling reload the account's drawings. Writes show confirmed
+window focus, foreground/network restoration and minute polling reload the account's drawings. Writes show confirmed
 success or an explicit retry/discard state; closing is blocked while a write remains
 unconfirmed. Clicking a segment or the ruler selects that object and reveals a nearby delete
 button; Delete/Backspace also deletes the selected object. Blank-chart clicks or
 Escape clear selection. Deleting a segment syncs its ID to the server; deleting a
-measurement is local only. There are no global undo/clear buttons. Provider polling and hourly OHLCV caching are unchanged.
+measurement is local only. There are no global undo/clear buttons. Hourly OHLCV refreshes are independent of drawing transactions.
 
 ## Watchlist ticker admission
 
@@ -227,5 +229,3 @@ The browser inserts rows only after validation and the server save both succeed;
 failed validation keeps the input and prior Watchlist. Existing record removals and
 non-Watchlist writes do not require provider checks. Public validation caches contain
 no account identifiers. They reuse the normal PostgreSQL cache table.
-
-Chart reads retain successful local data during transport failures. Failed drawing and OHLCV reads retry up to three times after short delays; visibility restoration and network reconnection trigger another database check. Drawing reads have a ten-second deadline, while writes are never automatically replayed. Confirmed private drawing snapshots also receive an immediate account-scoped localStorage backup so an unresponsive IndexedDB open cannot prevent persistence. No unconfirmed server state enables editing.

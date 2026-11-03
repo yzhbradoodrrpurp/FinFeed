@@ -1,6 +1,6 @@
 # Gmail Authorization and Notification Delivery
 
-Reviewed against notification, storage and Gmail transport sources on October 26, 2026.
+This runbook describes the current Gmail authorization, subscription, scheduling and durable delivery model.
 
 The account dialog owns recipient verification and category selection. The current server uses the Gmail HTTPS API with only `gmail.send` authorization; it does not require SMTP or a custom sender domain. Recipient accounts do not need Google OAuth authorization.
 
@@ -19,7 +19,7 @@ python3 dashboard/deployment/authorize_gmail.py   --client /private/path/client.
 6. Set `FINFEED_EMAIL_PROVIDER=gmail`, `FINFEED_EMAIL_FROM`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. The sender must be the authorized Gmail account; the example above is a placeholder.
 7. Reload only the FinFeed backend and validate token refresh plus an actual verification email.
 
-Current authorization uses a production-mode application. This is not a claim of completed Google app verification. Testing-mode authorizations can have short refresh-token lifetimes; production-mode tokens can still fail after revocation or policy changes. Monitor refresh failures and reauthorize when needed. Do not add mail-reading scopes to troubleshoot sending.
+Sender authorization uses a production-mode OAuth application. This setting is separate from Google app verification. Tokens can fail after revocation or policy changes. Monitor refresh failures and reauthorize when needed. Do not add mail-reading scopes to troubleshoot sending.
 
 The transport refreshes access tokens server-side and caches them until shortly before expiry. `GMAIL_PROXY_URL=http://127.0.0.1:17890` routes token refresh and message sending through the project proxy. Browser code never receives OAuth secrets.
 
@@ -41,7 +41,7 @@ An optional project scheduler exists behind `.private/scheduler-enabled`; this m
 
 Verification codes are hashed, valid for ten minutes, limited to five attempts, and sent no more than once per minute. The interface disables empty-field actions, displays only countdown digits plus `s`, and hides the binding form after verification. A loading state prevents a verified account from briefly appearing unbound during initialization.
 
-Categories are per account: NFP, PCE, Treasury, institutions, and the user's own Watchlist News. Saving with any category selected enables monitoring; saving with none selected disables it. Threshold changes are persisted per subscriber. The server-loaded preferences establish the saved baseline: unchanged settings show a disabled “提醒已设置” button, including after reload. Editing a category or threshold enables saving; success updates the baseline. Unbinding, replacing the address, or disabling categories cancels affected pending messages. Already accepted messages cannot be recalled.
+Categories are per account: NFP, PCE, Treasury, institutions, Watchlist earnings calls (`news_calls`) and Watchlist SEC filings (`news_sec`). Saving with any category selected enables monitoring; saving with none selected disables it. Threshold changes are persisted per subscriber. The server-loaded preferences establish the saved baseline: unchanged settings show a disabled “提醒已设置” button, including after reload. Editing a category or threshold enables saving; success updates the baseline. Unbinding, replacing the address, or disabling categories cancels affected pending messages. Already accepted messages cannot be recalled.
 
 ## Trigger definitions
 
@@ -52,9 +52,10 @@ Categories are per account: NFP, PCE, Treasury, institutions, and the user's own
 | NFP / PCE data update | New complete observation period after a prior baseline; values, units, corresponding dates, retrieval time and source |
 | Ten-year Treasury | Successful daily yield crosses above/equal to or below the subscriber's threshold; prior/current values and dates, H.15/FRED links |
 | Institutional holdings | Newly observed reports/amendments for the nineteen supported institutions, including Trian, Bridgewater and Mubadala; report period, filing/publication date and original SEC link |
-| Watchlist News | New earnings calls or SEC index entries for the recipient's own watchlist; titles, dates and original document links |
+| Watchlist earnings calls | New call entries for the recipient's own watchlist; titles, dates and original links |
+| Watchlist SEC filings | New official submissions for the recipient's own watchlist; form, acceptance/filing dates and original SEC links |
 
-The Treasury default is 5.1%, adjustable per account. First reads and changed thresholds establish baselines rather than sending an existing above-line state as a new crossing. This is daily-statistic monitoring, not intraday touching alerts. Institution and company first reads also establish baselines, avoiding historical floods. Calls follow the page's two-quarter window; SEC detection uses the full retrieved official submissions index, independently of the display window. SEC reminders deduplicate by EDGAR accession, so a switch between the primary document and an exhibit cannot create another alert. A fixed monitoring-start timestamp and subscription start times filter historical backfill, unknown dates, and future dates; Official SEC acceptance timestamps are used for precise eligibility; legacy day-level dates remain supported. First reads establish a baseline, and legacy cursors gain a timestamp without replaying older filings. The monitoring-start boundary does not advance on each poll: genuine disclosures published after monitoring began remain eligible if the provider indexes them late or a monitoring outage delays retrieval. Future or undated entries are not marked as seen until they have a valid publication date. Previously seen identifiers are retained.
+The Treasury default is 5.1%, adjustable per account. First reads and changed thresholds establish baselines rather than sending an existing above-line state as a new crossing. This is daily-statistic monitoring, not intraday touching alerts. Institution and company first reads also establish baselines, avoiding historical floods. Calls follow the page's two-quarter window; SEC detection uses the full retrieved official submissions index, independently of the display window. SEC reminders deduplicate by EDGAR accession, so a switch between the primary document and an exhibit cannot create another alert. A fixed monitoring-start timestamp and subscription start times filter historical backfill, unknown dates and future dates. Official SEC acceptance timestamps determine precise eligibility; day-level dates are supported when timestamp precision is unavailable. A cursor without a timestamp establishes its watermark without replaying already observed filings. The monitoring-start boundary does not advance on each poll: genuine disclosures published after monitoring began remain eligible if the provider indexes them late or a monitoring outage delays retrieval. Future or undated entries are not marked as seen until they have a valid publication date. Previously seen identifiers are retained.
 
 Calendars prefer BLS/BEA. The BLS fallback uses published FRED release dates, with explicit standard-time assumptions if no exact time is provided. It does not invent future dates. FRED observation availability can lag the publishing institution.
 
@@ -85,19 +86,15 @@ Best regards,
 FinFeed Team
 ```
 
-Subjects begin with `FinFeed` for market events. Bodies identify planned release time versus observed data and include source context. Documentation translation does not change the language or behavior of actual outgoing messages.
+Subjects begin with `FinFeed` for market events. Bodies identify planned release time versus observed data and include source context. Messages preserve their source dates, units and event context.
 
 ## Operational acceptance and troubleshooting
 
-The October 21 authorization recovery verified a valid sender token and seven recipient-inbox messages: six company News alerts and one Treasury threshold crossing. Verification-code reception/binding and scheduled trigger acceptance also have earlier receipts. These dated observations do not prove current authorization or delivery for every category. The October 26 check confirmed only that the local scheduler marker remained absent; it did not inspect cron-job.org execution history, refresh OAuth, or send mail. Mock transport tests and HTTP 202 must not be reported as proof of delivery.
+Validate scheduler acceptance, sender authorization, event detection, provider acceptance and recipient delivery separately. Mock transport tests and HTTP 202 are not proof of delivery.
 
 Authenticated `GET /api/notifications` provides the account's queue counts. A `sent` state means channel acceptance, not guaranteed delivery, reading, or absence from spam. Check authorization, proxy connectivity, source/calendar validity, event baseline, subscription state, and outbox status in that order. Respect Gmail account sending limits and do not repeatedly trigger real mail as a health probe.
 
 References: [Gmail sending](https://developers.google.com/workspace/gmail/api/guides/sending), [desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app), [token expiration](https://developers.google.com/identity/protocols/oauth2#expiration), and [sending limits](https://support.google.com/mail/answer/22839).
-
-### SEC provider cutover
-
-Before activating the official SEC provider, coordinate a restart of only the verified backend, save a private backup of affected SEC cursors, and transactionally set their fixed `baseline_at` to the recorded cutover time while retaining all seen identifiers. This prevents newly discovered historical filings from being emailed during the provider switch. Filings accepted at or after that boundary remain eligible, including those published while deployment is in progress or indexed later. Do not reset the boundary on subsequent polls or deployments. Do not delete delivery history or resend uncertain mail. Verify historical replay produces zero events and a synthetic post-cutover accession produces one event, then zero on repetition, without sending real test mail.
 
 ### Recovery after automatic scheduler disablement
 
@@ -107,22 +104,16 @@ Check local backend health, public Funnel health and the scheduler execution his
 
 A configured sender only means the required credential fields exist; it does not prove Google still accepts the refresh token. On a missed-reminder report, check scheduled HTTP acceptance, source cursors, outbox states, and an actual token refresh independently. An HTTP 400 `invalid_grant` response means the credential was rejected; it must not be treated as a provider-network failure.
 
-After a server migration or configuration restore, validate the active server authorization instead of assuming the local production authorization was synchronized. A previously authorized valid credential for the unchanged sender/client can be restored from its private source after validation. Back up the active private configuration, preserve other fields, and restart only the verified backend. If no valid credential remains, complete the existing send-only OAuth authorization again; do not broaden Gmail scopes.
+Validate authorization on the active server, including after configuration restoration. A valid credential for the configured sender/client can be restored from its private source after validation. Back up the active private configuration, preserve other fields, and restart only the verified backend. If no valid credential remains, complete the existing send-only OAuth authorization again; do not broaden Gmail scopes.
 
 After authorization recovers, an existing unexpired `pending` message without a provider acceptance ID or active lease can be made due for the normal scheduler. Preserve its original event ID, creation time, recipient, body and attempt history. Back up affected retry dates privately. Do not reset observation baselines, replay expired failures, or automatically resend `sending`/`uncertain` messages. Confirm actual provider acceptance in the outbox; inbox reception remains a separate check.
 
 ## Separate Watchlist subscriptions
 
 Watchlist earnings-call and SEC-filing reminders have independent `news_calls` and
-`news_sec` preferences. The former combined `news` preference is normalized to both
-on reads; an unchanged save preserves both existing source cursors. The API accepts
-legacy combined writes during frontend rollout and returns a legacy aggregate field
-for older clients. New clients send the two explicit flags. No SQL schema change is
-needed because preferences are stored as JSON.
+`news_sec` preferences. The API normalizes the combined `news` compatibility preference to both topics and accepts either explicit topic flags or combined writes. An unchanged save preserves both source cursors. Preferences are stored as JSON.
 
 Workers poll only subscribed topics. Re-enabling a topic resets only its matching
 `news:calls:` or `news:sec:` cursor prefix. Existing accession/URL identities and
-outbox deduplication keys retain the old `news` namespace so rollout cannot replay
-old events. Pending legacy messages are matched to their topic by their original
-subject for cancellation and final subscription checks. The existing send/uncertain
-handling remains unchanged; API acceptance is not proof of email delivery.
+outbox deduplication keys use the shared `news` namespace to prevent duplicate event insertion. Combined-topic messages are matched to their topic by their original
+subject for cancellation and final subscription checks. The same send/uncertain policy applies to both topics; API acceptance is not proof of email delivery.
